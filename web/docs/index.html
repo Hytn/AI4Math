@@ -1,122 +1,1092 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI4Math — Formal Proof Agent</title>
+<title>AI4Math — 形式化定理证明智能体</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400&family=JetBrains+Mono:wght@300;400;500&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&family=Noto+Sans+SC:wght@100;300;400;500;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#08090d;--bg2:#0e1017;--bg3:#141720;--card:#111420;--border:#1c2035;--text:#eae8e2;--text2:#9a97a3;--text3:#555260;--accent:#7c6cf0;--accent2:#a78bfa;--accent-dim:rgba(124,108,240,0.08);--green:#34d399;--green2:#6ee7b7;--green-dim:rgba(52,211,153,0.08);--green-border:rgba(52,211,153,0.2);--red:#f87171;--red-dim:rgba(248,113,113,0.08);--amber:#fbbf24;--amber-dim:rgba(251,191,36,0.08);--blue:#60a5fa;--blue-dim:rgba(96,165,250,0.08);--mono:'JetBrains Mono',monospace;--sans:'DM Sans',system-ui,sans-serif;--serif:'Crimson Pro',Georgia,serif}
-*{margin:0;padding:0;box-sizing:border-box}html{scroll-behavior:smooth}body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.65;overflow-x:hidden}::selection{background:var(--accent);color:#fff}.wrap{max-width:820px;margin:0 auto;padding:0 1.5rem}
-.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:2rem;position:relative;overflow:hidden}.hero::before{content:'';position:absolute;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,rgba(124,108,240,0.07),transparent 70%);top:20%;left:50%;transform:translateX(-50%);pointer-events:none}.hero-eyebrow{font-family:var(--mono);font-size:.65rem;letter-spacing:.35em;text-transform:uppercase;color:var(--accent2);margin-bottom:2rem;opacity:0;animation:fu .8s .2s forwards}.hero h1{font-family:var(--serif);font-size:clamp(2.8rem,7vw,5.5rem);font-weight:300;line-height:1.05;margin-bottom:1.2rem;opacity:0;animation:fu .8s .4s forwards}.hero h1 em{font-style:italic;color:var(--accent2)}.hero-sub{font-size:1.15rem;color:var(--text2);max-width:560px;opacity:0;animation:fu .8s .6s forwards;font-weight:300}.hero-cta{margin-top:2.5rem;display:flex;gap:1rem;opacity:0;animation:fu .8s .8s forwards}
-.btn{padding:.85rem 2.2rem;font-family:var(--mono);font-size:.75rem;letter-spacing:.08em;cursor:pointer;transition:all .3s;text-decoration:none;border-radius:6px;display:inline-block}.btn-primary{background:var(--accent);color:#fff;border:none}.btn-primary:hover{background:#6b5bd6;transform:translateY(-1px)}.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}.btn-ghost:hover{border-color:var(--text3);color:var(--text)}
-@keyframes fu{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
-.metric-bar{background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:2rem 0}.metric-row{display:flex;justify-content:center;gap:3rem;flex-wrap:wrap}.metric{text-align:center}.metric .num{font-family:var(--mono);font-size:2rem;font-weight:500}.metric .lab{font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:.15rem}
-section{padding:5rem 0}.sec-eyebrow{font-family:var(--mono);font-size:.6rem;letter-spacing:.35em;text-transform:uppercase;color:var(--text3);margin-bottom:.75rem}.sec-title{font-family:var(--serif);font-size:clamp(1.8rem,4vw,2.6rem);font-weight:300;line-height:1.2;margin-bottom:.75rem}.sec-desc{color:var(--text2);max-width:600px;margin-bottom:3rem;font-size:.95rem;font-weight:300}
-.problem-box{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2.5rem;margin-bottom:4rem;position:relative;overflow:hidden}.problem-box::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--accent),var(--amber),var(--green))}.problem-source{font-family:var(--mono);font-size:.65rem;color:var(--amber);letter-spacing:.1em;margin-bottom:.75rem}.problem-title{font-family:var(--serif);font-size:1.6rem;font-weight:400;margin-bottom:1rem}.problem-nl{font-family:var(--serif);font-size:1.1rem;font-style:italic;color:var(--text2);line-height:1.7;margin-bottom:1.5rem}.problem-lean{font-family:var(--mono);font-size:.75rem;color:var(--text3);background:var(--bg);padding:1.2rem 1.5rem;border-radius:8px;line-height:1.9;overflow-x:auto;white-space:pre;border-left:3px solid var(--accent)}.problem-tags{display:flex;gap:.6rem;margin-top:1.5rem;flex-wrap:wrap}.ptag{font-size:.65rem;font-family:var(--mono);padding:.2rem .65rem;border-radius:99px;letter-spacing:.04em}.ptag-red{border:1px solid rgba(248,113,113,.3);color:var(--red)}.ptag-amber{border:1px solid rgba(251,191,36,.3);color:var(--amber)}.ptag-purple{border:1px solid rgba(167,139,250,.3);color:var(--accent2)}
-.phase{background:var(--card);border:1px solid var(--border);border-radius:14px;margin-bottom:1.25rem;overflow:hidden;opacity:0;transform:translateY(20px);transition:all .6s cubic-bezier(.16,1,.3,1)}.phase.vis{opacity:1;transform:translateY(0)}.phase-head{padding:1.5rem 2rem;cursor:pointer;display:flex;align-items:flex-start;gap:1rem;user-select:none}.phase-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;margin-top:2px}.pi-think{background:var(--accent-dim);border:1px solid rgba(124,108,240,.2)}.pi-search{background:var(--blue-dim);border:1px solid rgba(96,165,250,.2)}.pi-code{background:var(--amber-dim);border:1px solid rgba(251,191,36,.2)}.pi-verify{background:var(--green-dim);border:1px solid var(--green-border)}.pi-fail{background:var(--red-dim);border:1px solid rgba(248,113,113,.2)}.pi-evolve{background:linear-gradient(135deg,var(--accent-dim),var(--green-dim));border:1px solid rgba(124,108,240,.15)}
-.phase-body{flex:1}.phase-label{font-family:var(--mono);font-size:.6rem;color:var(--text3);letter-spacing:.1em;margin-bottom:.2rem}.phase-title{font-size:.95rem;font-weight:500;margin-bottom:.3rem}.phase-desc{font-size:.82rem;color:var(--text2);line-height:1.6}
-.phase-detail{display:none;padding:0 2rem 1.5rem;padding-left:calc(2rem + 36px + 1rem);font-size:.8rem;color:var(--text2);line-height:1.7}.phase-detail.show{display:block}.capability{display:inline-block;font-family:var(--mono);font-size:.6rem;padding:.15rem .5rem;border-radius:4px;background:var(--accent-dim);color:var(--accent2);margin:.15rem;border:1px solid rgba(124,108,240,.15)}.mini-code{font-family:var(--mono);font-size:.7rem;background:var(--bg);padding:.8rem 1rem;border-radius:6px;margin:.75rem 0;line-height:1.7;overflow-x:auto;border-left:2px solid var(--border);color:var(--text3);white-space:pre-wrap}.insight{background:rgba(251,191,36,.05);border:1px solid rgba(251,191,36,.15);border-radius:8px;padding:.75rem 1rem;margin:.75rem 0;font-size:.78rem;color:var(--amber)}.insight::before{content:'💡 '}
-.phase-arrow{font-family:var(--mono);font-size:.65rem;color:var(--text3);text-align:center;padding:.25rem 0;letter-spacing:.1em}
-.escalation-card{background:linear-gradient(135deg,rgba(124,108,240,.06),rgba(52,211,153,.03));border:1px solid rgba(124,108,240,.2);border-radius:14px;padding:2rem 2.5rem;text-align:center;margin:2rem 0;opacity:0;transform:translateY(20px);transition:all .6s}.escalation-card.vis{opacity:1;transform:translateY(0)}.esc-label{font-family:var(--mono);font-size:.6rem;letter-spacing:.3em;color:var(--accent2);text-transform:uppercase}.esc-flow{font-family:var(--serif);font-size:1.8rem;font-weight:300;margin:.75rem 0}.esc-flow span{color:var(--accent2)}.esc-reason{font-size:.82rem;color:var(--text2);max-width:500px;margin:0 auto;font-style:italic}
-.success-card{background:linear-gradient(135deg,rgba(52,211,153,.06),rgba(52,211,153,.01));border:1px solid var(--green-border);border-radius:16px;padding:3rem;text-align:center;margin:3rem 0;position:relative}.success-check{width:64px;height:64px;border-radius:50%;background:var(--green-dim);border:2px solid var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto 1.5rem;font-size:1.5rem;animation:cp .5s cubic-bezier(.16,1,.3,1)}@keyframes cp{from{transform:scale(0)}to{transform:scale(1)}}.success-card h3{font-family:var(--serif);font-size:2rem;font-weight:300;color:var(--green);margin-bottom:.5rem}.success-card .sub{color:var(--text2);font-size:.9rem;margin-bottom:2rem}
-.proof-block{font-family:var(--mono);font-size:.7rem;text-align:left;background:var(--bg);border:1px solid var(--green-border);border-radius:10px;padding:1.5rem;max-width:680px;margin:0 auto;line-height:1.9;overflow-x:auto;color:var(--text2);white-space:pre-wrap}.kw{color:var(--accent2)}.cm{color:var(--text3);font-style:italic}
-.result-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin:2.5rem 0}.rs{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.5rem;text-align:center}.rs .rv{font-family:var(--mono);font-size:1.8rem;font-weight:500}.rs .rl{font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:.2rem}
-.evo-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin:2rem 0}@media(max-width:640px){.evo-grid{grid-template-columns:1fr}}.evo-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2rem;position:relative;overflow:hidden}.evo-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}.evo-card.evo-a::before{background:var(--accent)}.evo-card.evo-b::before{background:var(--green)}.evo-card.evo-c::before{background:var(--amber)}.evo-card.evo-d::before{background:var(--blue)}.evo-card h4{font-size:.9rem;font-weight:500;margin-bottom:.5rem}.evo-card p{font-size:.8rem;color:var(--text2);line-height:1.6}.evo-card .evo-num{font-family:var(--mono);font-size:2.5rem;font-weight:300;color:var(--text3);position:absolute;top:1rem;right:1.5rem;opacity:.3}
-.bench-chart{display:flex;align-items:flex-end;gap:6px;height:180px;margin:2rem 0;padding:0 .5rem}.bench-bar{flex:1;border-radius:6px 6px 0 0;position:relative;transition:height 1.2s cubic-bezier(.16,1,.3,1);min-width:0}.bb-val{position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:.7rem;font-weight:500;white-space:nowrap}.bb-name{position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);font-size:.6rem;color:var(--text3);white-space:nowrap;font-family:var(--mono)}
-.lemma-bank-vis{display:flex;gap:.4rem;flex-wrap:wrap}.lemma-chip{font-family:var(--mono);font-size:.6rem;padding:.3rem .6rem;border-radius:6px;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);opacity:0;transform:scale(.8);transition:all .4s cubic-bezier(.16,1,.3,1)}.lemma-chip.in{opacity:1;transform:scale(1)}
-footer{text-align:center;padding:5rem 2rem 3rem;border-top:1px solid var(--border)}.f-logo{font-family:var(--serif);font-size:1.5rem;font-weight:300;margin-bottom:.5rem}footer p{font-size:.75rem;color:var(--text3)}
+:root {
+  --bg: #06070b;
+  --bg2: #0a0c14;
+  --bg3: #0e1019;
+  --card: #0d0f18;
+  --card2: #111425;
+  --border: #1a1d30;
+  --border2: #252945;
+  --text: #e8e6df;
+  --text2: #908d9e;
+  --text3: #504d60;
+  --accent: #7c6cf0;
+  --accent2: #a78bfa;
+  --accent3: #c4b5fd;
+  --accent-dim: rgba(124,108,240,0.06);
+  --green: #34d399;
+  --green2: #6ee7b7;
+  --green-dim: rgba(52,211,153,0.06);
+  --green-border: rgba(52,211,153,0.18);
+  --red: #f87171;
+  --red-dim: rgba(248,113,113,0.06);
+  --amber: #fbbf24;
+  --amber2: #fcd34d;
+  --amber-dim: rgba(251,191,36,0.06);
+  --blue: #60a5fa;
+  --blue-dim: rgba(96,165,250,0.06);
+  --cyan: #22d3ee;
+  --cyan-dim: rgba(34,211,238,0.06);
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'Noto Sans SC', system-ui, sans-serif;
+  --serif: 'Noto Serif SC', Georgia, serif;
+  --glow-accent: 0 0 40px rgba(124,108,240,0.15);
+  --glow-green: 0 0 40px rgba(52,211,153,0.12);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+html { scroll-behavior: smooth; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); line-height: 1.75; overflow-x: hidden; font-weight: 300; }
+::selection { background: var(--accent); color: #fff; }
+
+.wrap { max-width: 900px; margin: 0 auto; padding: 0 2rem; }
+
+/* ═══════════ HERO ═══════════ */
+.hero {
+  min-height: 100vh;
+  display: flex; flex-direction: column;
+  justify-content: center; align-items: center;
+  text-align: center; padding: 2rem;
+  position: relative; overflow: hidden;
+}
+.hero::before {
+  content: ''; position: absolute;
+  width: 800px; height: 800px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(124,108,240,0.06) 0%, transparent 65%);
+  top: 10%; left: 50%; transform: translateX(-50%); pointer-events: none;
+}
+.hero::after {
+  content: ''; position: absolute;
+  width: 500px; height: 500px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(52,211,153,0.04) 0%, transparent 65%);
+  bottom: 10%; right: 10%; pointer-events: none;
+}
+/* Grid background */
+.hero-grid {
+  position: absolute; inset: 0; overflow: hidden; pointer-events: none;
+  opacity: 0.03;
+  background-image:
+    linear-gradient(rgba(124,108,240,0.5) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124,108,240,0.5) 1px, transparent 1px);
+  background-size: 60px 60px;
+  mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, black, transparent);
+}
+
+.hero-eyebrow {
+  font-family: var(--mono); font-size: 0.6rem;
+  letter-spacing: 0.45em; text-transform: uppercase;
+  color: var(--accent2); margin-bottom: 2.5rem;
+  opacity: 0; animation: fadeUp 0.8s 0.2s forwards;
+}
+.hero h1 {
+  font-family: var(--serif); font-size: clamp(2.6rem, 6vw, 4.8rem);
+  font-weight: 300; line-height: 1.15; margin-bottom: 1.5rem;
+  opacity: 0; animation: fadeUp 0.8s 0.4s forwards;
+}
+.hero h1 em {
+  font-style: normal;
+  background: linear-gradient(135deg, var(--accent2), var(--cyan));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.hero-sub {
+  font-size: 1.05rem; color: var(--text2);
+  max-width: 580px; font-weight: 300; line-height: 1.8;
+  opacity: 0; animation: fadeUp 0.8s 0.6s forwards;
+}
+.hero-cta {
+  margin-top: 3rem; display: flex; gap: 1rem;
+  opacity: 0; animation: fadeUp 0.8s 0.8s forwards;
+}
+
+.btn {
+  padding: 0.9rem 2.5rem; font-family: var(--sans);
+  font-size: 0.8rem; font-weight: 400;
+  cursor: pointer; transition: all 0.3s;
+  text-decoration: none; border-radius: 8px; display: inline-block;
+  letter-spacing: 0.05em;
+}
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), #6b5bd6);
+  color: #fff; border: none; box-shadow: var(--glow-accent);
+}
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 0 60px rgba(124,108,240,0.25); }
+.btn-ghost { background: transparent; color: var(--text2); border: 1px solid var(--border); }
+.btn-ghost:hover { border-color: var(--accent); color: var(--accent2); }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(28px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ═══════════ METRICS BAR ═══════════ */
+.metric-bar {
+  background: var(--bg2); padding: 2.5rem 0;
+  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.metric-row { display: flex; justify-content: center; gap: 3.5rem; flex-wrap: wrap; }
+.metric { text-align: center; }
+.metric .num {
+  font-family: var(--mono); font-size: 1.8rem; font-weight: 500;
+  background: linear-gradient(135deg, var(--text), var(--text2));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.metric .lab {
+  font-size: 0.65rem; color: var(--text3);
+  letter-spacing: 0.15em; margin-top: 0.2rem;
+}
+
+/* ═══════════ SECTIONS ═══════════ */
+section { padding: 6rem 0; }
+.sec-eyebrow {
+  font-family: var(--mono); font-size: 0.55rem;
+  letter-spacing: 0.4em; text-transform: uppercase;
+  color: var(--text3); margin-bottom: 0.8rem;
+}
+.sec-title {
+  font-family: var(--serif); font-size: clamp(1.8rem, 4vw, 2.8rem);
+  font-weight: 300; line-height: 1.25; margin-bottom: 0.8rem;
+}
+.sec-desc {
+  color: var(--text2); max-width: 620px;
+  margin-bottom: 3.5rem; font-size: 0.92rem; font-weight: 300; line-height: 1.8;
+}
+
+/* ═══════════ PROBLEM BOX ═══════════ */
+.problem-box {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 16px; padding: 2.5rem; margin-bottom: 4rem;
+  position: relative; overflow: hidden;
+}
+.problem-box::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--amber), var(--green), var(--cyan));
+}
+.problem-source {
+  font-family: var(--mono); font-size: 0.6rem;
+  color: var(--amber); letter-spacing: 0.15em; margin-bottom: 0.8rem;
+}
+.problem-title {
+  font-family: var(--serif); font-size: 1.5rem;
+  font-weight: 400; margin-bottom: 1rem;
+}
+.problem-nl {
+  font-family: var(--serif); font-size: 1.05rem;
+  font-style: italic; color: var(--text2); line-height: 1.8;
+  margin-bottom: 1.5rem;
+}
+.problem-lean {
+  font-family: var(--mono); font-size: 0.72rem;
+  color: var(--text3); background: var(--bg);
+  padding: 1.3rem 1.6rem; border-radius: 10px;
+  line-height: 2; overflow-x: auto; white-space: pre;
+  border-left: 3px solid var(--accent);
+}
+.problem-tags { display: flex; gap: 0.6rem; margin-top: 1.5rem; flex-wrap: wrap; }
+.ptag {
+  font-size: 0.6rem; font-family: var(--mono);
+  padding: 0.2rem 0.7rem; border-radius: 99px; letter-spacing: 0.05em;
+}
+.ptag-red { border: 1px solid rgba(248,113,113,0.25); color: var(--red); }
+.ptag-amber { border: 1px solid rgba(251,191,36,0.25); color: var(--amber); }
+.ptag-purple { border: 1px solid rgba(167,139,250,0.25); color: var(--accent2); }
+
+/* ═══════════ PROOF THEATER ═══════════ */
+.theater {
+  position: relative;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  overflow: hidden;
+  margin-bottom: 2rem;
+}
+.theater-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem 1.8rem;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+.theater-title {
+  font-family: var(--mono); font-size: 0.65rem;
+  letter-spacing: 0.2em; color: var(--text3);
+}
+.theater-status {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-family: var(--mono); font-size: 0.6rem;
+}
+.status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green); animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%,100%{ opacity:1; } 50%{ opacity:0.3; } }
+.theater-body {
+  height: 520px;
+  overflow: hidden;
+  position: relative;
+}
+.theater-scroll {
+  position: absolute; top: 0; left: 0; right: 0;
+  padding: 1.5rem 1.8rem;
+  transition: transform 1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Theater steps */
+.t-step {
+  margin-bottom: 1.2rem;
+  opacity: 0;
+  transform: translateY(16px);
+  transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.t-step.active {
+  opacity: 1; transform: translateY(0);
+}
+.t-step.past {
+  opacity: 0.45;
+}
+
+.t-step-head {
+  display: flex; align-items: flex-start; gap: 0.8rem;
+  margin-bottom: 0.4rem;
+}
+.t-icon {
+  width: 32px; height: 32px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.85rem; flex-shrink: 0; margin-top: 1px;
+}
+.t-label {
+  font-family: var(--mono); font-size: 0.55rem;
+  color: var(--text3); letter-spacing: 0.12em; margin-bottom: 0.1rem;
+}
+.t-title { font-size: 0.88rem; font-weight: 500; }
+.t-desc {
+  font-size: 0.78rem; color: var(--text2); line-height: 1.7;
+  margin-top: 0.3rem;
+}
+.t-content {
+  margin-left: calc(32px + 0.8rem);
+  margin-top: 0.5rem;
+}
+
+/* Component tags */
+.comp-tag {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  font-family: var(--mono); font-size: 0.55rem;
+  padding: 0.2rem 0.55rem; border-radius: 5px;
+  margin: 0.15rem; cursor: default; position: relative;
+}
+.comp-tag::before {
+  content: ''; width: 4px; height: 4px; border-radius: 50%;
+  flex-shrink: 0;
+}
+.comp-tag[data-role="brain"] { background: var(--accent-dim); color: var(--accent2); border: 1px solid rgba(124,108,240,0.15); }
+.comp-tag[data-role="brain"]::before { background: var(--accent2); }
+.comp-tag[data-role="search"] { background: var(--blue-dim); color: var(--blue); border: 1px solid rgba(96,165,250,0.15); }
+.comp-tag[data-role="search"]::before { background: var(--blue); }
+.comp-tag[data-role="tool"] { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(251,191,36,0.15); }
+.comp-tag[data-role="tool"]::before { background: var(--amber); }
+.comp-tag[data-role="verify"] { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
+.comp-tag[data-role="verify"]::before { background: var(--green); }
+.comp-tag[data-role="evolve"] { background: var(--cyan-dim); color: var(--cyan); border: 1px solid rgba(34,211,238,0.15); }
+.comp-tag[data-role="evolve"]::before { background: var(--cyan); }
+.comp-tag[data-role="error"] { background: var(--red-dim); color: var(--red); border: 1px solid rgba(248,113,113,0.15); }
+.comp-tag[data-role="error"]::before { background: var(--red); }
+
+/* Tooltip on hover */
+.comp-tag .tip {
+  display: none; position: absolute; bottom: calc(100% + 8px); left: 50%;
+  transform: translateX(-50%); background: var(--card2); color: var(--text2);
+  font-family: var(--sans); font-size: 0.68rem; font-weight: 300;
+  padding: 0.6rem 0.8rem; border-radius: 8px; width: 220px;
+  border: 1px solid var(--border2); line-height: 1.5; text-align: left;
+  z-index: 10; pointer-events: none;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+}
+.comp-tag .tip::after {
+  content: ''; position: absolute; top: 100%; left: 50%;
+  transform: translateX(-50%); border: 5px solid transparent;
+  border-top-color: var(--border2);
+}
+.comp-tag:hover .tip { display: block; }
+
+.t-code {
+  font-family: var(--mono); font-size: 0.68rem;
+  background: var(--bg); padding: 0.8rem 1rem; border-radius: 8px;
+  line-height: 1.8; overflow-x: auto; white-space: pre-wrap;
+  border-left: 2px solid var(--border); color: var(--text3);
+  margin-top: 0.5rem;
+}
+.t-code.t-code-green { border-left-color: var(--green); }
+.t-code.t-code-red { border-left-color: var(--red); }
+.t-code.t-code-amber { border-left-color: var(--amber); }
+
+.t-insight {
+  background: rgba(251,191,36,0.04); border: 1px solid rgba(251,191,36,0.12);
+  border-radius: 8px; padding: 0.6rem 0.9rem; margin-top: 0.5rem;
+  font-size: 0.72rem; color: var(--amber); line-height: 1.6;
+}
+.t-insight::before { content: '💡 '; }
+
+/* Theater navigation */
+.theater-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.8rem 1.8rem;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+}
+.theater-nav button {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text2); font-family: var(--sans); font-size: 0.75rem;
+  padding: 0.5rem 1.2rem; border-radius: 6px; cursor: pointer;
+  transition: all 0.2s;
+}
+.theater-nav button:hover { border-color: var(--accent); color: var(--accent2); }
+.theater-nav button:disabled { opacity: 0.3; cursor: not-allowed; }
+.theater-progress {
+  display: flex; gap: 4px; align-items: center;
+}
+.theater-progress .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--border); transition: all 0.3s;
+}
+.theater-progress .dot.done { background: var(--green); }
+.theater-progress .dot.now {
+  background: var(--accent); width: 18px; border-radius: 3px;
+}
+
+/* ═══════════ ESCALATION CARD ═══════════ */
+.escalation-card {
+  background: linear-gradient(135deg, rgba(124,108,240,0.04), rgba(52,211,153,0.02));
+  border: 1px solid rgba(124,108,240,0.18);
+  border-radius: 14px; padding: 1.8rem 2rem;
+  margin: 1rem 0; position: relative; overflow: hidden;
+}
+.escalation-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, var(--accent), var(--green));
+}
+.esc-label {
+  font-family: var(--mono); font-size: 0.55rem;
+  letter-spacing: 0.35em; color: var(--accent2); text-transform: uppercase;
+}
+.esc-flow {
+  font-family: var(--serif); font-size: 1.6rem;
+  font-weight: 300; margin: 0.6rem 0;
+}
+.esc-flow span { color: var(--accent2); }
+.esc-detail {
+  font-size: 0.78rem; color: var(--text2); line-height: 1.7;
+  margin-top: 0.8rem; max-width: 600px;
+}
+.esc-detail strong { color: var(--text); font-weight: 500; }
+
+/* ═══════════ SUCCESS CARD ═══════════ */
+.success-card {
+  background: linear-gradient(135deg, rgba(52,211,153,0.05), rgba(52,211,153,0.01));
+  border: 1px solid var(--green-border);
+  border-radius: 18px; padding: 3.5rem 2rem;
+  text-align: center; margin: 3rem 0;
+  position: relative; overflow: hidden;
+}
+.success-card::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(circle at 50% 0%, rgba(52,211,153,0.06), transparent 60%);
+  pointer-events: none;
+}
+.success-check {
+  width: 68px; height: 68px; border-radius: 50%;
+  background: var(--green-dim); border: 2px solid var(--green);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 1.5rem; font-size: 1.5rem;
+  box-shadow: var(--glow-green);
+}
+.success-card h3 {
+  font-family: var(--serif); font-size: 2.2rem;
+  font-weight: 300; color: var(--green); margin-bottom: 0.5rem;
+}
+.success-card .sub { color: var(--text2); font-size: 0.88rem; margin-bottom: 2.5rem; }
+
+.proof-block {
+  font-family: var(--mono); font-size: 0.68rem;
+  text-align: left; background: var(--bg);
+  border: 1px solid var(--green-border);
+  border-radius: 12px; padding: 1.5rem 1.8rem;
+  max-width: 700px; margin: 0 auto; line-height: 2;
+  overflow-x: auto; color: var(--text2); white-space: pre-wrap;
+}
+.kw { color: var(--accent2); }
+.cm { color: var(--text3); font-style: italic; }
+
+.result-stats {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 1rem; margin: 2.5rem 0;
+}
+.rs {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 1.5rem; text-align: center;
+}
+.rs .rv { font-family: var(--mono); font-size: 1.8rem; font-weight: 500; }
+.rs .rl {
+  font-size: 0.62rem; color: var(--text3);
+  text-transform: uppercase; letter-spacing: 0.12em; margin-top: 0.2rem;
+}
+
+/* ═══════════ ARCHITECTURE ═══════════ */
+.arch-section { background: var(--bg2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+
+.arch-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1.2rem;
+  margin: 2rem 0;
+}
+@media(max-width:768px) { .arch-grid { grid-template-columns: 1fr; } }
+
+.arch-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 14px; padding: 1.8rem;
+  position: relative; overflow: hidden;
+  opacity: 0; transform: translateY(20px);
+  transition: all 0.6s cubic-bezier(0.16,1,0.3,1);
+}
+.arch-card.vis { opacity: 1; transform: translateY(0); }
+.arch-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+}
+.arch-card .a-icon {
+  width: 40px; height: 40px; border-radius: 11px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem; margin-bottom: 1rem;
+}
+.arch-card h4 { font-size: 0.9rem; font-weight: 500; margin-bottom: 0.5rem; }
+.arch-card p { font-size: 0.78rem; color: var(--text2); line-height: 1.7; }
+.arch-card .a-how {
+  margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px solid var(--border);
+  font-family: var(--mono); font-size: 0.62rem; color: var(--text3);
+  line-height: 1.7;
+}
+.arch-card .a-how strong { color: var(--accent2); font-weight: 500; }
+
+/* Card color variants */
+.ac-brain::before { background: var(--accent); }
+.ac-brain .a-icon { background: var(--accent-dim); border: 1px solid rgba(124,108,240,0.2); }
+.ac-search::before { background: var(--blue); }
+.ac-search .a-icon { background: var(--blue-dim); border: 1px solid rgba(96,165,250,0.2); }
+.ac-tool::before { background: var(--amber); }
+.ac-tool .a-icon { background: var(--amber-dim); border: 1px solid rgba(251,191,36,0.2); }
+.ac-verify::before { background: var(--green); }
+.ac-verify .a-icon { background: var(--green-dim); border: 1px solid var(--green-border); }
+.ac-evolve::before { background: linear-gradient(90deg, var(--accent), var(--cyan)); }
+.ac-evolve .a-icon { background: var(--cyan-dim); border: 1px solid rgba(34,211,238,0.2); }
+.ac-memory::before { background: var(--red); }
+.ac-memory .a-icon { background: var(--red-dim); border: 1px solid rgba(248,113,113,0.2); }
+
+/* ═══════════ CAPABILITIES SHOWCASE ═══════════ */
+.cap-section { padding: 6rem 0; }
+
+.cap-block {
+  margin-bottom: 4rem; padding: 2.5rem;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 18px; position: relative; overflow: hidden;
+  opacity: 0; transform: translateY(24px);
+  transition: all 0.7s cubic-bezier(0.16,1,0.3,1);
+}
+.cap-block.vis { opacity: 1; transform: translateY(0); }
+.cap-block::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+}
+
+.cap-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.2rem; }
+.cap-num {
+  font-family: var(--mono); font-size: 0.55rem;
+  letter-spacing: 0.3em; color: var(--text3);
+}
+.cap-title {
+  font-family: var(--serif); font-size: 1.4rem;
+  font-weight: 400;
+}
+.cap-desc {
+  font-size: 0.85rem; color: var(--text2); line-height: 1.8;
+  margin-bottom: 1.5rem; max-width: 650px;
+}
+
+/* Rollout visualization */
+.rollout-vis {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 6px; margin: 1.5rem 0;
+}
+@media(max-width:640px) { .rollout-vis { grid-template-columns: repeat(2, 1fr); } }
+.rollout-cell {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.6rem 0.8rem;
+  font-family: var(--mono); font-size: 0.58rem;
+  color: var(--text3); line-height: 1.6;
+  opacity: 0; transform: scale(0.9);
+  transition: all 0.4s cubic-bezier(0.16,1,0.3,1);
+}
+.rollout-cell.in { opacity: 1; transform: scale(1); }
+.rollout-cell.r-pass {
+  border-color: var(--green-border); background: var(--green-dim);
+}
+.rollout-cell.r-pass .r-status { color: var(--green); }
+.rollout-cell.r-fail .r-status { color: var(--red); }
+.rollout-cell.r-lemma .r-status { color: var(--amber); }
+.r-id { color: var(--text3); }
+.r-status { font-weight: 500; }
+
+/* Tool chain visualization */
+.tool-chain {
+  display: flex; align-items: center; gap: 0;
+  flex-wrap: wrap; margin: 1.5rem 0;
+}
+.tool-node {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 10px; padding: 0.8rem 1.2rem;
+  font-size: 0.75rem; font-weight: 400;
+  opacity: 0; transform: translateX(-12px);
+  transition: all 0.5s cubic-bezier(0.16,1,0.3,1);
+}
+.tool-node.in { opacity: 1; transform: translateX(0); }
+.tool-node .tn-label {
+  font-family: var(--mono); font-size: 0.5rem;
+  color: var(--text3); letter-spacing: 0.12em;
+  display: block; margin-bottom: 0.15rem;
+}
+.tool-arrow {
+  font-family: var(--mono); color: var(--text3); font-size: 0.7rem;
+  padding: 0 0.4rem;
+  opacity: 0; transition: opacity 0.3s;
+}
+.tool-arrow.in { opacity: 1; }
+.tn-brain { border-color: rgba(124,108,240,0.2); }
+.tn-brain .tn-label { color: var(--accent2); }
+.tn-search { border-color: rgba(96,165,250,0.2); }
+.tn-search .tn-label { color: var(--blue); }
+.tn-cas { border-color: rgba(251,191,36,0.2); }
+.tn-cas .tn-label { color: var(--amber); }
+.tn-lean { border-color: var(--green-border); }
+.tn-lean .tn-label { color: var(--green); }
+.tn-mem { border-color: rgba(34,211,238,0.2); }
+.tn-mem .tn-label { color: var(--cyan); }
+
+/* Evolution timeline */
+.evo-timeline {
+  position: relative; margin: 2rem 0;
+  padding-left: 2.5rem;
+}
+.evo-timeline::before {
+  content: ''; position: absolute; left: 8px; top: 0; bottom: 0;
+  width: 2px; background: linear-gradient(to bottom, var(--accent), var(--green), var(--cyan));
+  border-radius: 1px;
+}
+.evo-step {
+  position: relative; margin-bottom: 1.5rem;
+  opacity: 0; transform: translateX(16px);
+  transition: all 0.5s cubic-bezier(0.16,1,0.3,1);
+}
+.evo-step.in { opacity: 1; transform: translateX(0); }
+.evo-step::before {
+  content: ''; position: absolute;
+  left: -2.5rem; top: 0.5rem;
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid var(--accent); background: var(--bg);
+}
+.evo-step:nth-child(2)::before { border-color: var(--green); }
+.evo-step:nth-child(3)::before { border-color: var(--amber); }
+.evo-step:nth-child(4)::before { border-color: var(--cyan); }
+.evo-step h5 { font-size: 0.85rem; font-weight: 500; margin-bottom: 0.3rem; }
+.evo-step p { font-size: 0.78rem; color: var(--text2); line-height: 1.7; }
+
+/* ═══════════ EVOLUTION SECTION ═══════════ */
+.evo-section { background: var(--bg2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+
+.evo-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 1.5rem; margin: 2rem 0;
+}
+@media(max-width:640px) { .evo-grid { grid-template-columns: 1fr; } }
+.evo-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 14px; padding: 2rem; position: relative; overflow: hidden;
+}
+.evo-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+}
+.evo-card.evo-a::before { background: var(--accent); }
+.evo-card.evo-b::before { background: var(--green); }
+.evo-card.evo-c::before { background: var(--amber); }
+.evo-card.evo-d::before { background: var(--cyan); }
+.evo-card h4 { font-size: 0.9rem; font-weight: 500; margin-bottom: 0.5rem; }
+.evo-card p { font-size: 0.78rem; color: var(--text2); line-height: 1.7; }
+.evo-card .evo-num {
+  font-family: var(--mono); font-size: 2.5rem; font-weight: 300;
+  color: var(--text3); position: absolute; top: 1rem; right: 1.5rem; opacity: 0.2;
+}
+.evo-card .evo-how {
+  margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px dashed var(--border);
+  font-size: 0.72rem; color: var(--text3); line-height: 1.6; font-style: italic;
+}
+
+/* ═══════════ BENCHMARK CHART ═══════════ */
+.bench-chart {
+  display: flex; align-items: flex-end; gap: 6px;
+  height: 200px; margin: 2.5rem 0; padding: 0 0.5rem;
+}
+.bench-bar {
+  flex: 1; border-radius: 6px 6px 0 0; position: relative;
+  transition: height 1.2s cubic-bezier(0.16,1,0.3,1);
+  min-width: 0;
+}
+.bb-val {
+  position: absolute; bottom: calc(100% + 8px); left: 50%;
+  transform: translateX(-50%); font-family: var(--mono);
+  font-size: 0.7rem; font-weight: 500; white-space: nowrap;
+}
+.bb-name {
+  position: absolute; top: calc(100% + 10px); left: 50%;
+  transform: translateX(-50%); font-size: 0.58rem;
+  color: var(--text3); white-space: nowrap; font-family: var(--mono);
+}
+
+/* ═══════════ LEMMA BANK ═══════════ */
+.lemma-bank-vis { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.6rem; }
+.lemma-chip {
+  font-family: var(--mono); font-size: 0.58rem;
+  padding: 0.25rem 0.6rem; border-radius: 6px;
+  background: var(--green-dim); color: var(--green);
+  border: 1px solid var(--green-border);
+  opacity: 0; transform: scale(0.85);
+  transition: all 0.4s cubic-bezier(0.16,1,0.3,1);
+}
+.lemma-chip.in { opacity: 1; transform: scale(1); }
+
+/* ═══════════ FOOTER ═══════════ */
+footer {
+  text-align: center; padding: 5rem 2rem 3rem;
+  border-top: 1px solid var(--border);
+}
+.f-logo {
+  font-family: var(--serif); font-size: 1.5rem;
+  font-weight: 300; margin-bottom: 0.5rem;
+}
+footer p { font-size: 0.72rem; color: var(--text3); }
+
+/* ═══════════ RESPONSIVE ═══════════ */
+@media(max-width:640px) {
+  .result-stats { grid-template-columns: 1fr; }
+  .metric-row { gap: 1.5rem; }
+  .tool-chain { flex-direction: column; align-items: flex-start; }
+  .tool-arrow { transform: rotate(90deg); }
+}
 </style>
 </head>
 <body>
+
+<!-- ═══════════ HERO ═══════════ -->
 <div class="hero">
-  <p class="hero-eyebrow">Formal Mathematical Reasoning</p>
-  <h1>Machines that <em>prove</em></h1>
-  <p class="hero-sub">An AI agent that reads mathematical theorems, constructs rigorous proofs, and has every step verified by the Lean 4 kernel — growing stronger with each problem it solves.</p>
-  <div class="hero-cta"><a class="btn btn-primary" href="#demo">Watch a proof →</a><a class="btn btn-ghost" href="#evolution">How it learns</a></div>
+  <div class="hero-grid"></div>
+  <p class="hero-eyebrow">形式化数学推理智能体</p>
+  <h1>机器，<em>证明</em></h1>
+  <p class="hero-sub">一个能够阅读数学定理、自主构造严格证明、并由 Lean 4 内核逐步验证的 AI 智能体 —— 每解决一道题，它都变得更强。</p>
+  <div class="hero-cta">
+    <a class="btn btn-primary" href="#demo">观看证明过程 →</a>
+    <a class="btn btn-ghost" href="#arch">智能体架构</a>
+  </div>
 </div>
+
+<!-- ═══════════ METRICS ═══════════ -->
 <div class="metric-bar"><div class="metric-row">
-  <div class="metric"><div class="num">42</div><div class="lab">Proof attempts</div></div>
-  <div class="metric"><div class="num">7</div><div class="lab">Lemmas discovered</div></div>
-  <div class="metric"><div class="num">14 min</div><div class="lab">Time to proof</div></div>
-  <div class="metric"><div class="num">1</div><div class="lab">Strategy escalation</div></div>
-  <div class="metric"><div class="num">✓</div><div class="lab">Kernel verified</div></div>
+  <div class="metric"><div class="num">42</div><div class="lab">证明尝试</div></div>
+  <div class="metric"><div class="num">7</div><div class="lab">引理发现</div></div>
+  <div class="metric"><div class="num">14 分钟</div><div class="lab">总耗时</div></div>
+  <div class="metric"><div class="num">1</div><div class="lab">策略升级</div></div>
+  <div class="metric"><div class="num">✓</div><div class="lab">内核验证</div></div>
 </div></div>
+
+<!-- ═══════════ DEMO ═══════════ -->
 <section id="demo"><div class="wrap">
-  <p class="sec-eyebrow">Live demonstration</p>
-  <h2 class="sec-title">Solving a Putnam Competition problem</h2>
-  <p class="sec-desc">The Putnam is the hardest undergraduate math competition in North America. Median score: 0 out of 120. Watch our agent tackle a real problem from start to verified proof.</p>
+  <p class="sec-eyebrow">实时演示</p>
+  <h2 class="sec-title">攻克一道 Putnam 竞赛题</h2>
+  <p class="sec-desc">Putnam 是北美最难的本科数学竞赛，满分 120 分，中位数得分为 0。观看智能体如何从零开始构造完整的形式化证明。</p>
+
+  <!-- Problem box -->
   <div class="problem-box">
-    <div class="problem-source">PUTNAM 2019 · PROBLEM A2</div>
-    <div class="problem-title">A cyclic inequality on the simplex</div>
-    <div class="problem-nl">Given non-negative real numbers a, b, c with a + b + c = 1, prove that the cyclic sum a²b + b²c + c²a is at most 4/27.</div>
+    <div class="problem-source">PUTNAM 2019 · 题目 A2</div>
+    <div class="problem-title">单纯形上的轮换不等式</div>
+    <div class="problem-nl">给定非负实数 a, b, c 且 a + b + c = 1，证明轮换和 a²b + b²c + c²a ≤ 4/27。</div>
     <div class="problem-lean">theorem putnam_2019_a2 (a b c : ℝ)
   (ha : 0 ≤ a) (hb : 0 ≤ b) (hc : 0 ≤ c)
   (hsum : a + b + c = 1) :
   a ^ 2 * b + b ^ 2 * c + c ^ 2 * a ≤ 4 / 27</div>
-    <div class="problem-tags"><span class="ptag ptag-red">Hard</span><span class="ptag ptag-amber">Putnam Competition</span><span class="ptag ptag-purple">Cyclic Inequality · 3 Variables</span></div>
+    <div class="problem-tags">
+      <span class="ptag ptag-red">困难</span>
+      <span class="ptag ptag-amber">Putnam 竞赛</span>
+      <span class="ptag ptag-purple">轮换不等式 · 三变量</span>
+    </div>
   </div>
-  <div class="phase" data-i="0"><div class="phase-head" onclick="toggle(this)"><div class="phase-icon pi-think">🧠</div><div class="phase-body"><div class="phase-label">STEP 1 · PROOF PLANNING</div><div class="phase-title">The agent reads the theorem and devises a strategy</div><div class="phase-desc">Before writing a single line of code, the agent constructs a high-level proof plan — much like a mathematician sketching on a whiteboard.</div></div></div><div class="phase-detail"><p>The agent identifies this as a <strong>cyclic inequality on a probability simplex</strong> and evaluates multiple approaches:</p><p style="margin:.75rem 0"><span class="capability">Proof Planner</span><span class="capability">Hypothesis Generator</span><span class="capability">Pattern Library</span></p><div class="mini-code">Strategy selected: "cyclic inequality → Schur variant"
-Key observation: equality holds at (a,b,c) = (2/3, 1/3, 0) and permutations
-Proposed auxiliary lemmas:
-  • h₁: a·b ≤ (a+b)²/4        (AM-GM for the product)
-  • h₂: generalized Schur bound for the cyclic sum</div><div class="insight">The agent doesn't just try random tactics — it reasons about the mathematical structure before generating any code.</div></div></div><div class="phase-arrow">↓</div>
-  <div class="phase" data-i="1"><div class="phase-head" onclick="toggle(this)"><div class="phase-icon pi-search">🔍</div><div class="phase-body"><div class="phase-label">STEP 2 · KNOWLEDGE RETRIEVAL</div><div class="phase-title">Searching 100,000+ library lemmas for building blocks</div><div class="phase-desc">Hybrid search (keyword + semantic) over Lean's Mathlib, then an LLM re-ranks results for this specific problem.</div></div></div><div class="phase-detail"><p style="margin-bottom:.5rem"><span class="capability">BM25 Sparse Search</span><span class="capability">Semantic Embedding</span><span class="capability">LLM Reranker</span><span class="capability">Tactic Suggester</span></p><div class="mini-code">Retrieved top premises:
-  1. sq_nonneg         — ∀ x, 0 ≤ x²          (key for auxiliary terms)
+
+  <!-- ═══════════ PROOF THEATER ═══════════ -->
+  <div class="theater" id="theater">
+    <div class="theater-header">
+      <div class="theater-title">推理过程</div>
+      <div class="theater-status">
+        <div class="status-dot"></div>
+        <span style="color:var(--green)">智能体运行中</span>
+      </div>
+    </div>
+    <div class="theater-body" id="theaterBody">
+      <div class="theater-scroll" id="theaterScroll">
+
+        <!-- STEP 0: 证明规划 -->
+        <div class="t-step" data-step="0">
+          <div class="t-step-head">
+            <div class="t-icon" style="background:var(--accent-dim);border:1px solid rgba(124,108,240,0.2)">🧠</div>
+            <div>
+              <div class="t-label">步骤 1 · 证明规划</div>
+              <div class="t-title">智能体阅读定理，制定高层策略</div>
+            </div>
+          </div>
+          <div class="t-content">
+            <div class="t-desc">在写下任何代码之前，智能体先构建高层证明计划 —— 如同数学家在白板上勾勒思路。</div>
+            <div style="margin:0.5rem 0">
+              <span class="comp-tag" data-role="brain">证明规划器<span class="tip">分析目标结构，将高层数学直觉转化为 Lean 4 可执行的战术序列。是智能体的"数学大脑"。</span></span>
+              <span class="comp-tag" data-role="brain">假设生成器<span class="tip">自动猜测可能需要的辅助假设与关键引理，为证明搭建脚手架。</span></span>
+              <span class="comp-tag" data-role="search">模式库<span class="tip">存储历史上成功的证明模式（如"轮换不等式→Schur 变体"），供规划器快速匹配。</span></span>
+            </div>
+            <div class="t-code">策略选定: "轮换不等式 → Schur 变体"
+关键观察: 等号成立于 (a,b,c) = (2/3, 1/3, 0) 及其轮换
+所需辅助引理:
+  • h₁: a·b ≤ (a+b)²/4        (AM-GM 乘积界)
+  • h₂: 推广的 Schur 界用于轮换和</div>
+            <div class="t-insight">智能体不盲目尝试策略 —— 它先对数学结构进行推理，再生成任何代码。</div>
+          </div>
+        </div>
+
+        <!-- STEP 1: 知识检索 -->
+        <div class="t-step" data-step="1">
+          <div class="t-step-head">
+            <div class="t-icon" style="background:var(--blue-dim);border:1px solid rgba(96,165,250,0.2)">🔍</div>
+            <div>
+              <div class="t-label">步骤 2 · 知识检索</div>
+              <div class="t-title">从 100,000+ 引理库中搜索构建模块</div>
+            </div>
+          </div>
+          <div class="t-content">
+            <div class="t-desc">混合检索（关键词 + 语义向量）遍历 Lean 4 的 Mathlib 库，再由 LLM 重排结果。</div>
+            <div style="margin:0.5rem 0">
+              <span class="comp-tag" data-role="search">BM25 稀疏检索<span class="tip">基于 TF-IDF 的传统检索，精确匹配引理名称和策略关键词，速度极快。</span></span>
+              <span class="comp-tag" data-role="search">语义嵌入<span class="tip">将定理语句编码为向量，捕捉深层语义相似性，找到名称不同但本质相关的引理。</span></span>
+              <span class="comp-tag" data-role="brain">LLM 重排器<span class="tip">用大模型理解当前目标语境，将最相关的引理排到前面，过滤噪声。</span></span>
+              <span class="comp-tag" data-role="tool">策略建议器<span class="tip">根据目标类型自动建议 nlinarith, polyrith, ring_nf 等策略，节省搜索时间。</span></span>
+            </div>
+            <div class="t-code">检索到的顶级前提:
+  1. sq_nonneg         — ∀ x, 0 ≤ x²          (辅助项的关键)
   2. mul_self_nonneg    — ∀ x, 0 ≤ x * x
-  3. div_le_div_right   — monotone division
-  4. Finset.sum_le_sum  — pointwise → sum bound
-  5. mul_le_mul_left    — scalar multiplication
+  3. div_le_div_right   — 单调除法
+  4. Finset.sum_le_sum  — 逐点 → 求和界
+  5. mul_le_mul_left    — 标量乘法
 
-Suggested tactics: nlinarith, polyrith, ring_nf, positivity</div></div></div><div class="phase-arrow">↓</div>
-  <div class="phase" data-i="2"><div class="phase-head" onclick="toggle(this)"><div class="phase-icon pi-code">🏗️</div><div class="phase-body"><div class="phase-label">STEP 3 · PROOF SCAFFOLDING</div><div class="phase-title">Building a proof skeleton with placeholder gaps</div><div class="phase-desc">The agent constructs a proof structure with <code>sorry</code> placeholders, then uses Lean's interactive REPL to close each gap one by one.</div></div></div><div class="phase-detail"><p style="margin-bottom:.5rem"><span class="capability">Scaffold Generator</span><span class="capability">Sorry Closer</span><span class="capability">Lean Automation</span><span class="capability">Interactive REPL</span></p><div class="mini-code"><span style="color:var(--accent2)">:= by</span>
-  <span style="color:var(--green)">have h₁</span> : a * b ≤ (a + b)² / 4   := by <span style="color:var(--green)">nlinarith [sq_nonneg (a-b)]</span>   ✓ closed
-  <span style="color:var(--green)">have h₂</span> : a² * b ≤ a * (a+b)²/4  := by <span style="color:var(--green)">nlinarith [sq_nonneg a]</span>       ✓ closed
-  <span style="color:var(--red)">have h₃</span> : b²*c + c²*a ≤ ...       := by <span style="color:var(--red)">sorry</span>                         ✗ open
-  <span style="color:var(--red)">have h₄</span> : combine all bounds        := by <span style="color:var(--red)">sorry</span>                         ✗ open
-  linarith</div><div class="insight">2 of 4 gaps auto-closed. The REPL gives real-time goal state feedback after each tactic — the agent "sees" what remains to prove.</div></div></div><div class="phase-arrow">↓</div>
-  <div class="phase" data-i="3"><div class="phase-head" onclick="toggle(this)"><div class="phase-icon pi-fail">✗</div><div class="phase-body"><div class="phase-label">STEP 4 · LEAN KERNEL REJECTS THE PROOF</div><div class="phase-title">The type checker finds two unjustified steps</div><div class="phase-desc">Lean 4 checks every step down to logical axioms. It finds the cyclic bound isn't proved. No shortcuts — if the math isn't right, the kernel won't accept it.</div></div></div><div class="phase-detail"><p style="margin-bottom:.5rem"><span class="capability">Lean 4 Type Checker</span><span class="capability">Error Parser</span><span class="capability">Sorry Detector</span><span class="capability">Integrity Checker</span></p><div class="mini-code" style="border-left-color:var(--red)">ERROR line 8: tactic 'nlinarith' failed — cannot close cyclic bound
-ERROR line 10: sorry placeholder remaining
+建议策略: nlinarith, polyrith, ring_nf, positivity</div>
+          </div>
+        </div>
 
-Integrity check: ✓ no axiom injection · ✓ no admit · ✓ statement matches</div><p style="margin-top:.75rem">The <strong>integrity checker</strong> ensures the agent can't "cheat" by injecting fake axioms — a real vulnerability discovered in other systems.</p></div></div><div class="phase-arrow">↓</div>
-  <div class="phase" data-i="4"><div class="phase-head" onclick="toggle(this)"><div class="phase-icon pi-think">🔬</div><div class="phase-body"><div class="phase-label">STEP 5 · ERROR DIAGNOSIS</div><div class="phase-title">Understanding <em>why</em> it failed, not just <em>that</em> it failed</div><div class="phase-desc">The agent classifies the error, identifies the root cause, and selects a targeted repair strategy.</div></div></div><div class="phase-detail"><p style="margin-bottom:.5rem"><span class="capability">Error Diagnostor</span><span class="capability">Root Cause Analyzer</span><span class="capability">Repair Strategy Selector</span></p><div class="mini-code">Root cause: nlinarith cannot handle 3-variable cyclic expressions directly.
-             The polynomial search space is too large for automated arithmetic.
+        <!-- STEP 2: 证明骨架 -->
+        <div class="t-step" data-step="2">
+          <div class="t-step-head">
+            <div class="t-icon" style="background:var(--amber-dim);border:1px solid rgba(251,191,36,0.2)">🏗️</div>
+            <div>
+              <div class="t-label">步骤 3 · 构建证明骨架</div>
+              <div class="t-title">生成带 <code style="color:var(--red)">sorry</code> 占位符的骨架，逐个填充</div>
+            </div>
+          </div>
+          <div class="t-content">
+            <div style="margin:0.5rem 0">
+              <span class="comp-tag" data-role="tool">骨架生成器<span class="tip">将高层策略翻译为 Lean 代码结构，用 sorry 标记未完成的证明步骤。</span></span>
+              <span class="comp-tag" data-role="verify">Sorry 闭合器<span class="tip">逐个攻击 sorry 占位符，尝试自动闭合。类似"填空题"解法。</span></span>
+              <span class="comp-tag" data-role="tool">Lean REPL<span class="tip">交互式读取-求值-打印循环，每一步都能实时看到剩余目标状态。</span></span>
+            </div>
+            <div class="t-code"><span style="color:var(--accent2)">:= by</span>
+  <span style="color:var(--green)">have h₁</span> : a * b ≤ (a + b)² / 4   := by <span style="color:var(--green)">nlinarith [sq_nonneg (a-b)]</span>   ✓ 已闭合
+  <span style="color:var(--green)">have h₂</span> : a² * b ≤ a * (a+b)²/4  := by <span style="color:var(--green)">nlinarith [sq_nonneg a]</span>       ✓ 已闭合
+  <span style="color:var(--red)">have h₃</span> : b²*c + c²*a ≤ ...       := by <span style="color:var(--red)">sorry</span>                         ✗ 未闭合
+  <span style="color:var(--red)">have h₄</span> : 合并全部界              := by <span style="color:var(--red)">sorry</span>                         ✗ 未闭合
+  linarith</div>
+            <div class="t-insight">4 个空缺已自动闭合 2 个。REPL 在每条策略后给出实时目标状态反馈 —— 智能体能"看见"还剩什么要证明。</div>
+          </div>
+        </div>
 
-Repair strategy: DECOMPOSE into smaller individually-provable sub-lemmas.</div></div></div><div class="phase-arrow">↓</div>
-  <div class="phase" data-i="5"><div class="phase-head" onclick="toggle(this)"><div class="phase-icon pi-evolve">💎</div><div class="phase-body"><div class="phase-label">STEP 6 · EXPERIENCE EXTRACTION</div><div class="phase-title">Even failed proofs produce reusable knowledge</div><div class="phase-desc">3 intermediate lemmas from the failed proof passed Lean's kernel individually. They're stored in the Lemma Bank for reuse.</div></div></div><div class="phase-detail"><p style="margin-bottom:.5rem"><span class="capability">Lemma Extractor</span><span class="capability">Lemma Verifier</span><span class="capability">Lemma Bank</span></p><div id="bank1" class="lemma-bank-vis"></div><div class="insight">Nothing is wasted. Every attempt deposits verified knowledge that accelerates future rounds. The system gets smarter as it fails.</div></div></div><div class="phase-arrow">↓</div>
-  <div class="phase" data-i="6"><div class="phase-head" onclick="toggle(this)"><div class="phase-icon pi-code">⚡</div><div class="phase-body"><div class="phase-label">STEP 7 · PARALLEL EXPLORATION — 16 SIMULTANEOUS ATTEMPTS</div><div class="phase-title">Massively parallel proof search with shared experience</div><div class="phase-desc">16 diverse proof attempts generated and verified simultaneously. All receive the banked lemmas. 2 more lemmas discovered from the wreckage.</div></div></div><div class="phase-detail"><p style="margin-bottom:.5rem"><span class="capability">Parallel Rollout (×16)</span><span class="capability">High Temperature Sampling</span><span class="capability">Error Summarizer</span><span class="capability">Context Compressor</span></p><div class="mini-code">Round 2 results: 0/16 fully verified
-  ├─ 12× tactic_failed on cyclic bound
-  ├─ 4× type mismatch
-  ├─ +2 new lemmas extracted → banked
-  └─ All 16 attempts now inform the next round</div><div id="bank2" class="lemma-bank-vis" style="margin-top:.75rem"></div></div></div><div class="phase-arrow">↓</div>
-  <div class="escalation-card" data-i="7"><div class="esc-label">Strategy Escalation</div><div class="esc-flow">Light mode <span>→</span> Medium mode</div><div class="esc-reason">"Direct tactics repeatedly fail on the cyclic bound. Activating theorem decomposition and focused inner refinement."</div></div>
-  <div class="phase" data-i="8"><div class="phase-head" onclick="toggle(this)"><div class="phase-icon pi-think">🪞</div><div class="phase-body"><div class="phase-label">STEP 8 · SELF-REFLECTION</div><div class="phase-title">The agent criticizes its own approach and pivots</div><div class="phase-desc">A dedicated Critic role analyzes all 32 failed attempts, identifies the structural weakness, and recommends a fundamentally different approach.</div></div></div><div class="phase-detail"><p style="margin-bottom:.5rem"><span class="capability">Self-Critic</span><span class="capability">Reflection Engine</span><span class="capability">Strategy Controller</span><span class="capability">Budget Allocator</span></p><div class="mini-code">Critic analysis:
-  "All 32 attempts try to close the cyclic bound in one call.
-   This fundamentally cannot work — the polynomial degree is too high.
+        <!-- STEP 3: 内核拒绝 -->
+        <div class="t-step" data-step="3">
+          <div class="t-step-head">
+            <div class="t-icon" style="background:var(--red-dim);border:1px solid rgba(248,113,113,0.2)">✗</div>
+            <div>
+              <div class="t-label">步骤 4 · Lean 内核拒绝证明</div>
+              <div class="t-title">类型检查器发现两处未证明步骤</div>
+            </div>
+          </div>
+          <div class="t-content">
+            <div class="t-desc">Lean 4 将每一步追溯到逻辑公理进行检查。如果数学不对，内核绝不通过 —— 没有捷径。</div>
+            <div style="margin:0.5rem 0">
+              <span class="comp-tag" data-role="verify">Lean 4 类型检查器<span class="tip">Lean 的核心验证引擎，将每个证明步骤归约到逻辑公理级别，提供绝对的数学确定性。</span></span>
+              <span class="comp-tag" data-role="error">错误解析器<span class="tip">将 Lean 报错信息解析为结构化数据，提取失败位置、类型和上下文。</span></span>
+              <span class="comp-tag" data-role="verify">完整性检查器<span class="tip">确保智能体不能通过注入假公理来"作弊" —— 这是其他系统中已发现的真实漏洞。</span></span>
+            </div>
+            <div class="t-code t-code-red">ERROR 第 8 行: 策略 'nlinarith' 失败 — 无法闭合轮换界
+ERROR 第 10 行: sorry 占位符仍存在
 
-   Recommendation: DECOMPOSE the theorem into a general lemma
-   (without the a+b+c=1 constraint) and a specialization step."
+完整性检查: ✓ 无公理注入 · ✓ 无 admit · ✓ 陈述匹配</div>
+          </div>
+        </div>
 
-Budget: 32/128 attempts used — 75% remaining</div></div></div><div class="phase-arrow">↓</div>
-  <div class="phase" data-i="9"><div class="phase-head" onclick="toggle(this)"><div class="phase-icon pi-think">🧩</div><div class="phase-body"><div class="phase-label">STEP 9 · THEOREM DECOMPOSITION</div><div class="phase-title">Breaking the hard problem into two easier sub-problems</div><div class="phase-desc">The agent factors the theorem into a general lemma (the hard part) and a trivial specialization (substitute a+b+c=1).</div></div></div><div class="phase-detail"><p style="margin-bottom:.5rem"><span class="capability">Goal Decomposer</span><span class="capability">Subgoal Scheduler</span></p><div class="mini-code">Sub-goal 1 (HARD):   a²b + b²c + c²a ≤ 4/27 · (a+b+c)³
-Sub-goal 2 (TRIVIAL): substitute a+b+c = 1 → (a+b+c)³ = 1 → done
+        <!-- STEP 4: 错误诊断 -->
+        <div class="t-step" data-step="4">
+          <div class="t-step-head">
+            <div class="t-icon" style="background:var(--amber-dim);border:1px solid rgba(251,191,36,0.2)">🔬</div>
+            <div>
+              <div class="t-label">步骤 5 · 错误诊断</div>
+              <div class="t-title">理解<em>为什么</em>失败，而不仅是<em>知道</em>失败了</div>
+            </div>
+          </div>
+          <div class="t-content">
+            <div style="margin:0.5rem 0">
+              <span class="comp-tag" data-role="error">错误诊断器<span class="tip">对 Lean 报错进行语义分类（策略失败/类型不匹配/超时/sorry残留），选择针对性修复。</span></span>
+              <span class="comp-tag" data-role="brain">根因分析器<span class="tip">不仅看表面报错，还追溯到证明策略层面的根本原因，避免重复犯同样的错误。</span></span>
+            </div>
+            <div class="t-code t-code-amber">根因: nlinarith 无法直接处理三变量轮换表达式。
+       多项式搜索空间对自动算术引擎来说太大了。
 
-All compute now focused on Sub-goal 1.</div></div></div><div class="phase-arrow">↓</div>
-  <div class="phase" data-i="10"><div class="phase-head" onclick="toggle(this)"><div class="phase-icon pi-search">🔧</div><div class="phase-body"><div class="phase-label">STEP 10 · TOOL USE — COMPUTER ALGEBRA</div><div class="phase-title">External CAS computes the critical extremum point</div><div class="phase-desc">The agent delegates a computation to SageMath: find where equality holds. The answer — (⅔, ⅓, 0) — guides the construction of proof terms.</div></div></div><div class="phase-detail"><p style="margin-bottom:.5rem"><span class="capability">CAS Bridge (SageMath)</span><span class="capability">Tool Executor</span></p><div class="mini-code">CAS query:  maximize a²b + b²c + c²a  subject to  a+b+c=1, a,b,c ≥ 0
-CAS result: maximum 4/27 at (a,b,c) = (2/3, 1/3, 0) and permutations
+修复策略: 分解为更小的、可独立证明的子引理。</div>
+          </div>
+        </div>
 
-→ Insight: construct proof terms that vanish at this extremum</div><div class="insight">Tool use transforms the agent from a "pure language model" into a reasoning system that delegates computation to specialized engines.</div></div></div><div class="phase-arrow">↓</div>
-  <div class="phase" data-i="11" style="border-color:var(--green-border)"><div class="phase-head" onclick="toggle(this)"><div class="phase-icon pi-verify">★</div><div class="phase-body"><div class="phase-label">STEP 11 · FOCUSED ATTACK — THE BREAKTHROUGH</div><div class="phase-title" style="color:var(--green)">Sample #3 of 8 passes the Lean kernel!</div><div class="phase-desc">With the CAS hint, the agent constructs auxiliary sq_nonneg terms. On the third focused attempt, nlinarith finds a certificate. The key lemma is proved.</div></div></div><div class="phase-detail"><p style="margin-bottom:.5rem"><span class="capability">Focused Rollout (×8)</span><span class="capability">CAS-Guided Construction</span><span class="capability">Lean Kernel Verification</span></p><div class="mini-code" style="border-left-color:var(--green)"><span style="color:var(--accent2)">lemma</span> cyc_bound (a b c : ℝ) (ha : 0 ≤ a) (hb : 0 ≤ b) (hc : 0 ≤ c) :
+        <!-- STEP 5: 经验提取 -->
+        <div class="t-step" data-step="5">
+          <div class="t-step-head">
+            <div class="t-icon" style="background:var(--cyan-dim);border:1px solid rgba(34,211,238,0.2)">💎</div>
+            <div>
+              <div class="t-label">步骤 6 · 经验提取</div>
+              <div class="t-title">即使失败的证明也产出可复用知识</div>
+            </div>
+          </div>
+          <div class="t-content">
+            <div class="t-desc">3 条中间引理虽然来自失败的证明，但各自独立通过了 Lean 内核验证，被存入引理库。</div>
+            <div style="margin:0.5rem 0">
+              <span class="comp-tag" data-role="evolve">引理提取器<span class="tip">从失败的证明中提取所有独立成立的中间结论，化失败为知识积累。</span></span>
+              <span class="comp-tag" data-role="verify">引理验证器<span class="tip">对每条提取的引理进行独立的 Lean 内核验证，确保引理库的绝对可靠。</span></span>
+              <span class="comp-tag" data-role="evolve">引理库<span class="tip">跨问题的知识库。问题 A 的引理可能成为解决问题 B 的关键 —— 数学知识的迁移与积累。</span></span>
+            </div>
+            <div class="lemma-bank-vis" id="bank1"></div>
+            <div class="t-insight">没有任何尝试是浪费的。每次失败都在引理库中沉淀验证过的知识，加速后续的证明。</div>
+          </div>
+        </div>
+
+        <!-- STEP 6: 并行探索 -->
+        <div class="t-step" data-step="6">
+          <div class="t-step-head">
+            <div class="t-icon" style="background:var(--accent-dim);border:1px solid rgba(124,108,240,0.2)">⚡</div>
+            <div>
+              <div class="t-label">步骤 7 · 高并发并行探索 — 16 条同时尝试</div>
+              <div class="t-title">大规模并行证明搜索，共享经验池</div>
+            </div>
+          </div>
+          <div class="t-content">
+            <div class="t-desc">16 条多样化的证明尝试同时生成和验证。所有路径共享已积累的引理。又从残骸中提取了 2 条新引理。</div>
+            <div style="margin:0.5rem 0">
+              <span class="comp-tag" data-role="brain">并行 Rollout ×16<span class="tip">同时展开 16 条不同的证明路径，高温度采样确保多样性，避免所有路径陷入同一死胡同。</span></span>
+              <span class="comp-tag" data-role="brain">高温度采样<span class="tip">增大语言模型的随机性参数，使 16 条路径探索截然不同的策略空间。</span></span>
+              <span class="comp-tag" data-role="error">错误摘要器<span class="tip">将 16 条路径的错误信息压缩为结构化摘要，供下一轮参考，避免信息过载。</span></span>
+              <span class="comp-tag" data-role="evolve">上下文压缩器<span class="tip">智能压缩长上下文，保留关键信息，使智能体在有限窗口内维持长程推理。</span></span>
+            </div>
+            <div class="t-code">第 2 轮结果: 0/16 完全验证通过
+  ├─ 12× 策略在轮换界上失败
+  ├─ 4× 类型不匹配
+  ├─ +2 条新引理提取 → 存入引理库
+  └─ 全部 16 条尝试的经验投入下一轮</div>
+            <div class="lemma-bank-vis" id="bank2"></div>
+          </div>
+        </div>
+
+        <!-- STEP 7: 策略升级 -->
+        <div class="t-step" data-step="7">
+          <div class="t-step-head">
+            <div class="t-icon" style="background:linear-gradient(135deg,var(--accent-dim),var(--green-dim));border:1px solid rgba(124,108,240,0.15)">🔄</div>
+            <div>
+              <div class="t-label">策略升级</div>
+              <div class="t-title" style="color:var(--accent2)">轻量模式 → 中量模式</div>
+            </div>
+          </div>
+          <div class="t-content">
+            <div class="escalation-card">
+              <div class="esc-label">策略自动升级</div>
+              <div class="esc-flow">轻量模式 <span>→</span> 中量模式</div>
+              <div class="esc-detail">
+                <strong>触发条件:</strong> 直接策略在轮换界上反复失败（32 次尝试全部失败）<br>
+                <strong>升级内容:</strong> 激活定理分解模块与聚焦内部精炼循环。计算预算从 16 并行扩展到 64 路搜索，允许更深的推理链。<br>
+                <strong>资源分配:</strong> 32/128 次尝试已用 —— 剩余 75% 预算
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 8: 自我反思 -->
+        <div class="t-step" data-step="8">
+          <div class="t-step-head">
+            <div class="t-icon" style="background:var(--accent-dim);border:1px solid rgba(124,108,240,0.2)">🪞</div>
+            <div>
+              <div class="t-label">步骤 8 · 自我反思</div>
+              <div class="t-title">智能体批判自身方法并转向</div>
+            </div>
+          </div>
+          <div class="t-content">
+            <div class="t-desc">专门的"批判者"角色分析全部 32 次失败，识别结构性弱点，推荐根本性不同的方法。</div>
+            <div style="margin:0.5rem 0">
+              <span class="comp-tag" data-role="brain">自我批判器<span class="tip">以"对手"视角审视智能体自身的推理过程，找出系统性的盲区和思维定势。</span></span>
+              <span class="comp-tag" data-role="brain">反思引擎<span class="tip">汇总所有失败的共性模式，生成结构化的反思报告，指导策略的根本性转向。</span></span>
+              <span class="comp-tag" data-role="brain">预算分配器<span class="tip">动态管理计算资源预算，确保困难问题获得更多尝试次数，简单问题节约资源。</span></span>
+            </div>
+            <div class="t-code">批判者分析:
+  "全部 32 次尝试都试图一次性闭合轮换界。
+   这根本不可能奏效 —— 多项式次数太高了。
+
+   建议: 将定理分解为一个不带 a+b+c=1 约束的
+   一般性引理，加上一个特化步骤。"
+
+预算: 32/128 次尝试已用 —— 剩余 75%</div>
+          </div>
+        </div>
+
+        <!-- STEP 9: 定理分解 -->
+        <div class="t-step" data-step="9">
+          <div class="t-step-head">
+            <div class="t-icon" style="background:var(--accent-dim);border:1px solid rgba(124,108,240,0.2)">🧩</div>
+            <div>
+              <div class="t-label">步骤 9 · 定理分解</div>
+              <div class="t-title">将困难问题拆解为两个更简单的子问题</div>
+            </div>
+          </div>
+          <div class="t-content">
+            <div style="margin:0.5rem 0">
+              <span class="comp-tag" data-role="brain">目标分解器<span class="tip">将复杂定理分解为可独立证明的子目标，是长程任务推理的核心能力。</span></span>
+              <span class="comp-tag" data-role="brain">子目标调度器<span class="tip">决定子目标的证明顺序与资源分配，将计算力集中在最关键的瓶颈上。</span></span>
+            </div>
+            <div class="t-code">子目标 1 (困难):   a²b + b²c + c²a ≤ 4/27 · (a+b+c)³
+子目标 2 (平凡):   代入 a+b+c = 1 → (a+b+c)³ = 1 → 完成
+
+全部算力集中于子目标 1。</div>
+          </div>
+        </div>
+
+        <!-- STEP 10: 工具调用 -->
+        <div class="t-step" data-step="10">
+          <div class="t-step-head">
+            <div class="t-icon" style="background:var(--amber-dim);border:1px solid rgba(251,191,36,0.2)">🔧</div>
+            <div>
+              <div class="t-label">步骤 10 · 连续工具调用 — 计算机代数系统</div>
+              <div class="t-title">外部 CAS 计算关键极值点</div>
+            </div>
+          </div>
+          <div class="t-content">
+            <div class="t-desc">智能体将计算委托给 SageMath：找到等号成立条件。答案 (⅔, ⅓, 0) 指导证明项的构造。</div>
+            <div style="margin:0.5rem 0">
+              <span class="comp-tag" data-role="tool">CAS 桥接器 (SageMath)<span class="tip">连接外部计算机代数系统，将符号计算任务委托给专业引擎，获取精确结果。</span></span>
+              <span class="comp-tag" data-role="tool">工具执行器<span class="tip">管理所有外部工具调用的生命周期：序列化输入、执行调用、解析输出、错误重试。</span></span>
+            </div>
+            <div class="t-code t-code-amber">CAS 查询:  maximize a²b + b²c + c²a  subject to  a+b+c=1, a,b,c ≥ 0
+CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
+
+→ 洞察: 构造在此极值点处为零的证明项</div>
+            <div class="t-insight">工具调用将智能体从"纯语言模型"转变为推理系统 —— 将计算任务委托给专用引擎。</div>
+          </div>
+        </div>
+
+        <!-- STEP 11: 突破 -->
+        <div class="t-step" data-step="11">
+          <div class="t-step-head">
+            <div class="t-icon" style="background:var(--green-dim);border:1px solid var(--green-border)">★</div>
+            <div>
+              <div class="t-label">步骤 11 · 聚焦攻击 — 突破</div>
+              <div class="t-title" style="color:var(--green)">第 3 条路径（共 8 条）通过了 Lean 内核！</div>
+            </div>
+          </div>
+          <div class="t-content">
+            <div style="margin:0.5rem 0">
+              <span class="comp-tag" data-role="brain">聚焦 Rollout ×8<span class="tip">将 8 条路径全部集中在子目标 1 上，结合 CAS 提示构造辅助项。</span></span>
+              <span class="comp-tag" data-role="tool">CAS 引导构造<span class="tip">利用 CAS 给出的极值点信息，反向构造恰好使 nlinarith 能找到证书的辅助项。</span></span>
+              <span class="comp-tag" data-role="verify">Lean 内核验证<span class="tip">最终的裁判。通过即意味着数学上正确，不通过则继续尝试。无模糊地带。</span></span>
+            </div>
+            <div class="t-code t-code-green"><span style="color:var(--accent2)">lemma</span> cyc_bound (a b c : ℝ) (ha : 0 ≤ a) (hb : 0 ≤ b) (hc : 0 ≤ c) :
     a^2 * b + b^2 * c + c^2 * a ≤ 4/27 * (a + b + c)^3 := <span style="color:var(--accent2)">by</span>
   nlinarith [sq_nonneg (a - 2*b), sq_nonneg (b - 2*c), sq_nonneg (a - 2*c),
              sq_nonneg a, sq_nonneg b, sq_nonneg c,
              mul_self_nonneg (3*a - 2), mul_self_nonneg (3*b - 1)]
 
-<span style="color:var(--green)">-- Lean 4: ✓ no goals remaining</span></div></div></div><div class="phase-arrow">↓</div>
-  <div class="phase" data-i="12"><div class="phase-head" onclick="toggle(this)"><div class="phase-icon pi-code">🔗</div><div class="phase-body"><div class="phase-label">STEP 12 · PROOF ASSEMBLY</div><div class="phase-title">Composing sub-proofs into the final complete theorem</div><div class="phase-desc">The general lemma + the substitution step are assembled, imports resolved, code formatted — ready for final verification.</div></div></div><div class="phase-detail"><span class="capability">Proof Composer</span><span class="capability">Import Resolver</span><span class="capability">Code Formatter</span></div></div><div class="phase-arrow">↓</div>
-  <div class="phase" data-i="13"><div class="phase-head" onclick="toggle(this)"><div class="phase-icon pi-verify" style="font-size:1.2rem">✓</div><div class="phase-body"><div class="phase-label">STEP 13 · FINAL VERIFICATION</div><div class="phase-title" style="color:var(--green)">Lean 4 kernel accepts the complete proof</div><div class="phase-desc">Every step checked down to the axioms of mathematics. No sorry, no admit, no axiom hacking. The theorem is proved.</div></div></div><div class="phase-detail"><span class="capability">Lean 4 Type Checker</span><span class="capability">Sorry: 0 found</span><span class="capability">Integrity: PASSED</span></div></div>
-  <div class="success-card" id="sc" style="opacity:0;transform:scale(.96);transition:all .8s"><div class="success-check">✓</div><h3>Kernel Verified</h3><p class="sub">Every step checked by the Lean 4 type theory engine, down to logical axioms.</p><div class="proof-block"><span class="kw">import</span> Mathlib
+<span style="color:var(--green)">-- Lean 4: ✓ 无剩余目标</span></div>
+          </div>
+        </div>
+
+        <!-- STEP 12: 证明组装 -->
+        <div class="t-step" data-step="12">
+          <div class="t-step-head">
+            <div class="t-icon" style="background:var(--amber-dim);border:1px solid rgba(251,191,36,0.2)">🔗</div>
+            <div>
+              <div class="t-label">步骤 12 · 证明组装</div>
+              <div class="t-title">将子证明拼装为完整的定理</div>
+            </div>
+          </div>
+          <div class="t-content">
+            <div style="margin:0.5rem 0">
+              <span class="comp-tag" data-role="tool">证明拼装器<span class="tip">将各子引理和主定理按依赖关系拼装，解析 import 路径，格式化最终代码。</span></span>
+              <span class="comp-tag" data-role="tool">Import 解析器<span class="tip">自动分析 Lean 文件的 import 依赖，确保所有引用的库都被正确引入。</span></span>
+            </div>
+            <div class="t-desc">一般性引理 + 代入步骤组装完成，依赖解析，代码格式化 —— 准备最终验证。</div>
+          </div>
+        </div>
+
+        <!-- STEP 13: 最终验证 -->
+        <div class="t-step" data-step="13">
+          <div class="t-step-head">
+            <div class="t-icon" style="background:var(--green-dim);border:1px solid var(--green-border);font-size:1.1rem">✓</div>
+            <div>
+              <div class="t-label">步骤 13 · 最终验证</div>
+              <div class="t-title" style="color:var(--green)">Lean 4 内核接受完整证明</div>
+            </div>
+          </div>
+          <div class="t-content">
+            <div class="t-desc">每一步都被追溯到数学公理进行检查。无 sorry，无 admit，无公理注入。定理，已证。</div>
+            <div style="margin:0.5rem 0">
+              <span class="comp-tag" data-role="verify">Lean 4 类型检查器<span class="tip">最终验证：将完整证明归约到逻辑公理，确认数学上的绝对正确性。</span></span>
+              <span class="comp-tag" data-role="verify">Sorry: 0 处<span class="tip">扫描证明中的所有 sorry 占位符。0 处意味着证明完全完成。</span></span>
+              <span class="comp-tag" data-role="verify">完整性: 通过<span class="tip">验证无公理注入、无 admit、定理陈述与原始问题完全匹配。</span></span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div class="theater-nav">
+      <button id="prevBtn" disabled onclick="theaterPrev()">← 上一步</button>
+      <div class="theater-progress" id="theaterProgress"></div>
+      <button id="nextBtn" onclick="theaterNext()">下一步 →</button>
+    </div>
+  </div>
+
+  <!-- Success card -->
+  <div class="success-card" id="successCard" style="opacity:0;transform:scale(0.96);transition:all 0.8s">
+    <div class="success-check">✓</div>
+    <h3>内核验证通过</h3>
+    <p class="sub">每一步都由 Lean 4 类型论引擎检查，追溯到逻辑公理。</p>
+    <div class="proof-block"><span class="kw">import</span> Mathlib
 
 <span class="kw">lemma</span> cyc_bound (a b c : ℝ) (ha : 0 ≤ a) (hb : 0 ≤ b) (hc : 0 ≤ c) :
     a ^ 2 * b + b ^ 2 * c + c ^ 2 * a ≤ 4 / 27 * (a + b + c) ^ 3 := <span class="kw">by</span>
@@ -129,35 +1099,333 @@ CAS result: maximum 4/27 at (a,b,c) = (2/3, 1/3, 0) and permutations
     (hsum : a + b + c = 1) :
     a ^ 2 * b + b ^ 2 * c + c ^ 2 * a ≤ 4 / 27 := <span class="kw">by</span>
   have h := cyc_bound a b c ha hb hc
-  rw [hsum] at h <span class="cm">-- (a+b+c)³ becomes 1</span>
-  linarith</div></div>
-  <div class="result-stats" id="rs" style="opacity:0;transition:opacity .8s">
-    <div class="rs"><div class="rv" style="color:var(--green)">42</div><div class="rl">Total attempts</div></div>
-    <div class="rs"><div class="rv" style="color:var(--accent2)">7</div><div class="rl">Lemmas banked</div></div>
-    <div class="rs"><div class="rv" style="color:var(--amber)">14 min</div><div class="rl">Wall clock</div></div>
+  rw [hsum] at h <span class="cm">-- (a+b+c)³ 变为 1</span>
+  linarith</div>
+  </div>
+  <div class="result-stats" id="resultStats" style="opacity:0;transition:opacity .8s">
+    <div class="rs"><div class="rv" style="color:var(--green)">42</div><div class="rl">总尝试次数</div></div>
+    <div class="rs"><div class="rv" style="color:var(--accent2)">7</div><div class="rl">引理入库</div></div>
+    <div class="rs"><div class="rv" style="color:var(--amber)">14 分钟</div><div class="rl">总耗时</div></div>
   </div>
 </div></section>
-<section id="evolution" style="background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border)"><div class="wrap">
-  <p class="sec-eyebrow">Continuous evolution</p>
-  <h2 class="sec-title">Every problem makes the system stronger</h2>
-  <p class="sec-desc">This isn't a static tool. Every proof attempt — success or failure — generates training signal. The agent accumulates knowledge, strategies, and mathematical intuition over time.</p>
+
+<!-- ═══════════ ARCHITECTURE ═══════════ -->
+<section id="arch" class="arch-section"><div class="wrap">
+  <p class="sec-eyebrow">智能体架构</p>
+  <h2 class="sec-title">六大核心模块，协同驱动证明</h2>
+  <p class="sec-desc">每个模块都在证明过程中扮演不可或缺的角色。悬停组件标签可查看详细说明。</p>
+  <div class="arch-grid">
+    <div class="arch-card ac-brain">
+      <div class="a-icon">🧠</div>
+      <h4 style="color:var(--accent2)">思考大脑</h4>
+      <p>基于 Claude 的证明规划与推理核心。负责高层策略选择、假设生成、自我反思、定理分解。</p>
+      <div class="a-how"><strong>如何帮助证明:</strong> 在证明开始前制定战略，失败后进行自我批判与策略转向，将困难问题分解为可攻克的子问题。</div>
+    </div>
+    <div class="arch-card ac-search">
+      <div class="a-icon">🔍</div>
+      <h4 style="color:var(--blue)">知识检索</h4>
+      <p>混合检索系统（BM25 + 语义嵌入 + LLM 重排），从 Mathlib 100,000+ 引理中精准匹配。</p>
+      <div class="a-how"><strong>如何帮助证明:</strong> 快速找到相关的已有引理和策略，避免重复发明轮子。语义搜索能发现名称不同但本质相关的引理。</div>
+    </div>
+    <div class="arch-card ac-tool">
+      <div class="a-icon">🔧</div>
+      <h4 style="color:var(--amber)">工具生态</h4>
+      <p>Lean REPL、SageMath CAS、证明骨架生成器等外部工具的统一调度与执行框架。</p>
+      <div class="a-how"><strong>如何帮助证明:</strong> 连续调用多种工具完成单一推理链：CAS 求极值 → REPL 验证 → 骨架填充。工具调用把纯推理扩展为行动。</div>
+    </div>
+    <div class="arch-card ac-verify">
+      <div class="a-icon">✓</div>
+      <h4 style="color:var(--green)">形式验证</h4>
+      <p>Lean 4 类型检查内核、完整性检查、sorry 检测。提供数学确定性的最终裁判。</p>
+      <div class="a-how"><strong>如何帮助证明:</strong> 每一步都被追溯到逻辑公理进行验证。杜绝幻觉 —— 如果数学不对，验证器绝不通过。</div>
+    </div>
+    <div class="arch-card ac-evolve">
+      <div class="a-icon">🔄</div>
+      <h4 style="color:var(--cyan)">自演化系统</h4>
+      <p>引理库积累、策略记忆、经验提取与上下文压缩。每次尝试都在强化系统。</p>
+      <div class="a-how"><strong>如何帮助证明:</strong> 失败证明中提取的引理在下一轮直接使用。随着解决的问题增多，系统的"数学直觉"指数增长。</div>
+    </div>
+    <div class="arch-card ac-memory">
+      <div class="a-icon">📋</div>
+      <h4 style="color:var(--red)">上下文记忆</h4>
+      <p>工作记忆、情景记忆、错误摘要。在有限窗口内维持长程推理的连贯性。</p>
+      <div class="a-how"><strong>如何帮助证明:</strong> 智能压缩数十轮尝试的历史，提取关键模式，让智能体在长达数百步的推理中保持上下文连贯。</div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ═══════════ CORE CAPABILITIES ═══════════ -->
+<section class="cap-section"><div class="wrap">
+  <p class="sec-eyebrow">核心能力</p>
+  <h2 class="sec-title">超越常规的智能体能力</h2>
+  <p class="sec-desc">形式化证明要求智能体具备远超普通对话的能力边界。以下是四大核心能力如何在证明中发挥作用。</p>
+
+  <!-- CAP 1: 高并发多 Rollout -->
+  <div class="cap-block" data-cap="rollout" style="border-color:rgba(124,108,240,0.15)">
+    <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent)"></div>
+    <div class="cap-header">
+      <div class="cap-num">能力 01</div>
+      <div class="cap-title">高并发多 Rollout 推理</div>
+    </div>
+    <div class="cap-desc">同时展开数十条不同的证明路径，每条路径使用不同的策略和参数。共享引理库确保所有路径受益于彼此的发现。这不是简单的并行 —— 而是一个涌现的集体智能。</div>
+    <div class="rollout-vis" id="rolloutVis">
+      <div class="rollout-cell r-fail"><span class="r-id">#01</span> nlinarith<br><span class="r-status">✗ 策略失败</span></div>
+      <div class="rollout-cell r-fail"><span class="r-id">#02</span> polyrith<br><span class="r-status">✗ 超时</span></div>
+      <div class="rollout-cell r-pass"><span class="r-id">#03</span> CAS+nlinarith<br><span class="r-status">✓ 通过!</span></div>
+      <div class="rollout-cell r-fail"><span class="r-id">#04</span> ring_nf<br><span class="r-status">✗ 类型不匹配</span></div>
+      <div class="rollout-cell r-lemma"><span class="r-id">#05</span> positivity<br><span class="r-status">◆ 引理提取</span></div>
+      <div class="rollout-cell r-fail"><span class="r-id">#06</span> norm_num<br><span class="r-status">✗ 策略失败</span></div>
+      <div class="rollout-cell r-fail"><span class="r-id">#07</span> simp+linarith<br><span class="r-status">✗ 策略失败</span></div>
+      <div class="rollout-cell r-lemma"><span class="r-id">#08</span> field_simp<br><span class="r-status">◆ 引理提取</span></div>
+    </div>
+  </div>
+
+  <!-- CAP 2: 连续工具调用 -->
+  <div class="cap-block" data-cap="toolchain" style="border-color:rgba(251,191,36,0.15)">
+    <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--amber)"></div>
+    <div class="cap-header">
+      <div class="cap-num">能力 02</div>
+      <div class="cap-title">工具连续调用链</div>
+    </div>
+    <div class="cap-desc">智能体不只是"调用一次工具" —— 它构建完整的工具调用链，前一个工具的输出自动成为下一个工具的输入。每个工具扮演推理链中不可替代的一环。</div>
+    <div class="tool-chain" id="toolChain">
+      <div class="tool-node tn-brain"><span class="tn-label">思考</span>证明规划</div>
+      <span class="tool-arrow">→</span>
+      <div class="tool-node tn-search"><span class="tn-label">检索</span>Mathlib 搜索</div>
+      <span class="tool-arrow">→</span>
+      <div class="tool-node tn-cas"><span class="tn-label">CAS</span>SageMath 求解</div>
+      <span class="tool-arrow">→</span>
+      <div class="tool-node tn-lean"><span class="tn-label">验证</span>Lean REPL</div>
+      <span class="tool-arrow">→</span>
+      <div class="tool-node tn-mem"><span class="tn-label">记忆</span>引理入库</div>
+    </div>
+    <div class="t-insight" style="margin-top:1rem">在一个证明中，智能体可能连续调用 50+ 次工具。每次调用都基于前一次的结果动态决定 —— 这是真正的 agentic 推理。</div>
+  </div>
+
+  <!-- CAP 3: 长程任务推理 -->
+  <div class="cap-block" data-cap="longrange" style="border-color:rgba(96,165,250,0.15)">
+    <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--blue)"></div>
+    <div class="cap-header">
+      <div class="cap-num">能力 03</div>
+      <div class="cap-title">长程任务推理与执行</div>
+    </div>
+    <div class="cap-desc">形式化证明不是一步完成的 —— 它可能需要数百步推理、数十轮尝试、跨越多个策略层级。智能体通过上下文压缩和工作记忆，在极长的推理链中保持连贯。</div>
+    <div class="evo-timeline" id="longTimeline">
+      <div class="evo-step"><h5 style="color:var(--accent2)">第 1 轮 · 直接攻击</h5><p>16 路并行尝试直接策略。全部失败，但积累 3 条引理和 1 份错误模式摘要。</p></div>
+      <div class="evo-step"><h5 style="color:var(--green)">第 2 轮 · 策略升级后并行搜索</h5><p>升级到中量模式。反思引擎识别出结构性弱点。16 路新尝试，+2 引理入库。</p></div>
+      <div class="evo-step"><h5 style="color:var(--amber)">第 3 轮 · 定理分解 + CAS 辅助</h5><p>将问题拆为两个子目标。调用 CAS 获取极值点信息。聚焦 8 路攻击关键子目标。</p></div>
+      <div class="evo-step"><h5 style="color:var(--cyan)">第 4 轮 · 突破与组装</h5><p>第 3 条路径通过 Lean 内核！组装子证明，最终验证通过。全程共 42 次尝试。</p></div>
+    </div>
+  </div>
+
+  <!-- CAP 4: 自演化 -->
+  <div class="cap-block" data-cap="selfevolve" style="border-color:rgba(34,211,238,0.15)">
+    <div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--cyan))"></div>
+    <div class="cap-header">
+      <div class="cap-num">能力 04</div>
+      <div class="cap-title">自演化 —— 越用越强</div>
+    </div>
+    <div class="cap-desc">这不是静态工具。每次证明尝试 —— 无论成功还是失败 —— 都会生成训练信号。智能体随时间积累知识、策略和数学直觉，实现持续进化。</div>
+  </div>
+</div></section>
+
+<!-- ═══════════ EVOLUTION ═══════════ -->
+<section class="evo-section"><div class="wrap">
+  <p class="sec-eyebrow">持续进化</p>
+  <h2 class="sec-title">每道题都让系统更强</h2>
+  <p class="sec-desc">智能体不断积累知识、优化策略、提升数学直觉。以下是四种自演化机制。</p>
   <div class="evo-grid">
-    <div class="evo-card evo-a"><div class="evo-num">01</div><h4 style="color:var(--accent2)">Lemma Bank compounds</h4><p>Proved sub-lemmas are stored and reused across problems. A lemma from Problem A becomes the key to solving Problem B — mathematical knowledge transfers and accumulates.</p></div>
-    <div class="evo-card evo-b"><div class="evo-num">02</div><h4 style="color:var(--green)">Winning strategies remembered</h4><p>"Cyclic inequality → decompose + nlinarith with sq_nonneg" is remembered. The next cyclic inequality starts from this winning playbook instead of from scratch.</p></div>
-    <div class="evo-card evo-c"><div class="evo-num">03</div><h4 style="color:var(--amber)">Self-improving training data</h4><p>Every (theorem, proof, verified?) triple becomes fine-tuning data. Success vs failure pairs form preference data. The underlying model continuously improves from its own experience.</p></div>
-    <div class="evo-card evo-d"><div class="evo-num">04</div><h4 style="color:var(--blue)">Smarter resource allocation</h4><p>The system learns which problems need Light mode (minutes) vs Heavy mode (hours). Easy problems get minimal compute. Hard problems get proportionally more — like a skilled mathematician managing their time.</p></div>
+    <div class="evo-card evo-a">
+      <div class="evo-num">01</div>
+      <h4 style="color:var(--accent2)">引理库复利增长</h4>
+      <p>已证子引理被存储并跨问题复用。问题 A 的引理成为解决问题 B 的关键 —— 数学知识在迁移中积累。</p>
+      <div class="evo-how">升级方式: 每次证明后自动提取中间引理，经 Lean 内核验证后入库。引理库按数学主题索引，支持语义检索。</div>
+    </div>
+    <div class="evo-card evo-b">
+      <div class="evo-num">02</div>
+      <h4 style="color:var(--green)">胜利策略记忆</h4>
+      <p>"轮换不等式 → 分解 + nlinarith + sq_nonneg"被记住。下一道轮换不等式直接从这条胜利剧本开始。</p>
+      <div class="evo-how">升级方式: 成功证明的策略链被索引到问题类型。匹配到相似问题时，直接加载历史最优策略作为起点。</div>
+    </div>
+    <div class="evo-card evo-c">
+      <div class="evo-num">03</div>
+      <h4 style="color:var(--amber)">自生成训练数据</h4>
+      <p>每个 (定理, 证明, 是否验证通过) 三元组都成为微调数据。成功/失败对构成偏好数据。底层模型从自身经验中持续提升。</p>
+      <div class="evo-how">升级方式: DPO/RLHF 训练循环。验证通过的证明为正样本，失败的为负样本，形成自我强化的飞轮效应。</div>
+    </div>
+    <div class="evo-card evo-d">
+      <div class="evo-num">04</div>
+      <h4 style="color:var(--cyan)">智能资源调度</h4>
+      <p>系统学习哪些问题需要轻量模式（分钟级）、哪些需要重量模式（小时级）。简单问题最少计算，困难问题按比例获得更多。</p>
+      <div class="evo-how">升级方式: 置信度估计器根据历史数据预测问题难度，动态分配并行路径数量和计算预算，实现资源最优配置。</div>
+    </div>
   </div>
-  <div style="margin-top:3rem"><p style="font-family:var(--mono);font-size:.6rem;color:var(--text3);letter-spacing:.2em;margin-bottom:1rem">BENCHMARK PERFORMANCE TARGETS</p><div class="bench-chart" id="bc"></div></div>
+
+  <div style="margin-top:3.5rem">
+    <p style="font-family:var(--mono);font-size:0.55rem;color:var(--text3);letter-spacing:0.25em;margin-bottom:1.2rem">基准测试性能目标</p>
+    <div class="bench-chart" id="benchChart"></div>
+  </div>
 </div></section>
-<footer><div class="f-logo">AI4Math</div><p>Formal Proof Agent · Powered by Claude · Verified by Lean 4</p></footer>
+
+<!-- ═══════════ FOOTER ═══════════ -->
+<footer>
+  <div class="f-logo">AI4Math</div>
+  <p>形式化证明智能体 · 由 Claude 驱动 · 由 Lean 4 验证</p>
+</footer>
+
 <script>
-function toggle(h){const d=h.parentElement.querySelector('.phase-detail');if(d)d.classList.toggle('show')}
-const obs=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('vis');const i=e.target.dataset.i;if(i==='5')sc('bank1',['h₁: a·b ≤ (a+b)²/4','h₂: a²b upper bound','h₃ₐ: b²c partial bound']);if(i==='6')sc('bank2',['h_schur_variant','h_cyclic_partial']);if(i==='13'){setTimeout(()=>{const s=document.getElementById('sc');s.style.opacity='1';s.style.transform='scale(1)'},600);setTimeout(()=>document.getElementById('rs').style.opacity='1',1200)}}})},{threshold:.2});
-document.querySelectorAll('.phase,.escalation-card').forEach(e=>obs.observe(e));
-function sc(id,ns){const el=document.getElementById(id);if(!el||el.children.length)return;ns.forEach((n,i)=>{const c=document.createElement('span');c.className='lemma-chip';c.textContent=n;el.appendChild(c);setTimeout(()=>c.classList.add('in'),i*200+100)})}
-const bo=new IntersectionObserver(es=>{if(es[0].isIntersecting){bb();bo.disconnect()}},{threshold:.3});
-bo.observe(document.getElementById('bc'));
-function bb(){const d=[{n:'miniF2F',v:99,c:'var(--green)'},{n:'Putnam',v:88,c:'var(--accent2)'},{n:'FATE-M',v:85,c:'var(--blue)'},{n:'FATE-H',v:72,c:'var(--amber)'},{n:'FATE-X',v:33,c:'var(--red)'},{n:'ProofNet',v:78,c:'var(--blue)'}],c=document.getElementById('bc');d.forEach((x,i)=>{const b=document.createElement('div');b.className='bench-bar';b.style.height='0';b.style.background=x.c;b.innerHTML='<span class="bb-val" style="color:'+x.c+'">'+x.v+'%</span><span class="bb-name">'+x.n+'</span>';c.appendChild(b);setTimeout(()=>b.style.height=x.v+'%',i*150+200)})}
+// ═══════════ PROOF THEATER ═══════════
+const TOTAL_STEPS = 14;
+let currentStep = 0;
+
+function initTheater() {
+  const progress = document.getElementById('theaterProgress');
+  for (let i = 0; i < TOTAL_STEPS; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'dot';
+    progress.appendChild(dot);
+  }
+  showStep(0);
+}
+
+function showStep(idx) {
+  currentStep = idx;
+  const steps = document.querySelectorAll('.t-step');
+  const dots = document.querySelectorAll('.theater-progress .dot');
+  const scroll = document.getElementById('theaterScroll');
+  const body = document.getElementById('theaterBody');
+
+  steps.forEach((s, i) => {
+    s.classList.remove('active', 'past');
+    if (i < idx) s.classList.add('active', 'past');
+    else if (i === idx) s.classList.add('active');
+  });
+
+  dots.forEach((d, i) => {
+    d.classList.remove('done', 'now');
+    if (i < idx) d.classList.add('done');
+    else if (i === idx) d.classList.add('now');
+  });
+
+  // Scroll to current step
+  const activeStep = steps[idx];
+  if (activeStep) {
+    const stepTop = activeStep.offsetTop;
+    const bodyH = body.offsetHeight;
+    const offset = Math.max(0, stepTop - 40);
+    scroll.style.transform = `translateY(-${offset}px)`;
+  }
+
+  document.getElementById('prevBtn').disabled = idx === 0;
+  document.getElementById('nextBtn').disabled = idx === TOTAL_STEPS - 1;
+
+  // Trigger animations for specific steps
+  if (idx === 5) animateLemmas('bank1', ['h₁: a·b ≤ (a+b)²/4', 'h₂: a²b 上界', 'h₃ₐ: b²c 偏界']);
+  if (idx === 6) animateLemmas('bank2', ['h_schur_变体', 'h_轮换偏界']);
+  if (idx === TOTAL_STEPS - 1) {
+    setTimeout(() => {
+      const sc = document.getElementById('successCard');
+      sc.style.opacity = '1'; sc.style.transform = 'scale(1)';
+    }, 600);
+    setTimeout(() => document.getElementById('resultStats').style.opacity = '1', 1200);
+  }
+}
+
+function theaterNext() { if (currentStep < TOTAL_STEPS - 1) showStep(currentStep + 1); }
+function theaterPrev() { if (currentStep > 0) showStep(currentStep - 1); }
+
+function animateLemmas(id, names) {
+  const el = document.getElementById(id);
+  if (!el || el.children.length) return;
+  names.forEach((n, i) => {
+    const chip = document.createElement('span');
+    chip.className = 'lemma-chip';
+    chip.textContent = n;
+    el.appendChild(chip);
+    setTimeout(() => chip.classList.add('in'), i * 200 + 100);
+  });
+}
+
+// ═══════════ SCROLL ANIMATIONS ═══════════
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) e.target.classList.add('vis');
+  });
+}, { threshold: 0.15 });
+
+document.querySelectorAll('.arch-card, .cap-block').forEach(el => observer.observe(el));
+
+// Rollout cells animation
+const rolloutObs = new IntersectionObserver(entries => {
+  if (entries[0].isIntersecting) {
+    document.querySelectorAll('.rollout-cell').forEach((c, i) => {
+      setTimeout(() => c.classList.add('in'), i * 120);
+    });
+    rolloutObs.disconnect();
+  }
+}, { threshold: 0.3 });
+const rolloutEl = document.getElementById('rolloutVis');
+if (rolloutEl) rolloutObs.observe(rolloutEl);
+
+// Tool chain animation
+const chainObs = new IntersectionObserver(entries => {
+  if (entries[0].isIntersecting) {
+    document.querySelectorAll('.tool-node, .tool-arrow').forEach((c, i) => {
+      setTimeout(() => c.classList.add('in'), i * 180);
+    });
+    chainObs.disconnect();
+  }
+}, { threshold: 0.3 });
+const chainEl = document.getElementById('toolChain');
+if (chainEl) chainObs.observe(chainEl);
+
+// Long timeline animation
+const timeObs = new IntersectionObserver(entries => {
+  if (entries[0].isIntersecting) {
+    document.querySelectorAll('#longTimeline .evo-step').forEach((s, i) => {
+      setTimeout(() => s.classList.add('in'), i * 300);
+    });
+    timeObs.disconnect();
+  }
+}, { threshold: 0.2 });
+const timeEl = document.getElementById('longTimeline');
+if (timeEl) timeObs.observe(timeEl);
+
+// ═══════════ BENCHMARK CHART ═══════════
+const benchObs = new IntersectionObserver(entries => {
+  if (entries[0].isIntersecting) { buildBench(); benchObs.disconnect(); }
+}, { threshold: 0.3 });
+benchObs.observe(document.getElementById('benchChart'));
+
+function buildBench() {
+  const data = [
+    { n: 'miniF2F', v: 99, c: 'var(--green)' },
+    { n: 'Putnam', v: 88, c: 'var(--accent2)' },
+    { n: 'FATE-M', v: 85, c: 'var(--blue)' },
+    { n: 'FATE-H', v: 72, c: 'var(--amber)' },
+    { n: 'FATE-X', v: 33, c: 'var(--red)' },
+    { n: 'ProofNet', v: 78, c: 'var(--blue)' }
+  ];
+  const chart = document.getElementById('benchChart');
+  data.forEach((x, i) => {
+    const bar = document.createElement('div');
+    bar.className = 'bench-bar';
+    bar.style.height = '0';
+    bar.style.background = x.c;
+    bar.innerHTML = `<span class="bb-val" style="color:${x.c}">${x.v}%</span><span class="bb-name">${x.n}</span>`;
+    chart.appendChild(bar);
+    setTimeout(() => bar.style.height = x.v + '%', i * 150 + 200);
+  });
+}
+
+// ═══════════ KEYBOARD NAV ═══════════
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') theaterNext();
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') theaterPrev();
+});
+
+// Init
+initTheater();
 </script>
 </body>
 </html>
