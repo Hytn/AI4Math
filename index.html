@@ -1829,6 +1829,78 @@ initTheater();
 var theaterBox = document.getElementById('theater');
 if (theaterBox) theaterAutoObs.observe(theaterBox);
 
+// ═══════════ SCROLL ANIMATIONS ═══════════
+var scrollObs = new IntersectionObserver(function(entries) {
+  entries.forEach(function(e) {
+    if (e.isIntersecting) e.target.classList.add('vis');
+  });
+}, { threshold: 0.15 });
+
+document.querySelectorAll('.arch-card, .cap-block').forEach(function(el) { scrollObs.observe(el); });
+
+// Rollout cells animation
+var rolloutObs = new IntersectionObserver(function(entries) {
+  if (entries[0].isIntersecting) {
+    document.querySelectorAll('.rollout-cell').forEach(function(c, i) {
+      setTimeout(function() { c.classList.add('in'); }, i * 120);
+    });
+    rolloutObs.disconnect();
+  }
+}, { threshold: 0.3 });
+var rolloutEl = document.getElementById('rolloutVis');
+if (rolloutEl) rolloutObs.observe(rolloutEl);
+
+// Tool chain animation
+var chainObs = new IntersectionObserver(function(entries) {
+  if (entries[0].isIntersecting) {
+    document.querySelectorAll('.tool-node, .tool-arrow').forEach(function(c, i) {
+      setTimeout(function() { c.classList.add('in'); }, i * 180);
+    });
+    chainObs.disconnect();
+  }
+}, { threshold: 0.3 });
+var chainEl = document.getElementById('toolChain');
+if (chainEl) chainObs.observe(chainEl);
+
+// Long timeline animation
+var timeObs = new IntersectionObserver(function(entries) {
+  if (entries[0].isIntersecting) {
+    document.querySelectorAll('#longTimeline .evo-step').forEach(function(s, i) {
+      setTimeout(function() { s.classList.add('in'); }, i * 300);
+    });
+    timeObs.disconnect();
+  }
+}, { threshold: 0.2 });
+var timeEl = document.getElementById('longTimeline');
+if (timeEl) timeObs.observe(timeEl);
+
+// ═══════════ BENCHMARK CHART ═══════════
+var benchObs = new IntersectionObserver(function(entries) {
+  if (entries[0].isIntersecting) { buildBench(); benchObs.disconnect(); }
+}, { threshold: 0.3 });
+benchObs.observe(document.getElementById('benchChart'));
+
+function buildBench() {
+  var data = [
+    { n: 'miniF2F', v: 99, c: 'var(--green)' },
+    { n: 'Putnam', v: 88, c: 'var(--accent2)' },
+    { n: 'FATE-M', v: 85, c: 'var(--blue)' },
+    { n: 'FATE-H', v: 72, c: 'var(--amber)' },
+    { n: 'FATE-X', v: 33, c: 'var(--red)' },
+    { n: 'ProofNet', v: 78, c: 'var(--blue)' }
+  ];
+  var chart = document.getElementById('benchChart');
+  data.forEach(function(x, i) {
+    var bar = document.createElement('div');
+    bar.className = 'bench-bar';
+    bar.style.height = '0';
+    bar.style.background = x.c;
+    bar.innerHTML = '<span class="bb-val" style="color:' + x.c + '">' + x.v + '%</span><span class="bb-name">' + x.n + '</span>';
+    chart.appendChild(bar);
+    setTimeout(function() { bar.style.height = x.v + '%'; }, i * 150 + 200);
+  });
+}
+
 // ═══════════ DATA FLOW DIAGRAM ═══════════
 (function() {
   const canvas = document.getElementById('flowCanvas');
