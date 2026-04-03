@@ -1,32 +1,10 @@
-# Python
 __pycache__/
 *.pyc
-*.pyo
-.venv/
-venv/
-*.egg-info/
-
-# Results & traces (不提交评测结果，但保留目录结构)
-results/
-!results/.gitkeep
-
-# Config with secrets
+.env
 config/local.yaml
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-
-# Lean build artifacts
-lean-project/build/
-lean-project/.lake/
-
-# Node (if frontend uses npm)
-web/node_modules/
-web/dist/
-
-# Docker
-*.tar
+results/traces/*.json
+results/evals/*.json
+results/rl_data/*.jsonl
+*.egg-info/
+dist/
+data/

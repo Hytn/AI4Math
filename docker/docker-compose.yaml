@@ -1,0 +1,22 @@
+version: "3.8"
+services:
+  lean:
+    build:
+      context: .
+      dockerfile: Dockerfile.lean
+    container_name: ai4math-lean
+    volumes:
+      - lean-cache:/workspace/lean-project/.lake
+    restart: unless-stopped
+  agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+    ports:
+      - "8000:8000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    depends_on:
+      - lean
+volumes:
+  lean-cache:

@@ -1,0 +1,16 @@
+# PutnamBench evaluation config
+agent:
+  strategy:
+    default: "adaptive"
+    max_light_rounds: 2
+    max_medium_rounds: 6
+prover:
+  pipeline:
+    samples_per_round: 16
+    max_samples: 256
+    temperature: 0.9
+  conjecture:
+    enabled: true
+benchmark:
+  name: "putnambench"
+  split: "test"

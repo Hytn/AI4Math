@@ -1,49 +1,66 @@
-# AI4Math Demo 配置
-# 复制为 config/local.yaml 并按需修改
+# AI4Math — Default Configuration
 
-# ── LLM 配置 ────────────────────────────────────────
-llm:
-  provider: "anthropic"          # anthropic / openai / mock
-  model: "claude-sonnet-4-20250514"
-  api_key: ""                    # 留空则从环境变量读取
-  # OpenAI 兼容接口 (如 vLLM / ollama):
-  # provider: "openai"
-  # model: "deepseek-prover-v2"
-  # base_url: "http://localhost:8000/v1"
+agent:
+  brain:
+    provider: "anthropic"
+    model: "claude-sonnet-4-20250514"
+    api_key: ""
+    max_tokens: 8192
+    extended_thinking: false
+  memory:
+    working_memory_max_items: 20
+    episodic_memory_enabled: false
+  context:
+    max_context_tokens: 100000
+    compression_threshold: 0.7
+  strategy:
+    default: "adaptive"
+    max_light_rounds: 2
+    max_medium_rounds: 4
 
-# ── Lean 环境 ───────────────────────────────────────
-lean:
-  mode: "docker"                 # docker / local
-  docker_image: "ai4math-lean"
-  docker_container: ""           # 持久容器名 (可选，加速编译)
-  lean_project_dir: "/workspace/lean-project"
-  local_project_dir: ""          # 本地模式的 lake 项目路径
-  timeout_seconds: 120
+prover:
+  pipeline:
+    samples_per_round: 8
+    max_rounds: 4
+    max_workers: 4
+    temperature: 0.9
+    max_samples: 128
+  sketch:
+    enabled: true
+    max_hypotheses: 3
+  premise:
+    mode: "none"
+    top_k: 10
+  codegen:
+    auto_import: true
+    scaffold_enabled: true
+  verifier:
+    mode: "docker"
+    docker_image: "ai4math-lean"
+    docker_container: ""
+    lean_project_dir: "/workspace/lean-project"
+    timeout_seconds: 120
+  repair:
+    enabled: true
+    max_cycles: 3
+  lemma_bank:
+    enabled: true
+    verify_extracted: false
+    max_banked: 10
+  conjecture:
+    enabled: false
+  decompose:
+    enabled: true
+    max_depth: 3
 
-# ── 前提检索 ────────────────────────────────────────
-retriever:
-  mode: "none"                   # none / bm25 / embedding
-  index_path: ""                 # BM25/embedding 索引路径
-
-# ── 调度器 ──────────────────────────────────────────
-orchestrator:
-  max_attempts: 10
-  temperature: 0.7
-  temperature_escalation: true
-  max_error_history: 3
-  top_k_premises: 10
-
-# ── 基准数据 ────────────────────────────────────────
 benchmark:
-  name: "builtin"                # builtin / miniF2F / json
-  path: ""                       # miniF2F 仓库路径或 JSON 路径
+  name: "builtin"
+  path: ""
   split: "test"
 
-# ── 输出 ────────────────────────────────────────────
 output:
   dir: "results"
 
-# ── 服务器 ──────────────────────────────────────────
 server:
   host: "0.0.0.0"
   port: 8000
