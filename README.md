@@ -63,4 +63,6 @@ Deploy to GitHub Pages: Settings → Pages → Source: `main`, folder: `/web/doc
 3. **Interactive REPL**: Tactic-by-tactic Lean interaction, not just whole-file compilation
 4. **Strategy escalation**: Light (1hr) → Medium (hours) → Heavy (days) with automatic upgrade
 5. **Lemma banking**: Failed proofs still produce reusable sub-lemmas for future attempts
-6. **63 source files**: Each file = one responsibility. Directory structure = architecture diagram.
+6. **152 source files, 17,600+ lines**: Each file = one responsibility. Directory structure = architecture diagram.
+7. **99/99 verification tests**: All components tested — engine, search, agent, prover, pipeline.
+8. **347 unit tests**: Full regression suite with de Bruijn property tests.
