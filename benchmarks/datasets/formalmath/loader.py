@@ -72,9 +72,14 @@ def load(repo_path: str, split: str = "test") -> list[BenchmarkProblem]:
             for m in _THEOREM_RE.finditer(content):
                 name = m.group(2)
                 full_text = m.group(0).strip()
-                stmt = re.split(r'\s*:=\s*by\b', full_text, maxsplit=1)[0].strip()
-                if not stmt:
-                    stmt = re.split(r'\s*:=\s*', full_text, maxsplit=1)[0].strip()
+                stmt = re.split(r'\s*:=\s*by\b', full_text, maxsplit=1)
+                stmt2 = re.split(r'\s*:=\s*', full_text, maxsplit=1)
+                if len(stmt) > 1:
+                    stmt = stmt[0].strip()
+                elif len(stmt2) > 1:
+                    stmt = stmt2[0].strip()
+                else:
+                    stmt = full_text.strip()
                 problems.append(BenchmarkProblem(
                     problem_id=f"formalmath_{name}",
                     name=name,

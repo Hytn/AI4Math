@@ -33,9 +33,14 @@ def load(repo_path: str, split: str = "test") -> list[BenchmarkProblem]:
         for m in _THEOREM_RE.finditer(content):
             name = m.group(2)
             full_text = m.group(0).strip()
-            stmt = re.split(r'\s*:=\s*by\b', full_text, maxsplit=1)[0].strip()
-            if not stmt:
-                stmt = re.split(r'\s*:=\s*', full_text, maxsplit=1)[0].strip()
+            parts_by = re.split(r'\s*:=\s*by\b', full_text, maxsplit=1)
+            parts_eq = re.split(r'\s*:=\s*', full_text, maxsplit=1)
+            if len(parts_by) > 1:
+                stmt = parts_by[0].strip()
+            elif len(parts_eq) > 1:
+                stmt = parts_eq[0].strip()
+            else:
+                stmt = full_text.strip()
             problems.append(BenchmarkProblem(
                 problem_id=f"proofnet_{name}",
                 name=name,

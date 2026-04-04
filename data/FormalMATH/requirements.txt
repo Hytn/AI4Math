@@ -1,0 +1,7 @@
+tqdm==4.66.5
+torch==2.5.1
+transformers==4.51.3
+vllm==0.7.3
+pexpect==4.9.0
+datasets==2.17.1
+jsonlines==4.0.0

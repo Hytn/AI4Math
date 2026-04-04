@@ -5,6 +5,9 @@
   minif2f      — miniF2F (488 题, yangky11/miniF2F-lean4)
   putnambench  — PutnamBench (672 题, trishullab/PutnamBench)
   proofnet     — ProofNet (371 题, rahul3613/ProofNet-lean4)
+  fate-m       — FATE-M (150 题, 本科代数, frenzymath/FATE-M)
+  fate-h       — FATE-H (100 题, 研究生级代数, frenzymath/FATE-H)
+  fate-x       — FATE-X (100 题, 博士级代数, frenzymath/FATE-X)
   formalmath   — FormalMATH (5560 题, Sphere-AI-Lab/FormalMATH-Bench)
 """
 from __future__ import annotations
@@ -19,6 +22,9 @@ _DEFAULT_PATHS = {
     "minif2f":     "data/miniF2F",
     "putnambench": "data/PutnamBench",
     "proofnet":    "data/ProofNet",
+    "fate-m":      "data/FATE-M",
+    "fate-h":      "data/FATE-H",
+    "fate-x":      "data/FATE-X",
     "formalmath":  "data/FormalMATH",
 }
 
@@ -73,6 +79,18 @@ def load_benchmark(benchmark: str, split: str = "test",
             logger.error(
                 f"FormalMATH: 未找到数据。请先下载:\n"
                 f"  git clone https://github.com/Sphere-AI-Lab/FormalMATH-Bench {data_path}\n"
+                f"或指定 --path 参数。")
+    elif b in ("fatem", "fateh", "fatex"):
+        from benchmarks.datasets.fate.loader import load
+        variant_map = {"fatem": "fate-m", "fateh": "fate-h", "fatex": "fate-x"}
+        key = variant_map[b]
+        data_path = path or _DEFAULT_PATHS[key]
+        problems = load(data_path, split, variant=key.split("-")[1])
+        if not problems:
+            repo = {"fatem": "FATE-M", "fateh": "FATE-H", "fatex": "FATE-X"}[b]
+            logger.error(
+                f"{repo}: 未找到数据。请先下载:\n"
+                f"  git clone https://github.com/frenzymath/{repo} {data_path}\n"
                 f"或指定 --path 参数。")
     else:
         available = list(_DEFAULT_PATHS.keys())

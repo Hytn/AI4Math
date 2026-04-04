@@ -64,8 +64,25 @@ def load(repo_path: str, split: str = "test") -> list[BenchmarkProblem]:
         lean_file = path / candidate
         if lean_file.exists():
             problems = _parse_lean_file(lean_file, split)
-            logger.info(f"miniF2F: 从 {lean_file} 加载了 {len(problems)} 道题")
-            return problems
+            if problems:
+                logger.info(f"miniF2F: 从 {lean_file} 加载了 {len(problems)} 道题")
+                return problems
+
+    # Per-file structure: MiniF2F/Test/*.lean or MiniF2F/Valid/*.lean
+    split_dir_map = {
+        "test": ["MiniF2F/Test", "Test", "test"],
+        "valid": ["MiniF2F/Valid", "Valid", "valid"],
+    }
+    dir_candidates = split_dir_map.get(split, split_dir_map["test"])
+    for dir_name in dir_candidates:
+        split_dir = path / dir_name
+        if split_dir.is_dir():
+            all_problems = []
+            for lean_file in sorted(split_dir.rglob("*.lean")):
+                all_problems.extend(_parse_lean_file(lean_file, split))
+            if all_problems:
+                logger.info(f"miniF2F: 从 {split_dir} 加载了 {len(all_problems)} 道题")
+                return all_problems
 
     # Fallback: 扫描所有 .lean 文件
     all_problems = []
