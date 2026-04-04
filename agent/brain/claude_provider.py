@@ -1,9 +1,14 @@
 """agent/brain/claude_provider.py — Claude 专用 Provider (支持 Tool Use + Extended Thinking)"""
 from __future__ import annotations
-import os, time, logging
+import os, time, logging, random
 from agent.brain.llm_provider import LLMProvider, LLMResponse
 
 logger = logging.getLogger(__name__)
+
+_MAX_RETRIES = 3
+_INITIAL_BACKOFF_S = 1.0
+_MAX_BACKOFF_S = 30.0
+
 
 class ClaudeProvider(LLMProvider):
     def __init__(self, model: str = "claude-sonnet-4-20250514", api_key: str = "",
@@ -11,33 +16,61 @@ class ClaudeProvider(LLMProvider):
         self._model = model
         self._api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         self._extended_thinking = extended_thinking
+        self._client = None  # lazy singleton
+
+    def _get_client(self):
+        """Lazy singleton client — reuses connection pool."""
+        if self._client is None:
+            import anthropic
+            self._client = anthropic.Anthropic(api_key=self._api_key)
+        return self._client
 
     @property
     def model_name(self) -> str:
         return self._model
 
-    def generate(self, system: str, user: str, temperature: float = 0.7,
+    def generate(self, system: str = "", user: str = "", temperature: float = 0.7,
                  tools: list = None, max_tokens: int = 4096) -> LLMResponse:
-        import anthropic
-        client = anthropic.Anthropic(api_key=self._api_key)
-        start = time.time()
+        client = self._get_client()
         kwargs = dict(model=self._model, max_tokens=max_tokens, temperature=temperature,
                       system=system, messages=[{"role": "user", "content": user}])
         if tools:
             kwargs["tools"] = tools
-        response = client.messages.create(**kwargs)
-        latency = int((time.time() - start) * 1000)
-        content = ""
-        tool_calls = []
-        for block in response.content:
-            if block.type == "text":
-                content += block.text
-            elif block.type == "tool_use":
-                tool_calls.append({"name": block.name, "input": block.input, "id": block.id})
-        return LLMResponse(content=content, model=self._model,
-                           tokens_in=response.usage.input_tokens,
-                           tokens_out=response.usage.output_tokens,
-                           latency_ms=latency, tool_calls=tool_calls)
+
+        last_error = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                start = time.time()
+                response = client.messages.create(**kwargs)
+                latency = int((time.time() - start) * 1000)
+
+                content = ""
+                tool_calls = []
+                for block in response.content:
+                    if block.type == "text":
+                        content += block.text
+                    elif block.type == "tool_use":
+                        tool_calls.append({"name": block.name, "input": block.input, "id": block.id})
+                return LLMResponse(content=content, model=self._model,
+                                   tokens_in=response.usage.input_tokens,
+                                   tokens_out=response.usage.output_tokens,
+                                   latency_ms=latency, tool_calls=tool_calls)
+            except Exception as e:
+                last_error = e
+                if attempt < _MAX_RETRIES:
+                    # Exponential backoff with jitter
+                    backoff = min(_INITIAL_BACKOFF_S * (2 ** attempt), _MAX_BACKOFF_S)
+                    jitter = random.uniform(0, backoff * 0.3)
+                    wait = backoff + jitter
+                    logger.warning(
+                        f"Claude API call failed (attempt {attempt + 1}/{_MAX_RETRIES + 1}): "
+                        f"{e}. Retrying in {wait:.1f}s...")
+                    time.sleep(wait)
+                else:
+                    logger.error(f"Claude API call failed after {_MAX_RETRIES + 1} attempts: {e}")
+
+        raise last_error
+
 
 class MockProvider(LLMProvider):
     @property

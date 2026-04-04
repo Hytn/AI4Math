@@ -1,19 +1,15 @@
 """Persistent proof state — O(1) fork, O(1) backtrack."""
 from __future__ import annotations
-import threading
+import itertools
 from typing import Optional
 from pyrsistent import pvector
 from engine.core import Expr, MetaId, Name, LocalContext, FVarId, Environment
 from .meta_ctx import MetaContext
 from .goal import Goal
 
-_counter_lock = threading.Lock()
-_counter = 0
-def _next_id():
-    global _counter
-    with _counter_lock:
-        _counter += 1
-        return _counter
+# Thread-safe atomic counter (itertools.count is implemented in C and is
+# effectively atomic for single __next__ calls in CPython)
+_id_counter = itertools.count(1)
 
 class ProofState:
     """Immutable proof state. Clone is O(1). Fork is O(1)."""
@@ -23,7 +19,7 @@ class ProofState:
         object.__setattr__(self, 'env', env)
         object.__setattr__(self, 'meta_ctx', meta_ctx)
         object.__setattr__(self, 'focus', focus)
-        object.__setattr__(self, 'id', _next_id())
+        object.__setattr__(self, 'id', next(_id_counter))
         object.__setattr__(self, 'parent_id', parent_id)
         object.__setattr__(self, '_next_fvar', next_fvar)
 

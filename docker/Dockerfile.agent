@@ -1,0 +1,18 @@
+# AI4Math — Python Agent
+#
+# 构建：docker build -t ai4math-agent -f docker/Dockerfile.agent .
+# 用法：docker run --rm -e ANTHROPIC_API_KEY=sk-... ai4math-agent python run_single.py --builtin nat_add_comm
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# 安装依赖
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 复制项目代码
+COPY . .
+
+# 默认命令：运行 smoke test
+CMD ["python", "-m", "pytest", "tests/", "-q"]

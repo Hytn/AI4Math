@@ -22,6 +22,7 @@ class LeanAutomation:
                 if result and result.get("success"):
                     logger.info(f"  Auto-closed with: {tactic}")
                     return tactic
-            except Exception:
+            except (OSError, TimeoutError, RuntimeError) as e:
+                logger.debug(f"Auto-tactic '{tactic}' raised: {e}")
                 continue
         return None

@@ -16,9 +16,15 @@ class SequentialEngine:
         loop = ProofLoop(self.lean, self.llm, self.retriever, self.config)
         attempts = []
         for i in range(self.max_attempts):
-            if budget.is_exhausted(): break
-            a = loop.single_attempt(problem, memory, attempt_num=budget.samples_used + 1)
-            attempts.append(a); budget.samples_used += 1
-            memory.record_attempt(a.to_dict() if hasattr(a, 'to_dict') else {"errors": []})
-            if a.lean_result == AttemptStatus.SUCCESS: memory.solved = True; break
+            if budget.is_exhausted():
+                break
+            a = loop.single_attempt(problem, memory,
+                                     attempt_num=budget.samples_used + 1)
+            attempts.append(a)
+            budget.add_samples(1)
+            memory.record_attempt(
+                a.to_dict() if hasattr(a, 'to_dict') else {"errors": []})
+            if a.lean_result == AttemptStatus.SUCCESS:
+                memory.solved = True
+                break
         return attempts

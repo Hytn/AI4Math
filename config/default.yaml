@@ -29,8 +29,10 @@ prover:
     enabled: true
     max_hypotheses: 3
   premise:
-    mode: "none"
+    mode: "hybrid"
     top_k: 10
+    bm25_k1: 1.5
+    bm25_b: 0.75
   codegen:
     auto_import: true
     scaffold_enabled: true

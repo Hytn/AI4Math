@@ -7,4 +7,4 @@ from .proof_state import ProofState
 from .meta_ctx import MetaContext
 from .goal import Goal
 from .search_tree import SearchTree, SearchNode, NodeId, NodeStatus
-from .views import GoalView, TargetShape
+from .views import GoalView, TargetShape, format_goal_views_for_prompt

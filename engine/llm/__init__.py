@@ -3,6 +3,8 @@ engine/llm — LLM Tactic Suggestion Engine
 
 Integrates with Claude API to suggest tactics based on goal state.
 The LLM sees a token-efficient GoalView and returns candidate tactics.
+
+Uses agent.brain.claude_provider when available, falls back to heuristic.
 """
 from __future__ import annotations
 import json
@@ -25,7 +27,7 @@ TACTIC_PROMPT = """You are an expert Lean 4 theorem prover. Given a proof goal, 
 RULES:
 - Output ONLY a JSON array of tactic strings, nothing else
 - Suggest 3-8 tactics ranked by likelihood of success
-- Available tactics: intro, assumption, apply, exact, sorry, cases, induction, simp, rfl, trivial
+- Available tactics: intro, assumption, apply, exact, sorry, cases, induction, simp, rfl, trivial, ring, omega, linarith, constructor, contradiction
 - For `intro`, specify the variable name: "intro x"
 - For `apply`, specify the lemma: "apply lemma_name"
 - For `exact`, specify the term: "exact term"
@@ -43,27 +45,56 @@ Respond with ONLY a JSON array like: ["intro x", "apply h", "assumption"]"""
 
 
 class LLMTacticEngine:
-    """Suggests tactics using an LLM."""
+    """Suggests tactics using an LLM.
 
-    def __init__(self, use_api: bool = True):
-        self.use_api = use_api
+    Can use either a pre-configured LLMProvider (recommended) or
+    fall back to heuristic suggestion.
+    """
+
+    def __init__(self, llm_provider=None, use_api: bool = True):
+        self._llm = llm_provider
+        self.use_api = use_api and (llm_provider is not None)
         self._call_count = 0
 
     def suggest(self, goal_view: dict, max_suggestions: int = 6) -> LLMSuggestion:
         """Get tactic suggestions from LLM."""
         t0 = time.time()
 
-        if self.use_api:
+        if self.use_api and self._llm is not None:
             return self._suggest_api(goal_view, max_suggestions, t0)
         else:
             return self._suggest_heuristic(goal_view, max_suggestions, t0)
 
+    def suggest_from_goal_views(self, goal_views: list,
+                                max_suggestions: int = 8) -> list[str]:
+        """Suggest tactics from GoalView objects (bridge for SearchCoordinator).
+
+        Args:
+            goal_views: List of GoalView objects from engine.state.views.
+            max_suggestions: Maximum tactics to return.
+
+        Returns:
+            List of tactic strings.
+        """
+        if not goal_views:
+            return ["simp", "assumption", "trivial"]
+
+        # Use the first (main) goal for suggestion
+        gv = goal_views[0]
+        view_dict = gv.to_dict() if hasattr(gv, 'to_dict') else {
+            "target": str(gv.target) if hasattr(gv, 'target') else "?",
+            "shape": gv.target_shape.value if hasattr(gv, 'target_shape') else "other",
+            "hypotheses": gv.relevant_hyps if hasattr(gv, 'relevant_hyps') else [],
+            "depth": gv.depth if hasattr(gv, 'depth') else 0,
+        }
+
+        suggestion = self.suggest(view_dict, max_suggestions)
+        return suggestion.tactics
+
     def _suggest_api(self, goal_view: dict, max_suggestions: int,
                      t0: float) -> LLMSuggestion:
-        """Call Claude API for tactic suggestions."""
+        """Call LLM provider for tactic suggestions."""
         try:
-            import json as json_mod
-
             target = goal_view.get("target", "?")
             shape = goal_view.get("shape", "other")
             hyps = goal_view.get("hypotheses", [])
@@ -80,19 +111,24 @@ class LLMTacticEngine:
                 target=target,
             )
 
-            response = _call_claude_api(prompt)
+            self._call_count += 1
+            response = self._llm.generate(
+                system="You are a Lean 4 tactic suggestion engine. "
+                       "Output ONLY valid JSON arrays of tactic strings.",
+                user=prompt,
+                temperature=0.3,
+                max_tokens=200)
 
-            # Parse JSON array from response
-            tactics = _parse_tactic_response(response.get("text", "[]"))
+            tactics = _parse_tactic_response(response.content)
             elapsed = (time.time() - t0) * 1000
 
             return LLMSuggestion(
                 tactics=tactics[:max_suggestions],
-                reasoning=response.get("text", ""),
+                reasoning=response.content,
                 elapsed_ms=elapsed,
-                model=response.get("model", "claude"),
-                tokens_in=response.get("tokens_in", 0),
-                tokens_out=response.get("tokens_out", 0),
+                model=response.model,
+                tokens_in=response.tokens_in,
+                tokens_out=response.tokens_out,
             )
         except Exception as e:
             # Fallback to heuristic
@@ -133,42 +169,6 @@ class LLMTacticEngine:
         )
 
 
-def _call_claude_api(prompt: str) -> dict:
-    """Call the Anthropic API."""
-    import urllib.request
-    import json as json_mod
-
-    body = json_mod.dumps({
-        "model": "claude-sonnet-4-20250514",
-        "max_tokens": 200,
-        "messages": [{"role": "user", "content": prompt}]
-    }).encode()
-
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
-        data=body,
-        headers={
-            "Content-Type": "application/json",
-            "x-api-key": "",  # handled by environment
-            "anthropic-version": "2023-06-01",
-        },
-        method="POST",
-    )
-
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json_mod.loads(resp.read())
-            text = data.get("content", [{}])[0].get("text", "[]")
-            return {
-                "text": text,
-                "model": data.get("model", ""),
-                "tokens_in": data.get("usage", {}).get("input_tokens", 0),
-                "tokens_out": data.get("usage", {}).get("output_tokens", 0),
-            }
-    except Exception as e:
-        return {"text": "[]", "error": str(e)}
-
-
 def _parse_tactic_response(text: str) -> List[str]:
     """Parse a JSON array of tactics from LLM response."""
     import json as json_mod
@@ -181,7 +181,7 @@ def _parse_tactic_response(text: str) -> List[str]:
             arr = json_mod.loads(text[start:end+1])
             if isinstance(arr, list):
                 return [str(t) for t in arr if isinstance(t, str)]
-        except:
+        except (ValueError, json_mod.JSONDecodeError):
             pass
     # Fallback: split by lines
     return [line.strip().strip('"').strip("'") for line in text.split("\n")

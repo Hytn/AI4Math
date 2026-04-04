@@ -1,5 +1,6 @@
 """agent/memory/working_memory.py — 工作记忆: 当前证明任务状态"""
 from __future__ import annotations
+import threading
 from dataclasses import dataclass, field
 
 @dataclass
@@ -14,14 +15,18 @@ class WorkingMemory:
     rounds_completed: int = 0
     total_samples: int = 0
     solved: bool = False
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def record_attempt(self, attempt: dict):
-        self.attempt_history.append(attempt)
-        self.total_samples += 1
-        for err in attempt.get("errors", []):
-            cat = err.get("category", "other")
-            self.error_patterns[cat] = self.error_patterns.get(cat, 0) + 1
+        with self._lock:
+            self.attempt_history.append(attempt)
+            self.total_samples += 1
+            for err in attempt.get("errors", []):
+                cat = err.get("category", "other")
+                self.error_patterns[cat] = self.error_patterns.get(cat, 0) + 1
 
     def get_dominant_error(self) -> str:
-        if not self.error_patterns: return "none"
-        return max(self.error_patterns, key=self.error_patterns.get)
+        with self._lock:
+            if not self.error_patterns:
+                return "none"
+            return max(self.error_patterns, key=self.error_patterns.get)

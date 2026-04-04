@@ -7,7 +7,27 @@ services:
     container_name: ai4math-lean
     volumes:
       - lean-cache:/workspace/lean-project/.lake
+      - lean-exchange:/workspace/exchange  # shared dir for proof verification
     restart: unless-stopped
+    # Keep container running to accept verification requests via shared volume
+    command: >
+      bash -c "
+        echo 'Lean4 verification service ready.';
+        echo 'Drop .lean files into /workspace/exchange/ for verification.';
+        while true; do
+          for f in /workspace/exchange/pending_*.lean; do
+            if [ -f \"$$f\" ]; then
+              base=$$(basename $$f .lean);
+              echo \"Verifying $$f...\";
+              lake env lean $$f > /workspace/exchange/$${base}.stdout 2> /workspace/exchange/$${base}.stderr;
+              echo $$? > /workspace/exchange/$${base}.exitcode;
+              mv $$f /workspace/exchange/$${base}.done.lean;
+            fi;
+          done;
+          sleep 0.1;
+        done
+      "
+
   agent:
     build:
       context: ..
@@ -16,7 +36,13 @@ services:
       - "8000:8000"
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - LEAN_VERIFY_MODE=docker
+      - LEAN_EXCHANGE_DIR=/workspace/exchange
+    volumes:
+      - lean-exchange:/workspace/exchange  # shared with lean service
     depends_on:
       - lean
+
 volumes:
   lean-cache:
+  lean-exchange:

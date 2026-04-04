@@ -23,9 +23,12 @@ class RolloutEngine:
         loop = ProofLoop(self.lean, self.llm, self.retriever, self.config)
         attempts = []
 
+        # Snapshot the current sample count for indexing
+        base_idx = budget.samples_used
+
         def _sample(idx):
             return loop.single_attempt(problem, memory, temperature=self.temperature,
-                                       attempt_num=budget.samples_used + idx + 1)
+                                       attempt_num=base_idx + idx + 1)
 
         workers = min(self.max_workers, self.samples_per_round)
         if workers <= 1:
@@ -35,12 +38,24 @@ class RolloutEngine:
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 futures = {executor.submit(_sample, i): i for i in range(self.samples_per_round)}
                 for f in as_completed(futures):
-                    try: attempts.append(f.result())
-                    except Exception as e: logger.error(f"Sample error: {e}")
+                    try:
+                        attempts.append(f.result())
+                    except Exception as e:
+                        logger.error(f"Sample error: {e}")
 
-        budget.samples_used += len(attempts)
+        # Thread-safe budget update (single call after all threads complete)
+        budget.add_samples(len(attempts))
+
+        # Thread-safe memory updates and token tracking (sequential after collection)
+        total_tokens = 0
         for a in attempts:
-            memory.record_attempt(a.to_dict() if hasattr(a, 'to_dict') else {"errors": []})
-            if a.lean_result == AttemptStatus.SUCCESS: memory.solved = True
+            total_tokens += a.llm_tokens_in + a.llm_tokens_out
+            memory.record_attempt(
+                a.to_dict() if hasattr(a, 'to_dict') else {"errors": []})
+            if a.lean_result == AttemptStatus.SUCCESS:
+                memory.solved = True
+
+        # Track total tokens used this round
+        budget.add_tokens(total_tokens)
 
         return attempts

@@ -60,6 +60,9 @@ class Lean4Engine:
     对应传统的 'LLM 生成完整证明 → Lean4 一次性编译检查' 工作流。
     优势: 完整的 Mathlib 生态，100% 可靠的验证。
     劣势: 每次验证需要完整编译，无法做增量/分叉/并行搜索。
+
+    Requires a LeanEnvironment (from agent.executor.lean_env) or a
+    compatible object with a ``compile(code) -> (rc, stdout, stderr)`` method.
     """
 
     def __init__(self, lean_env=None):
@@ -69,13 +72,14 @@ class Lean4Engine:
 
     def initialize(self, imports: str = "import Mathlib"):
         """Initialize Lean environment (may take seconds for Mathlib)."""
-        start = time.perf_counter()
-        # In production: self.lean_env.compile(imports)
-        # Simulate import cost
-        time.sleep(0.001)  # Simulated
-        self._import_time_ms = (time.perf_counter() - start) * 1000
+        if self.lean_env is None:
+            try:
+                from agent.executor.lean_env import LeanEnvironment
+                self.lean_env = LeanEnvironment.create()
+            except Exception as e:
+                logger.warning(f"Could not auto-create LeanEnvironment: {e}")
         self._initialized = True
-        logger.info(f"Lean4 initialized in {self._import_time_ms:.0f}ms")
+        logger.info("Lean4Engine initialized")
 
     def verify(self, theorem: str, proof: str) -> EngineResult:
         """Verify a complete proof via Lean4 compilation."""
@@ -84,41 +88,45 @@ class Lean4Engine:
         if not self._initialized:
             self.initialize()
 
-        # Simulate Lean4 compilation verification
-        # In production: uses LeanChecker.check()
-        verify_start = time.perf_counter()
-
-        # Simulate realistic Lean4 verification timing
-        # Real Lean4: ~50-500ms for simple proofs, seconds for complex ones
-        is_valid = self._simulate_lean_check(theorem, proof)
-        verify_ms = (time.perf_counter() - verify_start) * 1000
-
-        total_ms = (time.perf_counter() - start) * 1000
-
-        if is_valid:
-            return EngineResult(
-                backend=EngineBackend.LEAN4, success=True,
-                proof=proof, total_ms=total_ms, verify_ms=verify_ms
-            )
-        else:
+        if self.lean_env is None:
             return EngineResult(
                 backend=EngineBackend.LEAN4, success=False,
-                total_ms=total_ms, verify_ms=verify_ms,
-                errors=[{"category": "tactic_failed", "message": "simulated lean error"}]
-            )
+                total_ms=(time.perf_counter() - start) * 1000,
+                errors=[{"category": "env_unavailable",
+                         "message": "Lean4 environment not available. "
+                                    "Install lean4 via elan or configure Docker."}])
 
-    def _simulate_lean_check(self, theorem: str, proof: str) -> bool:
-        """Simulate Lean4 type checking with realistic latency."""
-        # Simulate: ~80ms for environment lookup + elaboration + kernel check
-        import time as _t
-        _t.sleep(0.08)  # 80ms simulated Lean4 check latency
+        # Use real LeanChecker for verification
+        verify_start = time.perf_counter()
+        try:
+            from prover.verifier.lean_checker import LeanChecker
+            checker = LeanChecker(self.lean_env)
+            status, errors, stderr, check_ms = checker.check(theorem, proof)
 
-        # Simple heuristic: check if proof structure matches theorem
-        if "intro" in proof and ("exact" in proof or "assumption" in proof):
-            return True
-        if "by" in proof and "sorry" not in proof:
-            return True
-        return False
+            verify_ms = (time.perf_counter() - verify_start) * 1000
+            total_ms = (time.perf_counter() - start) * 1000
+
+            is_valid = (status.value == "success")
+            if is_valid:
+                return EngineResult(
+                    backend=EngineBackend.LEAN4, success=True,
+                    proof=proof, total_ms=total_ms, verify_ms=verify_ms)
+            else:
+                error_dicts = [
+                    {"category": e.category.value, "message": e.message,
+                     "line": e.line, "column": e.column}
+                    for e in errors
+                ]
+                return EngineResult(
+                    backend=EngineBackend.LEAN4, success=False,
+                    total_ms=total_ms, verify_ms=verify_ms,
+                    errors=error_dicts)
+        except Exception as e:
+            total_ms = (time.perf_counter() - start) * 1000
+            return EngineResult(
+                backend=EngineBackend.LEAN4, success=False,
+                total_ms=total_ms,
+                errors=[{"category": "internal_error", "message": str(e)}])
 
 
 class APEEngine:
@@ -150,8 +158,20 @@ class APEEngine:
 
     def prove_by_search(self, theorem_name: str, goal_expr,
                         env, tactics: list[str],
-                        max_depth: int = 20) -> EngineResult:
-        """Run proof search using persistent state + layered verification."""
+                        max_depth: int = 20,
+                        tactic_generator=None) -> EngineResult:
+        """Run proof search using persistent state + layered verification.
+
+        Args:
+            theorem_name: Name for logging.
+            goal_expr: The goal expression to prove.
+            env: APE Environment.
+            tactics: Static list of tactics to try.
+            max_depth: Maximum search depth.
+            tactic_generator: Optional callable(goal_views: list[GoalView]) -> list[str]
+                that dynamically generates tactics based on current goal state.
+                If provided, its output is appended to the static tactics list.
+        """
         start = time.perf_counter()
 
         coord = self._SearchCoordinator(env, goal_expr)
@@ -162,7 +182,53 @@ class APEEngine:
         proof_path = []
         solved = False
 
-        # BFS-style search: try all tactics at each open leaf
+        # Use the SearchCoordinator's built-in search if a generator is provided
+        if tactic_generator is not None:
+            def _generate_tactics(node_id: int) -> list[str]:
+                """Combine static tactics with LLM-generated ones via GoalView."""
+                goal_views = coord.goal_view(node_id)
+                dynamic_tactics = []
+                if goal_views:
+                    try:
+                        dynamic_tactics = tactic_generator(goal_views)
+                    except Exception as e:
+                        logger.debug(f"Tactic generator error: {e}")
+                # Deduplicate: static first, then dynamic
+                seen = set(tactics)
+                result = list(tactics)
+                for t in dynamic_tactics:
+                    if t not in seen:
+                        seen.add(t)
+                        result.append(t)
+                return result
+
+            stats = coord.run_search(_generate_tactics)
+            total_ms = (time.perf_counter() - start) * 1000
+
+            if stats.is_solved:
+                proof_text = " >> ".join(stats.solution_path)
+                return EngineResult(
+                    backend=EngineBackend.APE, success=True,
+                    proof=proof_text, total_ms=total_ms,
+                    search_ms=stats.time_ms,
+                    nodes_explored=stats.nodes_expanded,
+                    nodes_filtered_l0=stats.l0_filtered,
+                    nodes_filtered_l1=stats.l1_filtered,
+                    forks_created=stats.total_nodes,
+                    tactic_path=stats.solution_path)
+            else:
+                return EngineResult(
+                    backend=EngineBackend.APE, success=False,
+                    total_ms=total_ms, search_ms=stats.time_ms,
+                    nodes_explored=stats.nodes_expanded,
+                    nodes_filtered_l0=stats.l0_filtered,
+                    nodes_filtered_l1=stats.l1_filtered,
+                    forks_created=stats.total_nodes,
+                    error_structured={"kind": "search_exhausted",
+                                      "nodes": stats.nodes_expanded,
+                                      "depth": stats.max_depth_reached})
+
+        # Fallback: BFS-style search with static tactics
         from engine.state import NodeId
         open_nodes = [0]
 
@@ -186,7 +252,6 @@ class APEEngine:
 
                     if r.is_complete:
                         solved = True
-                        # Extract proof path
                         proof_path = self._extract_path(coord, r.child_node)
                         break
 

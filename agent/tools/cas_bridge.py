@@ -26,12 +26,25 @@ class CASBridge:
 
     def find_extremum(self, expression: str, variables: list[str],
                       constraints: list[str]) -> dict:
-        sage_code = f"""
+        """Find extremum of expression subject to constraints via SageMath.
+
+        TODO(P3): Currently uses a generic minimize() call.  Should support:
+          - Lagrange multipliers for equality constraints
+          - AM-GM / Cauchy-Schwarz heuristics for competition problems
+          - Numeric fallback when symbolic solving fails
+        """
+        var_decls = ', '.join(variables)
+        var_names = ' '.join(variables)
+        constraint_str = ', '.join(constraints) if constraints else ''
+        sage_code = f"""\
 from sage.all import *
-{', '.join(variables)} = var('{' '.join(variables)}')
+{var_decls} = var('{var_names}')
 f = {expression}
-constraints = [{', '.join(constraints)}]
-print(f.subs({{a: 2/3, b: 1/3, c: 0}}))
+try:
+    sol = minimize(f, [{', '.join('0.5' for _ in variables)}])
+    print('numeric_min:', sol)
+except Exception:
+    print('symbolic:', f)
 """
         result = self.evaluate(sage_code)
         return {"result": result, "hint": f"Extremum evaluation: {result}"}
