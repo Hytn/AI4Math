@@ -1,0 +1,334 @@
+{"name": "Nat.zero_add", "statement": "∀ (n : ℕ), 0 + n = n", "domain": "nat", "tags": ["add"]}
+{"name": "Nat.add_zero", "statement": "∀ (n : ℕ), n + 0 = n", "domain": "nat", "tags": ["add"]}
+{"name": "Nat.succ_add", "statement": "∀ (n m : ℕ), n.succ + m = (n + m).succ", "domain": "nat", "tags": ["add", "succ"]}
+{"name": "Nat.add_succ", "statement": "∀ (n m : ℕ), n + m.succ = (n + m).succ", "domain": "nat", "tags": ["add", "succ"]}
+{"name": "Nat.add_comm", "statement": "∀ (n m : ℕ), n + m = m + n", "domain": "nat", "tags": ["add", "comm"]}
+{"name": "Nat.add_assoc", "statement": "∀ (n m k : ℕ), n + m + k = n + (m + k)", "domain": "nat", "tags": ["add", "assoc"]}
+{"name": "Nat.add_left_cancel", "statement": "∀ {n m k : ℕ}, n + m = n + k → m = k", "domain": "nat", "tags": ["add", "cancel"]}
+{"name": "Nat.add_right_cancel", "statement": "∀ {n m k : ℕ}, n + k = m + k → n = m", "domain": "nat", "tags": ["add", "cancel"]}
+{"name": "Nat.succ_eq_add_one", "statement": "∀ (n : ℕ), n.succ = n + 1", "domain": "nat", "tags": ["succ"]}
+{"name": "Nat.one_eq_succ_zero", "statement": "1 = Nat.succ 0", "domain": "nat", "tags": ["succ"]}
+{"name": "Nat.succ_ne_zero", "statement": "∀ (n : ℕ), n.succ ≠ 0", "domain": "nat", "tags": ["succ", "ne"]}
+{"name": "Nat.succ_pred_eq_of_pos", "statement": "∀ {n : ℕ}, 0 < n → n.pred.succ = n", "domain": "nat", "tags": ["succ", "pred"]}
+{"name": "Nat.zero_mul", "statement": "∀ (n : ℕ), 0 * n = 0", "domain": "nat", "tags": ["mul"]}
+{"name": "Nat.mul_zero", "statement": "∀ (n : ℕ), n * 0 = 0", "domain": "nat", "tags": ["mul"]}
+{"name": "Nat.one_mul", "statement": "∀ (n : ℕ), 1 * n = n", "domain": "nat", "tags": ["mul"]}
+{"name": "Nat.mul_one", "statement": "∀ (n : ℕ), n * 1 = n", "domain": "nat", "tags": ["mul"]}
+{"name": "Nat.mul_comm", "statement": "∀ (n m : ℕ), n * m = m * n", "domain": "nat", "tags": ["mul", "comm"]}
+{"name": "Nat.mul_assoc", "statement": "∀ (n m k : ℕ), n * m * k = n * (m * k)", "domain": "nat", "tags": ["mul", "assoc"]}
+{"name": "Nat.mul_add", "statement": "∀ (k n m : ℕ), k * (n + m) = k * n + k * m", "domain": "nat", "tags": ["mul", "add", "distrib"]}
+{"name": "Nat.add_mul", "statement": "∀ (n m k : ℕ), (n + m) * k = n * k + m * k", "domain": "nat", "tags": ["mul", "add", "distrib"]}
+{"name": "Nat.mul_left_cancel", "statement": "∀ {k : ℕ}, 0 < k → ∀ {m n : ℕ}, k * m = k * n → m = n", "domain": "nat", "tags": ["mul", "cancel"]}
+{"name": "Nat.mul_right_cancel", "statement": "∀ {k : ℕ}, 0 < k → ∀ {m n : ℕ}, m * k = n * k → m = n", "domain": "nat", "tags": ["mul", "cancel"]}
+{"name": "Nat.eq_one_of_mul_eq_one_right", "statement": "∀ {n m : ℕ}, n * m = 1 → m = 1", "domain": "nat", "tags": ["mul"]}
+{"name": "Nat.mul_eq_zero", "statement": "∀ {m n : ℕ}, m * n = 0 ↔ m = 0 ∨ n = 0", "domain": "nat", "tags": ["mul"]}
+{"name": "Nat.pow_zero", "statement": "∀ (n : ℕ), n ^ 0 = 1", "domain": "nat", "tags": ["pow"]}
+{"name": "Nat.pow_one", "statement": "∀ (n : ℕ), n ^ 1 = n", "domain": "nat", "tags": ["pow"]}
+{"name": "Nat.pow_succ", "statement": "∀ (n m : ℕ), n ^ (m + 1) = n ^ m * n", "domain": "nat", "tags": ["pow"]}
+{"name": "Nat.one_pow", "statement": "∀ (n : ℕ), 1 ^ n = 1", "domain": "nat", "tags": ["pow"]}
+{"name": "Nat.zero_pow", "statement": "∀ {n : ℕ}, 0 < n → 0 ^ n = 0", "domain": "nat", "tags": ["pow"]}
+{"name": "Nat.pow_add", "statement": "∀ (b m n : ℕ), b ^ (m + n) = b ^ m * b ^ n", "domain": "nat", "tags": ["pow"]}
+{"name": "Nat.pow_mul", "statement": "∀ (b m n : ℕ), b ^ (m * n) = (b ^ m) ^ n", "domain": "nat", "tags": ["pow"]}
+{"name": "Nat.pow_le_pow_right", "statement": "∀ {x : ℕ}, 0 < x → ∀ {y z : ℕ}, y ≤ z → x ^ y ≤ x ^ z", "domain": "nat", "tags": ["pow", "le"]}
+{"name": "Nat.pos_of_ne_zero", "statement": "∀ {n : ℕ}, n ≠ 0 → 0 < n", "domain": "nat", "tags": ["pos"]}
+{"name": "Nat.one_le_two_pow", "statement": "∀ (n : ℕ), 1 ≤ 2 ^ n", "domain": "nat", "tags": ["pow", "le"]}
+{"name": "Nat.sub_self", "statement": "∀ (n : ℕ), n - n = 0", "domain": "nat", "tags": ["sub"]}
+{"name": "Nat.sub_zero", "statement": "∀ (n : ℕ), n - 0 = n", "domain": "nat", "tags": ["sub"]}
+{"name": "Nat.zero_sub", "statement": "∀ (n : ℕ), 0 - n = 0", "domain": "nat", "tags": ["sub"]}
+{"name": "Nat.succ_sub_one", "statement": "∀ (n : ℕ), n.succ - 1 = n", "domain": "nat", "tags": ["sub"]}
+{"name": "Nat.sub_add_cancel", "statement": "∀ {n m : ℕ}, m ≤ n → n - m + m = n", "domain": "nat", "tags": ["sub", "add", "cancel"]}
+{"name": "Nat.add_sub_cancel", "statement": "∀ (n m : ℕ), n + m - m = n", "domain": "nat", "tags": ["sub", "add", "cancel"]}
+{"name": "Nat.add_sub_cancel_right", "statement": "∀ (n m : ℕ), n + m - n = m", "domain": "nat", "tags": ["sub", "add", "cancel"]}
+{"name": "Nat.sub_le", "statement": "∀ (n m : ℕ), n - m ≤ n", "domain": "nat", "tags": ["sub", "le"]}
+{"name": "Nat.sub_lt", "statement": "∀ {n m : ℕ}, 0 < n → 0 < m → n - m < n", "domain": "nat", "tags": ["sub", "lt"]}
+{"name": "Nat.sub_eq_zero_of_le", "statement": "∀ {n m : ℕ}, n ≤ m → n - m = 0", "domain": "nat", "tags": ["sub", "le"]}
+{"name": "Nat.sub_pos_of_lt", "statement": "∀ {m n : ℕ}, m < n → 0 < n - m", "domain": "nat", "tags": ["sub", "lt"]}
+{"name": "tsub_add_cancel_of_le", "statement": "∀ {a b : ℕ}, b ≤ a → a - b + b = a", "domain": "nat", "tags": ["sub", "add", "cancel"]}
+{"name": "Nat.sub_add_eq", "statement": "∀ (n m k : ℕ), n - m + k = n + k - m", "domain": "nat", "tags": ["sub", "add"]}
+{"name": "Nat.lt_of_sub_eq_succ", "statement": "∀ {m n l : ℕ}, m - n = l.succ → n < m", "domain": "nat", "tags": ["sub", "lt"]}
+{"name": "Nat.le_refl", "statement": "∀ (n : ℕ), n ≤ n", "domain": "nat", "tags": ["le", "refl"]}
+{"name": "Nat.le_of_lt", "statement": "∀ {m n : ℕ}, m < n → m ≤ n", "domain": "nat", "tags": ["le", "lt"]}
+{"name": "Nat.lt_irrefl", "statement": "∀ (n : ℕ), ¬n < n", "domain": "nat", "tags": ["lt", "irrefl"]}
+{"name": "Nat.lt_of_lt_of_le", "statement": "∀ {a b c : ℕ}, a < b → b ≤ c → a < c", "domain": "nat", "tags": ["lt", "le", "trans"]}
+{"name": "Nat.lt_of_le_of_lt", "statement": "∀ {a b c : ℕ}, a ≤ b → b < c → a < c", "domain": "nat", "tags": ["le", "lt", "trans"]}
+{"name": "Nat.le_trans", "statement": "∀ {a b c : ℕ}, a ≤ b → b ≤ c → a ≤ c", "domain": "nat", "tags": ["le", "trans"]}
+{"name": "Nat.le_antisymm", "statement": "∀ {m n : ℕ}, m ≤ n → n ≤ m → m = n", "domain": "nat", "tags": ["le", "antisymm"]}
+{"name": "Nat.lt_or_ge", "statement": "∀ (m n : ℕ), m < n ∨ n ≤ m", "domain": "nat", "tags": ["lt", "le", "total"]}
+{"name": "Nat.le_of_succ_le_succ", "statement": "∀ {m n : ℕ}, m.succ ≤ n.succ → m ≤ n", "domain": "nat", "tags": ["le", "succ"]}
+{"name": "Nat.succ_le_succ", "statement": "∀ {m n : ℕ}, m ≤ n → m.succ ≤ n.succ", "domain": "nat", "tags": ["le", "succ"]}
+{"name": "Nat.lt_iff_add_one_le", "statement": "∀ {m n : ℕ}, m < n ↔ m + 1 ≤ n", "domain": "nat", "tags": ["lt", "le"]}
+{"name": "Nat.not_lt_zero", "statement": "∀ (n : ℕ), ¬n < 0", "domain": "nat", "tags": ["lt"]}
+{"name": "Nat.zero_le", "statement": "∀ (n : ℕ), 0 ≤ n", "domain": "nat", "tags": ["le"]}
+{"name": "Nat.le_add_right", "statement": "∀ (n k : ℕ), n ≤ n + k", "domain": "nat", "tags": ["le", "add"]}
+{"name": "Nat.le_add_left", "statement": "∀ (n k : ℕ), n ≤ k + n", "domain": "nat", "tags": ["le", "add"]}
+{"name": "Nat.add_le_add_left", "statement": "∀ {k : ℕ} (h : k ≤ l) (n : ℕ), n + k ≤ n + l", "domain": "nat", "tags": ["le", "add"]}
+{"name": "Nat.add_le_add_right", "statement": "∀ {k : ℕ} (h : k ≤ l) (n : ℕ), k + n ≤ l + n", "domain": "nat", "tags": ["le", "add"]}
+{"name": "Nat.mul_le_mul_left", "statement": "∀ (k : ℕ) {m n : ℕ}, m ≤ n → k * m ≤ k * n", "domain": "nat", "tags": ["le", "mul"]}
+{"name": "Nat.lt_of_add_lt_add_left", "statement": "∀ {k m n : ℕ}, k + m < k + n → m < n", "domain": "nat", "tags": ["lt", "add"]}
+{"name": "Nat.dvd_refl", "statement": "∀ (n : ℕ), n ∣ n", "domain": "nat", "tags": ["dvd", "refl"]}
+{"name": "Nat.dvd_trans", "statement": "∀ {a b c : ℕ}, a ∣ b → b ∣ c → a ∣ c", "domain": "nat", "tags": ["dvd", "trans"]}
+{"name": "Nat.dvd_zero", "statement": "∀ (n : ℕ), n ∣ 0", "domain": "nat", "tags": ["dvd"]}
+{"name": "Nat.one_dvd", "statement": "∀ (n : ℕ), 1 ∣ n", "domain": "nat", "tags": ["dvd"]}
+{"name": "Nat.dvd_add", "statement": "∀ {k m n : ℕ}, k ∣ m → k ∣ n → k ∣ (m + n)", "domain": "nat", "tags": ["dvd", "add"]}
+{"name": "Nat.dvd_sub'", "statement": "∀ {k m n : ℕ}, k ∣ m → k ∣ n → k ∣ (m - n)", "domain": "nat", "tags": ["dvd", "sub"]}
+{"name": "Nat.dvd_mul_left", "statement": "∀ (m n : ℕ), m ∣ n * m", "domain": "nat", "tags": ["dvd", "mul"]}
+{"name": "Nat.dvd_mul_right", "statement": "∀ (m n : ℕ), m ∣ m * n", "domain": "nat", "tags": ["dvd", "mul"]}
+{"name": "Nat.mul_dvd_mul", "statement": "∀ {m n k l : ℕ}, m ∣ k → n ∣ l → m * n ∣ k * l", "domain": "nat", "tags": ["dvd", "mul"]}
+{"name": "Nat.dvd_of_mul_dvd_mul_left", "statement": "∀ {k : ℕ}, 0 < k → ∀ {m n : ℕ}, k * m ∣ k * n → m ∣ n", "domain": "nat", "tags": ["dvd", "mul"]}
+{"name": "Nat.dvd_antisymm", "statement": "∀ {m n : ℕ}, m ∣ n → n ∣ m → m = n", "domain": "nat", "tags": ["dvd", "antisymm"]}
+{"name": "Nat.eq_one_of_pos_of_self_mul_self", "statement": "∀ {n : ℕ}, 0 < n → n * n = n → n = 1", "domain": "nat", "tags": ["mul"]}
+{"name": "Nat.mod_self", "statement": "∀ (n : ℕ), n % n = 0", "domain": "nat", "tags": ["mod"]}
+{"name": "Nat.mod_one", "statement": "∀ (n : ℕ), n % 1 = 0", "domain": "nat", "tags": ["mod"]}
+{"name": "Nat.zero_mod", "statement": "∀ (n : ℕ), 0 % n = 0", "domain": "nat", "tags": ["mod"]}
+{"name": "Nat.mod_lt", "statement": "∀ (x : ℕ) {y : ℕ}, 0 < y → x % y < y", "domain": "nat", "tags": ["mod", "lt"]}
+{"name": "Nat.div_add_mod", "statement": "∀ (m k : ℕ), k * (m / k) + m % k = m", "domain": "nat", "tags": ["mod", "div"]}
+{"name": "Nat.mod_add_div", "statement": "∀ (m k : ℕ), m % k + k * (m / k) = m", "domain": "nat", "tags": ["mod", "div"]}
+{"name": "Nat.mod_def", "statement": "∀ (m k : ℕ), m % k = m - k * (m / k)", "domain": "nat", "tags": ["mod", "div"]}
+{"name": "Nat.add_mul_mod_self_left", "statement": "∀ (a b c : ℕ), (a + b * c) % b = a % b", "domain": "nat", "tags": ["mod"]}
+{"name": "Nat.mul_mod_right", "statement": "∀ (n m : ℕ), n * m % n = 0", "domain": "nat", "tags": ["mod", "mul"]}
+{"name": "Nat.dvd_iff_mod_eq_zero", "statement": "∀ {m k : ℕ}, m ∣ k ↔ k % m = 0", "domain": "nat", "tags": ["dvd", "mod"]}
+{"name": "Nat.gcd_comm", "statement": "∀ (m n : ℕ), Nat.gcd m n = Nat.gcd n m", "domain": "nat", "tags": ["gcd", "comm"]}
+{"name": "Nat.gcd_assoc", "statement": "∀ (m n k : ℕ), Nat.gcd (Nat.gcd m n) k = Nat.gcd m (Nat.gcd n k)", "domain": "nat", "tags": ["gcd", "assoc"]}
+{"name": "Nat.gcd_zero_right", "statement": "∀ (n : ℕ), Nat.gcd n 0 = n", "domain": "nat", "tags": ["gcd"]}
+{"name": "Nat.gcd_self", "statement": "∀ (n : ℕ), Nat.gcd n n = n", "domain": "nat", "tags": ["gcd"]}
+{"name": "Nat.gcd_dvd_left", "statement": "∀ (m n : ℕ), Nat.gcd m n ∣ m", "domain": "nat", "tags": ["gcd", "dvd"]}
+{"name": "Nat.gcd_dvd_right", "statement": "∀ (m n : ℕ), Nat.gcd m n ∣ n", "domain": "nat", "tags": ["gcd", "dvd"]}
+{"name": "Nat.dvd_gcd", "statement": "∀ {k m n : ℕ}, k ∣ m → k ∣ n → k ∣ Nat.gcd m n", "domain": "nat", "tags": ["gcd", "dvd"]}
+{"name": "Nat.Coprime.mul_dvd_of_dvd_of_dvd", "statement": "∀ {k m n : ℕ}, Nat.Coprime k m → k ∣ n → m ∣ n → k * m ∣ n", "domain": "nat", "tags": ["gcd", "coprime", "dvd"]}
+{"name": "Nat.factorial_zero", "statement": "Nat.factorial 0 = 1", "domain": "nat", "tags": ["factorial"]}
+{"name": "Nat.factorial_succ", "statement": "∀ (n : ℕ), Nat.factorial (n + 1) = (n + 1) * Nat.factorial n", "domain": "nat", "tags": ["factorial"]}
+{"name": "Nat.factorial_pos", "statement": "∀ (n : ℕ), 0 < Nat.factorial n", "domain": "nat", "tags": ["factorial", "pos"]}
+{"name": "Nat.choose_zero_right", "statement": "∀ (n : ℕ), Nat.choose n 0 = 1", "domain": "nat", "tags": ["choose"]}
+{"name": "Nat.choose_self", "statement": "∀ (n : ℕ), Nat.choose n n = 1", "domain": "nat", "tags": ["choose"]}
+{"name": "Nat.choose_succ_succ", "statement": "∀ (n k : ℕ), Nat.choose (n+1) (k+1) = Nat.choose n k + Nat.choose n (k+1)", "domain": "nat", "tags": ["choose"]}
+{"name": "Nat.choose_symm", "statement": "∀ {n k : ℕ}, k ≤ n → Nat.choose n k = Nat.choose n (n - k)", "domain": "nat", "tags": ["choose"]}
+{"name": "Int.add_comm", "statement": "∀ (a b : ℤ), a + b = b + a", "domain": "int", "tags": ["add", "comm"]}
+{"name": "Int.add_assoc", "statement": "∀ (a b c : ℤ), a + b + c = a + (b + c)", "domain": "int", "tags": ["add", "assoc"]}
+{"name": "Int.add_zero", "statement": "∀ (a : ℤ), a + 0 = a", "domain": "int", "tags": ["add"]}
+{"name": "Int.zero_add", "statement": "∀ (a : ℤ), 0 + a = a", "domain": "int", "tags": ["add"]}
+{"name": "Int.add_neg_cancel", "statement": "∀ (a : ℤ), a + (-a) = 0", "domain": "int", "tags": ["add", "neg"]}
+{"name": "Int.neg_add_cancel", "statement": "∀ (a : ℤ), -a + a = 0", "domain": "int", "tags": ["add", "neg"]}
+{"name": "Int.neg_neg", "statement": "∀ (a : ℤ), -(-a) = a", "domain": "int", "tags": ["neg"]}
+{"name": "Int.neg_zero", "statement": "-(0 : ℤ) = 0", "domain": "int", "tags": ["neg"]}
+{"name": "Int.mul_comm", "statement": "∀ (a b : ℤ), a * b = b * a", "domain": "int", "tags": ["mul", "comm"]}
+{"name": "Int.mul_assoc", "statement": "∀ (a b c : ℤ), a * b * c = a * (b * c)", "domain": "int", "tags": ["mul", "assoc"]}
+{"name": "Int.mul_one", "statement": "∀ (a : ℤ), a * 1 = a", "domain": "int", "tags": ["mul"]}
+{"name": "Int.one_mul", "statement": "∀ (a : ℤ), 1 * a = a", "domain": "int", "tags": ["mul"]}
+{"name": "Int.mul_zero", "statement": "∀ (a : ℤ), a * 0 = 0", "domain": "int", "tags": ["mul"]}
+{"name": "Int.mul_neg", "statement": "∀ (a b : ℤ), a * (-b) = -(a * b)", "domain": "int", "tags": ["mul", "neg"]}
+{"name": "Int.neg_mul", "statement": "∀ (a b : ℤ), (-a) * b = -(a * b)", "domain": "int", "tags": ["mul", "neg"]}
+{"name": "Int.neg_mul_neg", "statement": "∀ (a b : ℤ), (-a) * (-b) = a * b", "domain": "int", "tags": ["mul", "neg"]}
+{"name": "Int.mul_add", "statement": "∀ (a b c : ℤ), a * (b + c) = a * b + a * c", "domain": "int", "tags": ["mul", "add", "distrib"]}
+{"name": "Int.sub_self", "statement": "∀ (a : ℤ), a - a = 0", "domain": "int", "tags": ["sub"]}
+{"name": "Int.sub_eq_add_neg", "statement": "∀ (a b : ℤ), a - b = a + (-b)", "domain": "int", "tags": ["sub", "neg"]}
+{"name": "Int.add_left_cancel", "statement": "∀ {a b c : ℤ}, a + b = a + c → b = c", "domain": "int", "tags": ["add", "cancel"]}
+{"name": "Int.ofNat_add", "statement": "∀ (m n : ℕ), ↑(m + n) = (↑m + ↑n : ℤ)", "domain": "int", "tags": ["cast", "add"]}
+{"name": "Int.ofNat_mul", "statement": "∀ (m n : ℕ), ↑(m * n) = (↑m * ↑n : ℤ)", "domain": "int", "tags": ["cast", "mul"]}
+{"name": "Int.ofNat_le", "statement": "∀ {m n : ℕ}, (↑m : ℤ) ≤ ↑n ↔ m ≤ n", "domain": "int", "tags": ["cast", "le"]}
+{"name": "Int.ofNat_lt", "statement": "∀ {m n : ℕ}, (↑m : ℤ) < ↑n ↔ m < n", "domain": "int", "tags": ["cast", "lt"]}
+{"name": "Int.ofNat_inj", "statement": "∀ {m n : ℕ}, (↑m : ℤ) = ↑n ↔ m = n", "domain": "int", "tags": ["cast", "eq"]}
+{"name": "abs_nonneg", "statement": "∀ (a : ℤ), 0 ≤ |a|", "domain": "int", "tags": ["abs", "le"]}
+{"name": "abs_mul", "statement": "∀ (a b : ℤ), |a * b| = |a| * |b|", "domain": "int", "tags": ["abs", "mul"]}
+{"name": "abs_add", "statement": "∀ (a b : ℤ), |a + b| ≤ |a| + |b|", "domain": "int", "tags": ["abs", "add", "triangle"]}
+{"name": "Int.emod_emod_of_dvd", "statement": "∀ {n : ℤ} (m : ℤ) {k : ℤ}, k ∣ m → n % m % k = n % k", "domain": "int", "tags": ["mod", "dvd"]}
+{"name": "Int.add_mul_emod_self_left", "statement": "∀ (a b c : ℤ), (a + b * c) % b = a % b", "domain": "int", "tags": ["mod"]}
+{"name": "add_comm", "statement": "∀ {α : Type*} [AddCommMonoid α] (a b : α), a + b = b + a", "domain": "real", "tags": ["add", "comm"]}
+{"name": "mul_comm", "statement": "∀ {α : Type*} [CommMonoid α] (a b : α), a * b = b * a", "domain": "real", "tags": ["mul", "comm"]}
+{"name": "add_assoc", "statement": "∀ {α : Type*} [AddSemigroup α] (a b c : α), a + b + c = a + (b + c)", "domain": "real", "tags": ["add", "assoc"]}
+{"name": "mul_assoc", "statement": "∀ {α : Type*} [Semigroup α] (a b c : α), a * b * c = a * (b * c)", "domain": "real", "tags": ["mul", "assoc"]}
+{"name": "mul_add", "statement": "∀ {α : Type*} [Distrib α] (a b c : α), a * (b + c) = a * b + a * c", "domain": "real", "tags": ["mul", "add", "distrib"]}
+{"name": "add_mul", "statement": "∀ {α : Type*} [Distrib α] (a b c : α), (a + b) * c = a * c + b * c", "domain": "real", "tags": ["mul", "add", "distrib"]}
+{"name": "sub_eq_add_neg", "statement": "∀ {α : Type*} [AddGroup α] (a b : α), a - b = a + (-b)", "domain": "real", "tags": ["sub", "neg"]}
+{"name": "neg_add_cancel", "statement": "∀ {α : Type*} [AddGroup α] (a : α), -a + a = 0", "domain": "real", "tags": ["neg", "add"]}
+{"name": "mul_inv_cancel", "statement": "∀ {α : Type*} [GroupWithZero α] {a : α}, a ≠ 0 → a * a⁻¹ = 1", "domain": "real", "tags": ["mul", "inv"]}
+{"name": "inv_mul_cancel", "statement": "∀ {α : Type*} [GroupWithZero α] {a : α}, a ≠ 0 → a⁻¹ * a = 1", "domain": "real", "tags": ["mul", "inv"]}
+{"name": "div_self", "statement": "∀ {α : Type*} [GroupWithZero α] {a : α}, a ≠ 0 → a / a = 1", "domain": "real", "tags": ["div"]}
+{"name": "mul_div_cancel₀", "statement": "∀ {α : Type*} [GroupWithZero α] (a : α) {b : α}, b ≠ 0 → a * b / b = a", "domain": "real", "tags": ["mul", "div", "cancel"]}
+{"name": "div_add_div_same", "statement": "∀ {α : Type*} [Field α] (a b : α) {c : α}, c ≠ 0 → a / c + b / c = (a + b) / c", "domain": "real", "tags": ["div", "add"]}
+{"name": "sq_nonneg", "statement": "∀ {α : Type*} [LinearOrderedSemiring α] (a : α), 0 ≤ a ^ 2", "domain": "real", "tags": ["sq", "le"]}
+{"name": "sq_abs", "statement": "∀ {α : Type*} [LinearOrderedRing α] (a : α), |a| ^ 2 = a ^ 2", "domain": "real", "tags": ["sq", "abs"]}
+{"name": "sq_eq_sq'", "statement": "∀ {α : Type*} [LinearOrderedRing α] {a b : α}, -b < a → a < b → a ^ 2 < b ^ 2", "domain": "real", "tags": ["sq", "lt"]}
+{"name": "mul_self_nonneg", "statement": "∀ {α : Type*} [LinearOrderedRing α] (a : α), 0 ≤ a * a", "domain": "real", "tags": ["mul", "le"]}
+{"name": "add_sq", "statement": "∀ {α : Type*} [CommRing α] (a b : α), (a + b) ^ 2 = a ^ 2 + 2 * a * b + b ^ 2", "domain": "real", "tags": ["sq", "add"]}
+{"name": "sub_sq", "statement": "∀ {α : Type*} [CommRing α] (a b : α), (a - b) ^ 2 = a ^ 2 - 2 * a * b + b ^ 2", "domain": "real", "tags": ["sq", "sub"]}
+{"name": "sq_sub_sq", "statement": "∀ {α : Type*} [CommRing α] (a b : α), a ^ 2 - b ^ 2 = (a + b) * (a - b)", "domain": "real", "tags": ["sq", "sub", "factor"]}
+{"name": "abs_le", "statement": "∀ {α : Type*} [LinearOrderedAddCommGroup α] {a b : α}, |a| ≤ b ↔ -b ≤ a ∧ a ≤ b", "domain": "real", "tags": ["abs", "le"]}
+{"name": "abs_sub_abs_le_abs_sub", "statement": "∀ {α : Type*} [LinearOrderedAddCommGroup α] (a b : α), |a| - |b| ≤ |a - b|", "domain": "real", "tags": ["abs", "sub", "triangle"]}
+{"name": "pow_add", "statement": "∀ {M : Type*} [Monoid M] (a : M) (m n : ℕ), a ^ (m + n) = a ^ m * a ^ n", "domain": "real", "tags": ["pow", "add"]}
+{"name": "pow_mul", "statement": "∀ {M : Type*} [Monoid M] (a : M) (m n : ℕ), a ^ (m * n) = (a ^ m) ^ n", "domain": "real", "tags": ["pow", "mul"]}
+{"name": "pow_succ", "statement": "∀ {M : Type*} [Monoid M] (a : M) (n : ℕ), a ^ (n + 1) = a ^ n * a", "domain": "real", "tags": ["pow", "succ"]}
+{"name": "pow_zero", "statement": "∀ {M : Type*} [Monoid M] (a : M), a ^ 0 = 1", "domain": "real", "tags": ["pow"]}
+{"name": "le_max_left", "statement": "∀ {α : Type*} [LinearOrder α] (a b : α), a ≤ max a b", "domain": "real", "tags": ["max", "le"]}
+{"name": "le_max_right", "statement": "∀ {α : Type*} [LinearOrder α] (a b : α), b ≤ max a b", "domain": "real", "tags": ["max", "le"]}
+{"name": "min_le_left", "statement": "∀ {α : Type*} [LinearOrder α] (a b : α), min a b ≤ a", "domain": "real", "tags": ["min", "le"]}
+{"name": "min_le_right", "statement": "∀ {α : Type*} [LinearOrder α] (a b : α), min a b ≤ b", "domain": "real", "tags": ["min", "le"]}
+{"name": "le_of_sq_le_sq", "statement": "∀ {a b : ℝ}, 0 ≤ b → a ^ 2 ≤ b ^ 2 → a ≤ b ∨ a ≤ -b", "domain": "real", "tags": ["sq", "le"]}
+{"name": "And.intro", "statement": "∀ {a b : Prop}, a → b → a ∧ b", "domain": "logic", "tags": ["and"]}
+{"name": "And.left", "statement": "∀ {a b : Prop}, a ∧ b → a", "domain": "logic", "tags": ["and"]}
+{"name": "And.right", "statement": "∀ {a b : Prop}, a ∧ b → b", "domain": "logic", "tags": ["and"]}
+{"name": "And.comm", "statement": "∀ {a b : Prop}, a ∧ b ↔ b ∧ a", "domain": "logic", "tags": ["and", "comm"]}
+{"name": "And.assoc", "statement": "∀ {a b c : Prop}, (a ∧ b) ∧ c ↔ a ∧ (b ∧ c)", "domain": "logic", "tags": ["and", "assoc"]}
+{"name": "Or.inl", "statement": "∀ {a b : Prop}, a → a ∨ b", "domain": "logic", "tags": ["or"]}
+{"name": "Or.inr", "statement": "∀ {a b : Prop}, b → a ∨ b", "domain": "logic", "tags": ["or"]}
+{"name": "Or.elim", "statement": "∀ {a b c : Prop}, a ∨ b → (a → c) → (b → c) → c", "domain": "logic", "tags": ["or", "elim"]}
+{"name": "Or.comm", "statement": "∀ {a b : Prop}, a ∨ b ↔ b ∨ a", "domain": "logic", "tags": ["or", "comm"]}
+{"name": "not_not", "statement": "∀ {a : Prop} [Decidable a], ¬¬a ↔ a", "domain": "logic", "tags": ["not"]}
+{"name": "not_and_or", "statement": "∀ {a b : Prop}, ¬(a ∧ b) ↔ ¬a ∨ ¬b", "domain": "logic", "tags": ["not", "and", "or", "demorgan"]}
+{"name": "not_or", "statement": "∀ {a b : Prop}, ¬(a ∨ b) ↔ ¬a ∧ ¬b", "domain": "logic", "tags": ["not", "or", "demorgan"]}
+{"name": "Iff.intro", "statement": "∀ {a b : Prop}, (a → b) → (b → a) → (a ↔ b)", "domain": "logic", "tags": ["iff"]}
+{"name": "Iff.mp", "statement": "∀ {a b : Prop}, (a ↔ b) → a → b", "domain": "logic", "tags": ["iff"]}
+{"name": "Iff.mpr", "statement": "∀ {a b : Prop}, (a ↔ b) → b → a", "domain": "logic", "tags": ["iff"]}
+{"name": "Classical.em", "statement": "∀ (p : Prop), p ∨ ¬p", "domain": "logic", "tags": ["classical", "em"]}
+{"name": "Classical.byContradiction", "statement": "∀ {p : Prop}, (¬p → False) → p", "domain": "logic", "tags": ["classical", "contradiction"]}
+{"name": "absurd", "statement": "∀ {a b : Prop}, a → ¬a → b", "domain": "logic", "tags": ["absurd"]}
+{"name": "not_lt", "statement": "∀ {α : Type*} [LinearOrder α] {a b : α}, ¬a < b ↔ b ≤ a", "domain": "logic", "tags": ["not", "lt", "le"]}
+{"name": "not_le", "statement": "∀ {α : Type*} [LinearOrder α] {a b : α}, ¬a ≤ b ↔ b < a", "domain": "logic", "tags": ["not", "le", "lt"]}
+{"name": "lt_or_eq_of_le", "statement": "∀ {α : Type*} [PartialOrder α] {a b : α}, a ≤ b → a < b ∨ a = b", "domain": "logic", "tags": ["le", "lt", "eq"]}
+{"name": "Decidable.not_imp_self", "statement": "∀ {a : Prop} [Decidable a], (¬a → a) → a", "domain": "logic", "tags": ["decidable"]}
+{"name": "ite_eq_iff", "statement": "∀ {α : Sort*} {p : Prop} [Decidable p] {a b c : α}, (if p then a else b) = c ↔ p ∧ a = c ∨ ¬p ∧ b = c", "domain": "logic", "tags": ["ite"]}
+{"name": "Exists.intro", "statement": "∀ {α : Sort*} {p : α → Prop} (w : α), p w → ∃ x, p x", "domain": "logic", "tags": ["exists"]}
+{"name": "exists_prop", "statement": "∀ {p q : Prop}, (∃ _ : p, q) ↔ p ∧ q", "domain": "logic", "tags": ["exists", "prop"]}
+{"name": "forall_congr'", "statement": "∀ {α : Sort*} {p q : α → Prop}, (∀ a, p a ↔ q a) → ((∀ a, p a) ↔ ∀ a, q a)", "domain": "logic", "tags": ["forall", "congr"]}
+{"name": "not_exists", "statement": "∀ {α : Sort*} {p : α → Prop}, (¬∃ x, p x) ↔ ∀ x, ¬p x", "domain": "logic", "tags": ["not", "exists", "forall"]}
+{"name": "not_forall", "statement": "∀ {α : Sort*} {p : α → Prop} [Decidable (∀ x, p x)], (¬∀ x, p x) ↔ ∃ x, ¬p x", "domain": "logic", "tags": ["not", "forall", "exists"]}
+{"name": "Eq.symm", "statement": "∀ {α : Sort*} {a b : α}, a = b → b = a", "domain": "logic", "tags": ["eq", "symm"]}
+{"name": "Eq.trans", "statement": "∀ {α : Sort*} {a b c : α}, a = b → b = c → a = c", "domain": "logic", "tags": ["eq", "trans"]}
+{"name": "congrArg", "statement": "∀ {α β : Sort*} {a b : α} (f : α → β), a = b → f a = f b", "domain": "logic", "tags": ["eq", "congr"]}
+{"name": "congrFun", "statement": "∀ {α : Sort*} {β : α → Sort*} {f g : ∀ x, β x}, f = g → ∀ a, f a = g a", "domain": "logic", "tags": ["eq", "congr"]}
+{"name": "ne_of_gt", "statement": "∀ {α : Type*} [Preorder α] {a b : α}, a > b → a ≠ b", "domain": "logic", "tags": ["ne", "gt"]}
+{"name": "Set.mem_union", "statement": "∀ {α : Type*} {a : α} {s t : Set α}, a ∈ s ∪ t ↔ a ∈ s ∨ a ∈ t", "domain": "set", "tags": ["union", "mem"]}
+{"name": "Set.mem_inter_iff", "statement": "∀ {α : Type*} {a : α} {s t : Set α}, a ∈ s ∩ t ↔ a ∈ s ∧ a ∈ t", "domain": "set", "tags": ["inter", "mem"]}
+{"name": "Set.mem_compl_iff", "statement": "∀ {α : Type*} {s : Set α} {a : α}, a ∈ sᶜ ↔ a ∉ s", "domain": "set", "tags": ["compl", "mem"]}
+{"name": "Set.subset_def", "statement": "∀ {α : Type*} {s t : Set α}, s ⊆ t ↔ ∀ x, x ∈ s → x ∈ t", "domain": "set", "tags": ["subset"]}
+{"name": "Set.Subset.antisymm", "statement": "∀ {α : Type*} {s t : Set α}, s ⊆ t → t ⊆ s → s = t", "domain": "set", "tags": ["subset", "antisymm"]}
+{"name": "Set.union_comm", "statement": "∀ {α : Type*} (s t : Set α), s ∪ t = t ∪ s", "domain": "set", "tags": ["union", "comm"]}
+{"name": "Set.inter_comm", "statement": "∀ {α : Type*} (s t : Set α), s ∩ t = t ∩ s", "domain": "set", "tags": ["inter", "comm"]}
+{"name": "Set.empty_union", "statement": "∀ {α : Type*} (s : Set α), ∅ ∪ s = s", "domain": "set", "tags": ["union", "empty"]}
+{"name": "Set.union_empty", "statement": "∀ {α : Type*} (s : Set α), s ∪ ∅ = s", "domain": "set", "tags": ["union", "empty"]}
+{"name": "Set.inter_univ", "statement": "∀ {α : Type*} (s : Set α), s ∩ Set.univ = s", "domain": "set", "tags": ["inter", "univ"]}
+{"name": "Set.univ_inter", "statement": "∀ {α : Type*} (s : Set α), Set.univ ∩ s = s", "domain": "set", "tags": ["inter", "univ"]}
+{"name": "Set.compl_compl", "statement": "∀ {α : Type*} (s : Set α), sᶜᶜ = s", "domain": "set", "tags": ["compl"]}
+{"name": "Set.compl_union", "statement": "∀ {α : Type*} (s t : Set α), (s ∪ t)ᶜ = sᶜ ∩ tᶜ", "domain": "set", "tags": ["compl", "union", "demorgan"]}
+{"name": "Set.compl_inter", "statement": "∀ {α : Type*} (s t : Set α), (s ∩ t)ᶜ = sᶜ ∪ tᶜ", "domain": "set", "tags": ["compl", "inter", "demorgan"]}
+{"name": "Function.comp_id", "statement": "∀ {α β : Sort*} (f : α → β), f ∘ id = f", "domain": "function", "tags": ["comp", "id"]}
+{"name": "Function.id_comp", "statement": "∀ {α β : Sort*} (f : α → β), id ∘ f = f", "domain": "function", "tags": ["comp", "id"]}
+{"name": "Function.comp_assoc", "statement": "∀ {α β γ δ : Sort*} (f : γ → δ) (g : β → γ) (h : α → β), (f ∘ g) ∘ h = f ∘ (g ∘ h)", "domain": "function", "tags": ["comp", "assoc"]}
+{"name": "Function.Injective.comp", "statement": "∀ {α β γ : Sort*} {g : β → γ} {f : α → β}, Function.Injective g → Function.Injective f → Function.Injective (g ∘ f)", "domain": "function", "tags": ["injective", "comp"]}
+{"name": "Function.Surjective.comp", "statement": "∀ {α β γ : Sort*} {g : β → γ} {f : α → β}, Function.Surjective g → Function.Surjective f → Function.Surjective (g ∘ f)", "domain": "function", "tags": ["surjective", "comp"]}
+{"name": "Function.Bijective.injective", "statement": "∀ {α β : Sort*} {f : α → β}, Function.Bijective f → Function.Injective f", "domain": "function", "tags": ["bijective", "injective"]}
+{"name": "Function.Bijective.surjective", "statement": "∀ {α β : Sort*} {f : α → β}, Function.Bijective f → Function.Surjective f", "domain": "function", "tags": ["bijective", "surjective"]}
+{"name": "Function.Injective.eq_iff", "statement": "∀ {α β : Sort*} {f : α → β}, Function.Injective f → ∀ {a b}, f a = f b ↔ a = b", "domain": "function", "tags": ["injective", "eq"]}
+{"name": "List.length_nil", "statement": "∀ {α : Type*}, ([] : List α).length = 0", "domain": "list", "tags": ["length"]}
+{"name": "List.length_cons", "statement": "∀ {α : Type*} (a : α) (l : List α), (a :: l).length = l.length + 1", "domain": "list", "tags": ["length", "cons"]}
+{"name": "List.length_append", "statement": "∀ {α : Type*} (l₁ l₂ : List α), (l₁ ++ l₂).length = l₁.length + l₂.length", "domain": "list", "tags": ["length", "append"]}
+{"name": "List.length_map", "statement": "∀ {α β : Type*} (f : α → β) (l : List α), (l.map f).length = l.length", "domain": "list", "tags": ["length", "map"]}
+{"name": "List.length_reverse", "statement": "∀ {α : Type*} (l : List α), l.reverse.length = l.length", "domain": "list", "tags": ["length", "reverse"]}
+{"name": "List.append_nil", "statement": "∀ {α : Type*} (l : List α), l ++ [] = l", "domain": "list", "tags": ["append"]}
+{"name": "List.nil_append", "statement": "∀ {α : Type*} (l : List α), [] ++ l = l", "domain": "list", "tags": ["append"]}
+{"name": "List.append_assoc", "statement": "∀ {α : Type*} (l₁ l₂ l₃ : List α), l₁ ++ l₂ ++ l₃ = l₁ ++ (l₂ ++ l₃)", "domain": "list", "tags": ["append", "assoc"]}
+{"name": "List.map_nil", "statement": "∀ {α β : Type*} (f : α → β), List.map f [] = []", "domain": "list", "tags": ["map"]}
+{"name": "List.map_cons", "statement": "∀ {α β : Type*} (f : α → β) (a : α) (l : List α), List.map f (a :: l) = f a :: List.map f l", "domain": "list", "tags": ["map", "cons"]}
+{"name": "List.map_map", "statement": "∀ {α β γ : Type*} (g : β → γ) (f : α → β) (l : List α), List.map g (List.map f l) = List.map (g ∘ f) l", "domain": "list", "tags": ["map", "comp"]}
+{"name": "List.map_id", "statement": "∀ {α : Type*} (l : List α), List.map id l = l", "domain": "list", "tags": ["map", "id"]}
+{"name": "List.reverse_reverse", "statement": "∀ {α : Type*} (l : List α), l.reverse.reverse = l", "domain": "list", "tags": ["reverse"]}
+{"name": "List.mem_cons", "statement": "∀ {α : Type*} {a b : α} {l : List α}, a ∈ b :: l ↔ a = b ∨ a ∈ l", "domain": "list", "tags": ["mem", "cons"]}
+{"name": "List.mem_append", "statement": "∀ {α : Type*} {a : α} {l₁ l₂ : List α}, a ∈ l₁ ++ l₂ ↔ a ∈ l₁ ∨ a ∈ l₂", "domain": "list", "tags": ["mem", "append"]}
+{"name": "List.filter_nil", "statement": "∀ {α : Type*} (p : α → Bool), List.filter p [] = []", "domain": "list", "tags": ["filter"]}
+{"name": "Finset.sum_empty", "statement": "∀ {α β : Type*} [AddCommMonoid β] {f : α → β}, (∅ : Finset α).sum f = 0", "domain": "finset", "tags": ["sum", "empty"]}
+{"name": "Finset.sum_cons", "statement": "∀ {α β : Type*} [AddCommMonoid β] {s : Finset α} {a : α} {f : α → β}, a ∉ s → (Finset.cons a s (by assumption)).sum f = f a + s.sum f", "domain": "finset", "tags": ["sum", "cons"]}
+{"name": "Finset.sum_range_zero", "statement": "∀ {β : Type*} [AddCommMonoid β] {f : ℕ → β}, (Finset.range 0).sum f = 0", "domain": "finset", "tags": ["sum", "range"]}
+{"name": "Finset.sum_range_succ", "statement": "∀ {β : Type*} [AddCommMonoid β] {f : ℕ → β} {n : ℕ}, (Finset.range (n+1)).sum f = (Finset.range n).sum f + f n", "domain": "finset", "tags": ["sum", "range", "succ"]}
+{"name": "Finset.sum_range_one", "statement": "∀ {β : Type*} [AddCommMonoid β] {f : ℕ → β}, (Finset.range 1).sum f = f 0", "domain": "finset", "tags": ["sum", "range"]}
+{"name": "Finset.sum_add_sum_compl", "statement": "∀ {α β : Type*} [AddCommMonoid β] {s : Finset α} {t : Finset α} {f : α → β}, s ⊆ t → s.sum f + (t \\ s).sum f = t.sum f", "domain": "finset", "tags": ["sum", "compl"]}
+{"name": "Finset.sum_comm", "statement": "∀ {α β γ : Type*} [AddCommMonoid γ] {s : Finset α} {t : Finset β} {f : α → β → γ}, s.sum (fun a => t.sum (f a)) = t.sum (fun b => s.sum (fun a => f a b))", "domain": "finset", "tags": ["sum", "comm"]}
+{"name": "Finset.sum_congr", "statement": "∀ {α β : Type*} [AddCommMonoid β] {s t : Finset α} {f g : α → β}, s = t → (∀ x ∈ t, f x = g x) → s.sum f = t.sum g", "domain": "finset", "tags": ["sum", "congr"]}
+{"name": "Finset.sum_const", "statement": "∀ {α β : Type*} [AddCommMonoid β] {s : Finset α} (c : β), s.sum (fun _ => c) = s.card • c", "domain": "finset", "tags": ["sum", "const"]}
+{"name": "Finset.sum_le_sum", "statement": "∀ {α : Type*} {s : Finset α} {f g : α → ℕ}, (∀ x ∈ s, f x ≤ g x) → s.sum f ≤ s.sum g", "domain": "finset", "tags": ["sum", "le"]}
+{"name": "Finset.card_range", "statement": "∀ (n : ℕ), (Finset.range n).card = n", "domain": "finset", "tags": ["card", "range"]}
+{"name": "Finset.card_empty", "statement": "∀ {α : Type*}, (∅ : Finset α).card = 0", "domain": "finset", "tags": ["card", "empty"]}
+{"name": "Finset.mem_range", "statement": "∀ {n k : ℕ}, k ∈ Finset.range n ↔ k < n", "domain": "finset", "tags": ["mem", "range"]}
+{"name": "Finset.not_mem_range_self", "statement": "∀ {n : ℕ}, n ∉ Finset.range n", "domain": "finset", "tags": ["mem", "range"]}
+{"name": "Finset.prod_range_succ", "statement": "∀ {β : Type*} [CommMonoid β] {f : ℕ → β} {n : ℕ}, (Finset.range (n+1)).prod f = (Finset.range n).prod f * f n", "domain": "finset", "tags": ["prod", "range", "succ"]}
+{"name": "Finset.sum_ite_eq'", "statement": "∀ {α β : Type*} [DecidableEq α] [AddCommMonoid β] (s : Finset α) (a : α) (f : α → β), s.sum (fun x => if x = a then f x else 0) = if a ∈ s then f a else 0", "domain": "finset", "tags": ["sum", "ite"]}
+{"name": "Finset.sum_geometric_two_add_one", "statement": "∀ {n : ℕ}, (Finset.range n).sum (fun k => 2 ^ k) = 2 ^ n - 1", "domain": "finset", "tags": ["sum", "geometric", "pow"]}
+{"name": "Finset.card_union_add_card_inter", "statement": "∀ {α : Type*} [DecidableEq α] (s t : Finset α), (s ∪ t).card + (s ∩ t).card = s.card + t.card", "domain": "finset", "tags": ["card", "union", "inter"]}
+{"name": "mul_one", "statement": "∀ {M : Type*} [MulOneClass M] (a : M), a * 1 = a", "domain": "algebra", "tags": ["group", "mul", "one"]}
+{"name": "one_mul", "statement": "∀ {M : Type*} [MulOneClass M] (a : M), 1 * a = a", "domain": "algebra", "tags": ["group", "mul", "one"]}
+{"name": "inv_mul_cancel", "statement": "∀ {G : Type*} [Group G] (a : G), a⁻¹ * a = 1", "domain": "algebra", "tags": ["group", "inv", "cancel"]}
+{"name": "mul_inv_cancel", "statement": "∀ {G : Type*} [Group G] (a : G), a * a⁻¹ = 1", "domain": "algebra", "tags": ["group", "inv", "cancel"]}
+{"name": "mul_left_cancel", "statement": "∀ {G : Type*} [Group G] {a b c : G}, a * b = a * c → b = c", "domain": "algebra", "tags": ["group", "cancel"]}
+{"name": "mul_right_cancel", "statement": "∀ {G : Type*} [Group G] {a b c : G}, b * a = c * a → b = c", "domain": "algebra", "tags": ["group", "cancel"]}
+{"name": "inv_inv", "statement": "∀ {G : Type*} [Group G] (a : G), a⁻¹⁻¹ = a", "domain": "algebra", "tags": ["group", "inv"]}
+{"name": "mul_inv_rev", "statement": "∀ {G : Type*} [Group G] (a b : G), (a * b)⁻¹ = b⁻¹ * a⁻¹", "domain": "algebra", "tags": ["group", "inv", "rev"]}
+{"name": "inv_eq_of_mul_eq_one_left", "statement": "∀ {G : Type*} [Group G] {a b : G}, a * b = 1 → a = b⁻¹", "domain": "algebra", "tags": ["group", "inv"]}
+{"name": "Subgroup.mem_carrier", "statement": "∀ {G : Type*} [Group G] {H : Subgroup G} {x : G}, x ∈ H.carrier ↔ x ∈ H", "domain": "algebra", "tags": ["subgroup", "mem"]}
+{"name": "Subgroup.one_mem", "statement": "∀ {G : Type*} [Group G] (H : Subgroup G), (1 : G) ∈ H", "domain": "algebra", "tags": ["subgroup", "one"]}
+{"name": "Subgroup.mul_mem", "statement": "∀ {G : Type*} [Group G] {H : Subgroup G} {x y : G}, x ∈ H → y ∈ H → x * y ∈ H", "domain": "algebra", "tags": ["subgroup", "mul"]}
+{"name": "Subgroup.inv_mem", "statement": "∀ {G : Type*} [Group G] {H : Subgroup G} {x : G}, x ∈ H → x⁻¹ ∈ H", "domain": "algebra", "tags": ["subgroup", "inv"]}
+{"name": "MonoidHom.map_one", "statement": "∀ {M N : Type*} [MulOneClass M] [MulOneClass N] (f : M →* N), f 1 = 1", "domain": "algebra", "tags": ["hom", "one"]}
+{"name": "MonoidHom.map_mul", "statement": "∀ {M N : Type*} [MulOneClass M] [MulOneClass N] (f : M →* N) (a b : M), f (a * b) = f a * f b", "domain": "algebra", "tags": ["hom", "mul"]}
+{"name": "MonoidHom.map_inv", "statement": "∀ {G H : Type*} [Group G] [Group H] (f : G →* H) (a : G), f a⁻¹ = (f a)⁻¹", "domain": "algebra", "tags": ["hom", "inv"]}
+{"name": "pow_add", "statement": "∀ {G : Type*} [Monoid G] (a : G) (m n : ℕ), a ^ (m + n) = a ^ m * a ^ n", "domain": "algebra", "tags": ["pow", "add"]}
+{"name": "pow_zero", "statement": "∀ {G : Type*} [Monoid G] (a : G), a ^ 0 = 1", "domain": "algebra", "tags": ["pow"]}
+{"name": "pow_succ", "statement": "∀ {G : Type*} [Monoid G] (a : G) (n : ℕ), a ^ (n + 1) = a ^ n * a", "domain": "algebra", "tags": ["pow", "succ"]}
+{"name": "RingHom.map_zero", "statement": "∀ {R S : Type*} [Semiring R] [Semiring S] (f : R →+* S), f 0 = 0", "domain": "algebra", "tags": ["ring", "hom"]}
+{"name": "RingHom.map_one", "statement": "∀ {R S : Type*} [Semiring R] [Semiring S] (f : R →+* S), f 1 = 1", "domain": "algebra", "tags": ["ring", "hom"]}
+{"name": "RingHom.map_add", "statement": "∀ {R S : Type*} [Semiring R] [Semiring S] (f : R →+* S) (a b : R), f (a + b) = f a + f b", "domain": "algebra", "tags": ["ring", "hom", "add"]}
+{"name": "RingHom.map_mul", "statement": "∀ {R S : Type*} [Semiring R] [Semiring S] (f : R →+* S) (a b : R), f (a * b) = f a * f b", "domain": "algebra", "tags": ["ring", "hom", "mul"]}
+{"name": "Ideal.mem_bot", "statement": "∀ {R : Type*} [Semiring R] {x : R}, x ∈ (⊥ : Ideal R) ↔ x = 0", "domain": "algebra", "tags": ["ideal", "mem"]}
+{"name": "Ideal.mem_top", "statement": "∀ {R : Type*} [Semiring R] {x : R}, x ∈ (⊤ : Ideal R)", "domain": "algebra", "tags": ["ideal", "mem"]}
+{"name": "Polynomial.eval_zero", "statement": "∀ {R : Type*} [Semiring R] (p : Polynomial R), Polynomial.eval 0 p = p.coeff 0", "domain": "algebra", "tags": ["polynomial", "eval"]}
+{"name": "Polynomial.eval_add", "statement": "∀ {R : Type*} [Semiring R] (p q : Polynomial R) (x : R), (p + q).eval x = p.eval x + q.eval x", "domain": "algebra", "tags": ["polynomial", "eval", "add"]}
+{"name": "Polynomial.eval_mul", "statement": "∀ {R : Type*} [CommSemiring R] (p q : Polynomial R) (x : R), (p * q).eval x = p.eval x * q.eval x", "domain": "algebra", "tags": ["polynomial", "eval", "mul"]}
+{"name": "isOpen_univ", "statement": "∀ {X : Type*} [TopologicalSpace X], IsOpen (Set.univ : Set X)", "domain": "topology", "tags": ["open", "univ"]}
+{"name": "isOpen_empty", "statement": "∀ {X : Type*} [TopologicalSpace X], IsOpen (∅ : Set X)", "domain": "topology", "tags": ["open", "empty"]}
+{"name": "IsOpen.inter", "statement": "∀ {X : Type*} [TopologicalSpace X] {s t : Set X}, IsOpen s → IsOpen t → IsOpen (s ∩ t)", "domain": "topology", "tags": ["open", "inter"]}
+{"name": "isOpen_sUnion", "statement": "∀ {X : Type*} [TopologicalSpace X] {S : Set (Set X)}, (∀ s ∈ S, IsOpen s) → IsOpen (⋃₀ S)", "domain": "topology", "tags": ["open", "union"]}
+{"name": "isClosed_compl_iff", "statement": "∀ {X : Type*} [TopologicalSpace X] {s : Set X}, IsClosed sᶜ ↔ IsOpen s", "domain": "topology", "tags": ["closed", "open", "compl"]}
+{"name": "Continuous.comp", "statement": "∀ {X Y Z : Type*} [TopologicalSpace X] [TopologicalSpace Y] [TopologicalSpace Z] {g : Y → Z} {f : X → Y}, Continuous g → Continuous f → Continuous (g ∘ f)", "domain": "topology", "tags": ["continuous", "comp"]}
+{"name": "continuous_id", "statement": "∀ {X : Type*} [TopologicalSpace X], Continuous (id : X → X)", "domain": "topology", "tags": ["continuous", "id"]}
+{"name": "continuous_const", "statement": "∀ {X Y : Type*} [TopologicalSpace X] [TopologicalSpace Y] {y : Y}, Continuous (fun _ : X => y)", "domain": "topology", "tags": ["continuous", "const"]}
+{"name": "IsCompact.finite_subcover", "statement": "∀ {X : Type*} [TopologicalSpace X] {s : Set X} {ι : Type*} {U : ι → Set X}, IsCompact s → (∀ i, IsOpen (U i)) → s ⊆ ⋃ i, U i → ∃ t : Finset ι, s ⊆ ⋃ i ∈ t, U i", "domain": "topology", "tags": ["compact", "subcover"]}
+{"name": "IsConnected.union", "statement": "∀ {X : Type*} [TopologicalSpace X] {s t : Set X}, IsConnected s → IsConnected t → (s ∩ t).Nonempty → IsConnected (s ∪ t)", "domain": "topology", "tags": ["connected", "union"]}
+{"name": "Filter.Tendsto.add", "statement": "∀ {f g : ℝ → ℝ} {x a b : ℝ}, Filter.Tendsto f (nhds x) (nhds a) → Filter.Tendsto g (nhds x) (nhds b) → Filter.Tendsto (f + g) (nhds x) (nhds (a + b))", "domain": "analysis", "tags": ["tendsto", "add"]}
+{"name": "Filter.Tendsto.mul", "statement": "∀ {f g : ℝ → ℝ} {x a b : ℝ}, Filter.Tendsto f (nhds x) (nhds a) → Filter.Tendsto g (nhds x) (nhds b) → Filter.Tendsto (f * g) (nhds x) (nhds (a * b))", "domain": "analysis", "tags": ["tendsto", "mul"]}
+{"name": "Filter.Tendsto.const_mul", "statement": "∀ {f : ℝ → ℝ} {x a c : ℝ}, Filter.Tendsto f (nhds x) (nhds a) → Filter.Tendsto (fun y => c * f y) (nhds x) (nhds (c * a))", "domain": "analysis", "tags": ["tendsto", "const", "mul"]}
+{"name": "continuousAt_id", "statement": "∀ {X : Type*} [TopologicalSpace X] {x : X}, ContinuousAt id x", "domain": "analysis", "tags": ["continuousAt", "id"]}
+{"name": "ContinuousAt.add", "statement": "∀ {f g : ℝ → ℝ} {x : ℝ}, ContinuousAt f x → ContinuousAt g x → ContinuousAt (f + g) x", "domain": "analysis", "tags": ["continuousAt", "add"]}
+{"name": "ContinuousAt.mul", "statement": "∀ {f g : ℝ → ℝ} {x : ℝ}, ContinuousAt f x → ContinuousAt g x → ContinuousAt (f * g) x", "domain": "analysis", "tags": ["continuousAt", "mul"]}
+{"name": "HasDerivAt.add", "statement": "∀ {f g : ℝ → ℝ} {f' g' x : ℝ}, HasDerivAt f f' x → HasDerivAt g g' x → HasDerivAt (f + g) (f' + g') x", "domain": "analysis", "tags": ["deriv", "add"]}
+{"name": "HasDerivAt.mul", "statement": "∀ {f g : ℝ → ℝ} {f' g' x : ℝ}, HasDerivAt f f' x → HasDerivAt g g' x → HasDerivAt (fun y => f y * g y) (f' * g x + f x * g') x", "domain": "analysis", "tags": ["deriv", "mul", "product"]}
+{"name": "HasDerivAt.const_mul", "statement": "∀ {f : ℝ → ℝ} {f' c x : ℝ}, HasDerivAt f f' x → HasDerivAt (fun y => c * f y) (c * f') x", "domain": "analysis", "tags": ["deriv", "const", "mul"]}
+{"name": "hasDerivAt_id", "statement": "∀ (x : ℝ), HasDerivAt id 1 x", "domain": "analysis", "tags": ["deriv", "id"]}
+{"name": "hasDerivAt_const", "statement": "∀ (x c : ℝ), HasDerivAt (fun _ => c) 0 x", "domain": "analysis", "tags": ["deriv", "const"]}
+{"name": "hasDerivAt_pow", "statement": "∀ (n : ℕ) (x : ℝ), HasDerivAt (fun y => y ^ n) (↑n * x ^ (n - 1)) x", "domain": "analysis", "tags": ["deriv", "pow"]}
+{"name": "MeanValueTheorem", "statement": "∀ {f : ℝ → ℝ} {a b : ℝ}, a < b → ContinuousOn f (Set.Icc a b) → (∀ x ∈ Set.Ioo a b, DifferentiableAt ℝ f x) → ∃ c ∈ Set.Ioo a b, deriv f c = (f b - f a) / (b - a)", "domain": "analysis", "tags": ["mvt"]}
+{"name": "MonotonOn.deriv_nonneg", "statement": "∀ {f : ℝ → ℝ} {s : Set ℝ}, MonotonOn f s → ∀ x ∈ interior s, 0 ≤ deriv f x", "domain": "analysis", "tags": ["monotone", "deriv"]}
+{"name": "LinearMap.map_zero", "statement": "∀ {R M N : Type*} [Semiring R] [AddCommMonoid M] [AddCommMonoid N] [Module R M] [Module R N] (f : M →ₗ[R] N), f 0 = 0", "domain": "linalg", "tags": ["linear", "zero"]}
+{"name": "LinearMap.map_add", "statement": "∀ {R M N : Type*} [Semiring R] [AddCommMonoid M] [AddCommMonoid N] [Module R M] [Module R N] (f : M →ₗ[R] N) (x y : M), f (x + y) = f x + f y", "domain": "linalg", "tags": ["linear", "add"]}
+{"name": "LinearMap.map_smul", "statement": "∀ {R M N : Type*} [Semiring R] [AddCommMonoid M] [AddCommMonoid N] [Module R M] [Module R N] (f : M →ₗ[R] N) (c : R) (x : M), f (c • x) = c • f x", "domain": "linalg", "tags": ["linear", "smul"]}
+{"name": "Submodule.zero_mem", "statement": "∀ {R M : Type*} [Semiring R] [AddCommMonoid M] [Module R M] (p : Submodule R M), (0 : M) ∈ p", "domain": "linalg", "tags": ["submodule", "zero"]}
+{"name": "Submodule.add_mem", "statement": "∀ {R M : Type*} [Semiring R] [AddCommMonoid M] [Module R M] {p : Submodule R M} {x y : M}, x ∈ p → y ∈ p → x + y ∈ p", "domain": "linalg", "tags": ["submodule", "add"]}
+{"name": "LinearMap.ker_eq_bot", "statement": "∀ {R M N : Type*} [Ring R] [AddCommGroup M] [AddCommGroup N] [Module R M] [Module R N] {f : M →ₗ[R] N}, LinearMap.ker f = ⊥ ↔ Function.Injective f", "domain": "linalg", "tags": ["linear", "ker", "injective"]}
+{"name": "LinearMap.range_eq_top", "statement": "∀ {R M N : Type*} [Ring R] [AddCommGroup M] [AddCommGroup N] [Module R M] [Module R N] {f : M →ₗ[R] N}, LinearMap.range f = ⊤ ↔ Function.Surjective f", "domain": "linalg", "tags": ["linear", "range", "surjective"]}
+{"name": "Matrix.mul_assoc", "statement": "∀ {m n p q : Type*} [Fintype n] [Fintype p] [Semiring α] (A : Matrix m n α) (B : Matrix n p α) (C : Matrix p q α), A * B * C = A * (B * C)", "domain": "linalg", "tags": ["matrix", "mul", "assoc"]}
+{"name": "Matrix.one_mul", "statement": "∀ {n : Type*} [Fintype n] [DecidableEq n] [Semiring α] (A : Matrix n n α), 1 * A = A", "domain": "linalg", "tags": ["matrix", "mul", "one"]}
+{"name": "Matrix.det_mul", "statement": "∀ {n : Type*} [Fintype n] [DecidableEq n] [CommRing α] (A B : Matrix n n α), (A * B).det = A.det * B.det", "domain": "linalg", "tags": ["matrix", "det", "mul"]}
+{"name": "Matrix.det_one", "statement": "∀ {n : Type*} [Fintype n] [DecidableEq n] [CommRing α], (1 : Matrix n n α).det = 1", "domain": "linalg", "tags": ["matrix", "det", "one"]}
+{"name": "Matrix.det_transpose", "statement": "∀ {n : Type*} [Fintype n] [DecidableEq n] [CommRing α] (A : Matrix n n α), A.transpose.det = A.det", "domain": "linalg", "tags": ["matrix", "det", "transpose"]}
+{"name": "le_refl", "statement": "∀ {α : Type*} [Preorder α] (a : α), a ≤ a", "domain": "order", "tags": ["le", "refl"]}
+{"name": "le_trans", "statement": "∀ {α : Type*} [Preorder α] {a b c : α}, a ≤ b → b ≤ c → a ≤ c", "domain": "order", "tags": ["le", "trans"]}
+{"name": "le_antisymm", "statement": "∀ {α : Type*} [PartialOrder α] {a b : α}, a ≤ b → b ≤ a → a = b", "domain": "order", "tags": ["le", "antisymm"]}
+{"name": "lt_irrefl", "statement": "∀ {α : Type*} [Preorder α] (a : α), ¬a < a", "domain": "order", "tags": ["lt", "irrefl"]}
+{"name": "lt_trans", "statement": "∀ {α : Type*} [Preorder α] {a b c : α}, a < b → b < c → a < c", "domain": "order", "tags": ["lt", "trans"]}
+{"name": "Monotone.comp", "statement": "∀ {α β γ : Type*} [Preorder α] [Preorder β] [Preorder γ] {g : β → γ} {f : α → β}, Monotone g → Monotone f → Monotone (g ∘ f)", "domain": "order", "tags": ["monotone", "comp"]}
+{"name": "StrictMono.comp", "statement": "∀ {α β γ : Type*} [Preorder α] [Preorder β] [Preorder γ] {g : β → γ} {f : α → β}, StrictMono g → StrictMono f → StrictMono (g ∘ f)", "domain": "order", "tags": ["strictmono", "comp"]}
+{"name": "sup_comm", "statement": "∀ {α : Type*} [SemilatticeSup α] (a b : α), a ⊔ b = b ⊔ a", "domain": "order", "tags": ["sup", "comm"]}
+{"name": "inf_comm", "statement": "∀ {α : Type*} [SemilatticeInf α] (a b : α), a ⊓ b = b ⊓ a", "domain": "order", "tags": ["inf", "comm"]}
+{"name": "le_sup_left", "statement": "∀ {α : Type*} [SemilatticeSup α] {a b : α}, a ≤ a ⊔ b", "domain": "order", "tags": ["le", "sup"]}
+{"name": "le_sup_right", "statement": "∀ {α : Type*} [SemilatticeSup α] {a b : α}, b ≤ a ⊔ b", "domain": "order", "tags": ["le", "sup"]}
+{"name": "inf_le_left", "statement": "∀ {α : Type*} [SemilatticeInf α] {a b : α}, a ⊓ b ≤ a", "domain": "order", "tags": ["inf", "le"]}
+{"name": "inf_le_right", "statement": "∀ {α : Type*} [SemilatticeInf α] {a b : α}, a ⊓ b ≤ b", "domain": "order", "tags": ["inf", "le"]}
+{"name": "MeasureTheory.measure_empty", "statement": "∀ {α : Type*} [MeasurableSpace α] {μ : MeasureTheory.Measure α}, μ ∅ = 0", "domain": "measure", "tags": ["measure", "empty"]}
+{"name": "MeasureTheory.measure_mono", "statement": "∀ {α : Type*} [MeasurableSpace α] {μ : MeasureTheory.Measure α} {s t : Set α}, s ⊆ t → μ s ≤ μ t", "domain": "measure", "tags": ["measure", "mono"]}
+{"name": "MeasureTheory.measure_union_le", "statement": "∀ {α : Type*} [MeasurableSpace α] {μ : MeasureTheory.Measure α} (s t : Set α), μ (s ∪ t) ≤ μ s + μ t", "domain": "measure", "tags": ["measure", "union", "le"]}

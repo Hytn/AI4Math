@@ -42,7 +42,7 @@ class InteractiveThread(threading.Thread):
                 self.send_cmd(initialize_check)
             self.session.expect('"env": 0}\r\n\r\n', timeout=self.expect_timeout)  # If the context contains 'sorries', it will have more keys other than 'env'
             self.init_complete.set()
-        except:
+        except Exception:
             self.init_complete.set()
             print(f"Session {self.session_id}: Failed to initialize Lean REPL")
             print(self.context)
@@ -144,7 +144,7 @@ class InteractiveThread(threading.Thread):
             try:
                 self.session.close(force=True)
                 del self.session 
-            except:
+            except Exception:
                 pass
 
 # Process a proof batch

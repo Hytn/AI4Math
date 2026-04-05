@@ -30,3 +30,15 @@ class WorkingMemory:
             if not self.error_patterns:
                 return "none"
             return max(self.error_patterns, key=self.error_patterns.get)
+
+    # ── 序列化支持 (pickle/deepcopy) ──
+    # threading.Lock 不可序列化, 需自定义 __getstate__/__setstate__
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        del state['_lock']
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._lock = threading.Lock()

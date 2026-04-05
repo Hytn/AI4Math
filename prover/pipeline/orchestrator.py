@@ -40,9 +40,22 @@ class Orchestrator:
                  config=None, on_attempt=None):
         self.lean = lean_env
         self.llm = llm_provider
-        self.retriever = retriever
         self.config = config or {}
         self.on_attempt = on_attempt
+
+        # ── 自动创建 retriever (如果未提供) ──
+        if retriever is not None:
+            self.retriever = retriever
+        else:
+            try:
+                from knowledge.retriever import KnowledgeRetriever
+                self.retriever = KnowledgeRetriever(
+                    self.config.get("premise", {}))
+                logger.info("Orchestrator: auto-created KnowledgeRetriever "
+                            "(BM25 mode with built-in Mathlib premises)")
+            except Exception as e:
+                logger.warning(f"Orchestrator: failed to create retriever: {e}")
+                self.retriever = None
 
         # ── 原有模块 ──
         self.meta = MetaController(self.config)
@@ -69,12 +82,44 @@ class Orchestrator:
         self.plugins.discover()
         self._register_plugin_hooks()
 
-        # ── 新增: 异构引擎 ──
+        # ── APE v2: 广播总线 ──
+        from engine.broadcast import BroadcastBus
+        self.broadcast = BroadcastBus()
+
+        # ── APE v2: REPL 连接池 + 验证调度器 ──
+        from engine.lean_pool import LeanPool
+        from engine.prefilter import PreFilter
+        from engine.error_intelligence import ErrorIntelligence
+        from engine.verification_scheduler import VerificationScheduler
+
+        pool_size = self.config.get("lean_pool_size", 4)
+        project_dir = self.config.get("lean_project_dir", ".")
+        self.lean_pool = LeanPool(
+            pool_size=pool_size, project_dir=project_dir)
+        self.lean_pool.start()
+
+        self.prefilter = PreFilter()
+        self.error_intel = ErrorIntelligence(
+            lean_pool=self.lean_pool, premise_index=self.retriever)
+
+        self.scheduler = VerificationScheduler(
+            prefilter=self.prefilter,
+            lean_pool=self.lean_pool,
+            error_intel=self.error_intel,
+            broadcast=self.broadcast,
+            project_dir=project_dir,
+        )
+
+        # ── 新增: 异构引擎 (集成广播 + 调度器) ──
+        pipeline_cfg = self.config.get("pipeline", self.config)
         self.hetero_engine = HeterogeneousEngine(
             pool=self.pool,
             plugin_loader=self.plugins,
             hook_manager=self.hooks,
             retriever=self.retriever,
+            broadcast=self.broadcast,
+            verification_scheduler=self.scheduler,
+            config=pipeline_cfg,
         )
 
     def _register_builtin_hooks(self):
@@ -179,7 +224,8 @@ class Orchestrator:
                     if self.on_attempt:
                         self.on_attempt(attempt)
                     if r.proof_code.strip() and r.confidence > 0.3:
-                        if self._verify_proof(problem, r.proof_code, memory, trace):
+                        if self._verify_proof(problem, r.proof_code, memory,
+                                              trace, agent_result=r):
                             memory.solved = True
                             break
 
@@ -197,9 +243,74 @@ class Orchestrator:
                     attempt_count=len(memory.attempt_history),
                     metadata={"dominant_error_count": self._count_dominant(memory)},
                 ))
+
+            # ── 处理钩子驱动的策略升级 ──
+            # 与 MetaController 的轮数驱动升级不同, 钩子升级基于错误模式
+            # 检测 (如 RepetitionDetectorHook 发现同一错误连续出现 N 次)。
+            # 完整的升级流程: 渐进升级 → 更新 trace → 触发反思 → 注入上下文。
             if round_end.action == HookAction.ESCALATE:
-                strategy_name = StrategySwitcher.switch(strategy_name, "heavy")
+                # 渐进升级 (而非直接跳到 heavy)
+                if strategy_name == "light":
+                    next_level = "medium"
+                elif strategy_name == "medium":
+                    next_level = "heavy"
+                else:
+                    next_level = "heavy"  # 已在最高级别, 保持不变
+
+                old_strategy = strategy_name
+                strategy_name = StrategySwitcher.switch(strategy_name, next_level)
                 memory.current_strategy = strategy_name
+                trace.strategy_path.append(strategy_name)
+
+                logger.info(
+                    f"Hook-driven escalation: {old_strategy} → {strategy_name} "
+                    f"(reason: {round_end.message[:100]})")
+
+                # 触发反思: 分析为什么当前策略持续失败
+                reflection_text = self._run_reflection(problem, memory)
+                switch_result = self.hooks.fire(
+                    HookEvent.ON_STRATEGY_SWITCH,
+                    HookContext(
+                        event=HookEvent.ON_STRATEGY_SWITCH,
+                        theorem_statement=problem.theorem_statement,
+                        strategy_name=strategy_name,
+                        metadata={"reflection_text": reflection_text},
+                    ))
+                if switch_result.inject_context:
+                    classification.setdefault("domain_hints", {}).update(
+                        switch_result.inject_context)
+
+                # 注入钩子提供的升级原因和修复提示
+                if round_end.inject_context:
+                    classification.setdefault("domain_hints", {}).update(
+                        round_end.inject_context)
+
+            # ── 常规轮次反思: 连续失败 N 轮后自动触发 ──
+            # 不再仅依赖策略升级才触发反思。每 reflection_interval 轮
+            # (且仍未解决) 运行一次反思, 将分析结论注入下一轮上下文。
+            reflection_interval = self.config.get("reflection_interval", 3)
+            if (not memory.solved
+                    and memory.rounds_completed >= reflection_interval
+                    and memory.rounds_completed % reflection_interval == 0):
+                reflection_text = self._run_reflection(problem, memory)
+                if reflection_text:
+                    classification.setdefault("domain_hints", {}).update({
+                        "periodic_reflection": (
+                            f"## Self-reflection after {memory.rounds_completed} rounds\n"
+                            f"{reflection_text[:800]}\n\n"
+                            f"Use this analysis to fundamentally change your approach."
+                        ),
+                    })
+                    logger.info(
+                        f"Periodic reflection triggered at round "
+                        f"{memory.rounds_completed}")
+
+            # ── 验证反馈注入: 将上一轮的结构化反馈注入下一轮上下文 ──
+            last_feedback_text = getattr(memory, 'last_feedback_text', '')
+            if last_feedback_text:
+                classification.setdefault("domain_hints", {}).update({
+                    "last_verification_feedback": last_feedback_text,
+                })
 
             if (strategy_config.use_decompose
                     and memory.rounds_completed >= 2 and not memory.solved):
@@ -228,28 +339,85 @@ class Orchestrator:
             logger.debug(f"Reflection failed: {e}")
             return ""
 
-    def _verify_proof(self, problem, proof, memory, trace) -> bool:
+    def _verify_proof(self, problem, proof, memory, trace,
+                      agent_result: 'AgentResult' = None) -> bool:
+        """验证证明 (v2: 通过 VerificationScheduler 三级验证)
+
+        改进:
+          1. 验证后用 refine_confidence() 更新 agent_result 的置信度
+          2. 触发 POST_VERIFICATION 钩子 (使插件的 on_error 规则生效)
+        """
         pre = self.hooks.fire(HookEvent.PRE_VERIFICATION,
             HookContext(event=HookEvent.PRE_VERIFICATION,
                         theorem_statement=problem.theorem_statement,
                         proof=proof))
         if pre.action == HookAction.SKIP:
             logger.info("PRE_VERIFICATION hook: SKIP (proof rejected by pre-filter)")
+            if agent_result:
+                from agent.runtime.sub_agent import SubAgent
+                agent_result.confidence = SubAgent.refine_confidence(
+                    agent_result, l0_passed=False)
             return False
         if pre.action == HookAction.MODIFY and pre.inject_context:
-            # Hook detected an issue (e.g., ℕ subtraction without ≤ guard).
-            # Log the warning and store it in memory for downstream repair.
             for key, value in pre.inject_context.items():
                 memory.hook_warnings = getattr(memory, 'hook_warnings', {})
                 memory.hook_warnings[key] = value
                 logger.info(f"PRE_VERIFICATION hook: MODIFY — {key}: {str(value)[:100]}")
         try:
-            from prover.verifier.lean_checker import LeanChecker
-            checker = LeanChecker(self.lean)
-            status, errors, stderr, ms = checker.check(
-                problem.theorem_statement, proof)
-            return status == AttemptStatus.SUCCESS
-        except Exception:
+            # ── v2: 使用 VerificationScheduler 三级验证 ──
+            if self.scheduler:
+                result = self.scheduler.verify_complete(
+                    theorem=problem.theorem_statement,
+                    proof=proof,
+                    direction="orchestrator",
+                )
+                # 将结构化反馈存入 memory, 供下一轮使用
+                if result.feedback:
+                    memory.last_feedback = result.feedback
+                    memory.last_feedback_text = result.feedback.to_prompt(1500)
+
+                # ── 用验证反馈精化置信度 ──
+                if agent_result:
+                    from agent.runtime.sub_agent import SubAgent
+                    agent_result.confidence = SubAgent.refine_confidence(
+                        agent_result,
+                        feedback=result.feedback,
+                        l0_passed=result.l0_passed,
+                        l1_passed=(result.level_reached in ("L1", "L2") and result.success),
+                        l2_passed=result.l2_verified,
+                    )
+
+                # ── 触发 POST_VERIFICATION 钩子 ──
+                post_ctx = HookContext(
+                    event=HookEvent.POST_VERIFICATION,
+                    theorem_statement=problem.theorem_statement,
+                    proof=proof,
+                    errors=[{"message": result.feedback.error_message,
+                             "category": result.feedback.error_category}]
+                           if result.feedback.error_message else [],
+                    dominant_error=result.feedback.error_category or "",
+                    metadata={
+                        "level_reached": result.level_reached,
+                        "success": result.success,
+                    },
+                )
+                post_result = self.hooks.fire(
+                    HookEvent.POST_VERIFICATION, post_ctx)
+                if post_result.inject_context:
+                    for key, value in post_result.inject_context.items():
+                        memory.hook_warnings = getattr(memory, 'hook_warnings', {})
+                        memory.hook_warnings[key] = value
+
+                return result.success
+            else:
+                # Fallback: 原有验证路径
+                from prover.verifier.lean_checker import LeanChecker
+                checker = LeanChecker(self.lean)
+                status, errors, stderr, ms = checker.check(
+                    problem.theorem_statement, proof)
+                return status == AttemptStatus.SUCCESS
+        except Exception as e:
+            logger.warning(f"Verification error: {e}")
             return False
 
     def _agent_result_to_attempt(self, r: AgentResult, memory) -> ProofAttempt:
@@ -278,8 +446,8 @@ class Orchestrator:
             if subgoals:
                 for sg in subgoals:
                     memory.goal_stack.append(sg.statement)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Decompose failed for {problem.problem_id}: {e}")
 
     def _try_conjecture(self, problem, memory):
         try:
@@ -293,5 +461,22 @@ class Orchestrator:
                     memory.banked_lemmas.append({
                         "name": "conj", "statement": conj,
                         "proof": "", "verified": False})
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Conjecture failed for {problem.problem_id}: {e}")
+
+    # ── Context manager + 资源清理 ──
+
+    def close(self):
+        """释放所有资源 (REPL 池、广播总线等)"""
+        if hasattr(self, 'lean_pool') and self.lean_pool:
+            self.lean_pool.shutdown()
+        if hasattr(self, 'broadcast') and self.broadcast:
+            self.broadcast.clear()
+        logger.info("Orchestrator: shutdown complete")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False

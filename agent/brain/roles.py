@@ -106,3 +106,68 @@ You rank Mathlib lemmas by relevance to a given proof goal.
 Output a JSON array of objects with 'name' and 'relevance' (0-10) fields,
 sorted by relevance. Consider type signatures, not just name similarity.""",
 }
+
+
+# ── 模型能力级别适配 ──
+# 不同模型使用不同复杂度的 system prompt,
+# 避免对小模型信息过载, 对大模型指令不足。
+
+MODEL_TIER_OVERRIDES = {
+    "fast": {
+        # 用于 Haiku 等快速小模型: 简洁指令, 偏向自动化 tactic
+        AgentRole.PROOF_GENERATOR: """\
+You are a Lean 4 prover. Generate a proof using Mathlib tactics.
+Output ONLY the proof body (`:= by ...`) in a ```lean block.
+Try: simp, ring, omega, norm_num, decide, linarith, aesop.
+If those fail, use exact? or apply? to search.
+NEVER use sorry.""",
+    },
+    "standard": {
+        # 用于 Sonnet 等标准模型: 使用默认 ROLE_PROMPTS (无覆盖)
+    },
+    "advanced": {
+        # 用于 Opus 等高级模型: 鼓励深度推理和创造性策略
+        AgentRole.PROOF_GENERATOR: """\
+You are an expert Lean 4 theorem prover with deep knowledge of Mathlib.
+
+Strategy guidelines:
+1) Start with automation: simp, ring, omega, norm_num, decide, linarith.
+2) If automation fails, analyze WHY — is it a type mismatch, missing lemma, or wrong approach?
+3) For complex proofs, plan first: identify key intermediate steps as `have` statements.
+4) Consider multiple proof strategies: direct construction, contradiction, induction, cases.
+5) Use Mathlib's powerful tactics: field_simp, push_neg, gcongr, positivity, polyrith.
+6) For number theory: prefer omega for linear arithmetic, norm_num for computations.
+7) When stuck, try `exact?` or `apply?` to let Lean search for the right lemma.
+
+Output ONLY the proof body (starting with `:= by`) inside a single ```lean block.
+NEVER use `sorry` or `admit`.""",
+    },
+}
+
+
+def get_role_prompt(role: AgentRole, model: str = "") -> str:
+    """获取适配模型能力的 system prompt.
+
+    Args:
+        role: Agent 角色
+        model: 模型名称 (用于推断能力级别)
+
+    Returns:
+        适配后的 system prompt
+    """
+    # 推断模型能力级别
+    model_lower = model.lower() if model else ""
+    if "haiku" in model_lower:
+        tier = "fast"
+    elif "opus" in model_lower:
+        tier = "advanced"
+    else:
+        tier = "standard"
+
+    # 查找级别覆盖
+    overrides = MODEL_TIER_OVERRIDES.get(tier, {})
+    if role in overrides:
+        return overrides[role]
+
+    # 回退到默认 prompt
+    return ROLE_PROMPTS.get(role, ROLE_PROMPTS[AgentRole.PROOF_GENERATOR])

@@ -70,14 +70,28 @@ class AgentPool:
             for st in specs_and_tasks:
                 results.append(_run(st))
         else:
+            # 使用 index 映射确保异常时结果列表长度与输入一致
+            indexed_results = [None] * len(specs_and_tasks)
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 futures = {executor.submit(_run, st): i
                            for i, st in enumerate(specs_and_tasks)}
                 for f in as_completed(futures):
+                    idx = futures[f]
                     try:
-                        results.append(f.result())
+                        indexed_results[idx] = f.result()
                     except Exception as e:
                         logger.error(f"SubAgent execution error: {e}")
+                        # 追加标记失败的结果, 保持长度一致
+                        from agent.runtime.sub_agent import AgentResult
+                        spec, _ = specs_and_tasks[idx]
+                        indexed_results[idx] = AgentResult(
+                            agent_name=spec.name,
+                            role=spec.role,
+                            content="",
+                            error=f"Execution error: {e}",
+                            confidence=0.0,
+                        )
+            results = indexed_results
 
         # 统一更新预算
         if budget:

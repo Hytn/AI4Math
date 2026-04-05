@@ -58,10 +58,10 @@ def files_to_individual(min_year, max_year):
                         try:
                             search = re.search(problem_pattern, '\n'.join(section_content))
                             problem_name = search.group(0)
-                        except:
+                        except (AttributeError, re.error) as exc:
                             print(f"Section content is {section_content}")
                             print(f"Problem pattern is {problem_pattern}")
-                            print(f"Search is {search}")
+                            print(f"Error: {exc}")
                             assert False
                         with open(f"src/{problem_name}.lean", "w") as g:
                             g.write("import Mathlib\n\n")

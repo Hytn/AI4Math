@@ -1,0 +1,6 @@
+{"name": "mul_assoc", "statement": "theorem mul_assoc [Semigroup α] (a b c : α) : a * b * c = a * (b * c)"}
+{"name": "mul_comm", "statement": "theorem mul_comm [CommMonoid α] (a b : α) : a * b = b * a"}
+{"name": "inv_mul_cancel", "statement": "theorem inv_mul_cancel [Group α] (a : α) : a⁻¹ * a = 1"}
+{"name": "mul_inv_cancel", "statement": "theorem mul_inv_cancel [Group α] (a : α) : a * a⁻¹ = 1"}
+{"name": "map_mul", "statement": "theorem MonoidHom.map_mul [MulOneClass M] [MulOneClass N] (f : M →* N) (a b : M) : f (a * b) = f a * f b"}
+{"name": "Subgroup.mem_closure", "statement": "theorem Subgroup.mem_closure {G : Type*} [Group G] {s : Set G} {x : G} (hx : x ∈ s) : x ∈ Subgroup.closure s"}

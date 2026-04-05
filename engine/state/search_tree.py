@@ -42,6 +42,62 @@ class SearchTree:
         tree._nodes = new_nodes; tree._root = self._root; tree._next = self._next + 1
         return tree, child_id
 
+    def update_node(self, node_id: NodeId, *,
+                    visit_count: int = None,
+                    success_count: int = None,
+                    status: NodeStatus = None) -> 'SearchTree':
+        """Return a new SearchTree with the specified node fields updated.
+
+        This is the proper way to modify node state — returns a new tree
+        instance rather than mutating _nodes in place, preserving the
+        immutable data structure semantics of PMap.
+        """
+        node = self._nodes.get(node_id)
+        if node is None:
+            return self
+        updated = SearchNode(
+            node.id, node.state, node.parent, node.tactic,
+            node.children,
+            status if status is not None else node.status,
+            visit_count if visit_count is not None else node.visit_count,
+            success_count if success_count is not None else node.success_count,
+            node.depth,
+        )
+        tree = SearchTree.__new__(SearchTree)
+        tree._nodes = self._nodes.set(node_id, updated)
+        tree._root = self._root
+        tree._next = self._next
+        return tree
+
+    def backpropagate(self, node_id: NodeId, success: bool) -> 'SearchTree':
+        """Propagate result up the tree, returning a new tree with updated counts.
+
+        Traverses from node_id to root, incrementing visit_count on each node
+        and success_count if success=True. Returns a new immutable tree.
+        """
+        nodes = self._nodes
+        current_id = node_id
+        while current_id is not None:
+            node = nodes.get(current_id)
+            if node is None:
+                break
+            updated = SearchNode(
+                node.id, node.state, node.parent, node.tactic,
+                node.children,
+                NodeStatus.SOLVED if success else node.status,
+                node.visit_count + 1,
+                node.success_count + (1 if success else 0),
+                node.depth,
+            )
+            nodes = nodes.set(current_id, updated)
+            current_id = node.parent
+
+        tree = SearchTree.__new__(SearchTree)
+        tree._nodes = nodes
+        tree._root = self._root
+        tree._next = self._next
+        return tree
+
     def get(self, nid): return self._nodes.get(nid)
     def root(self): return self._nodes[self._root]
     def size(self): return len(self._nodes)

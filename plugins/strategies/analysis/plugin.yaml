@@ -1,0 +1,62 @@
+name: analysis
+version: "1.0.0"
+description: "Specialized strategy for real/complex analysis proofs (limits, continuity, derivatives, integrals)"
+domain:
+  branches: ["analysis", "topology"]
+  difficulty: ["easy", "medium", "hard"]
+  keywords:
+    - "Real"
+    - "ℝ"
+    - "Filter"
+    - "Tendsto"
+    - "ContinuousOn"
+    - "Continuous"
+    - "Differentiable"
+    - "deriv"
+    - "MeasureTheory"
+    - "∫"
+    - "HasDerivAt"
+    - "IsOpen"
+    - "Compact"
+    - "TopologicalSpace"
+    - "Metric"
+    - "NormedSpace"
+
+strategy:
+  inherits: "medium"
+  overrides:
+    temperature: 0.7
+    samples_per_round: 8
+  custom_params:
+    prefer_analysis_tactics: true
+    strategic_hint: >
+      For analysis proofs:
+      - Use `norm_num` for numeric inequalities, `linarith` for linear arithmetic over ℝ.
+      - For ε-δ proofs, use `intro ε hε` then construct δ explicitly with `use δ`.
+      - For limits, use `Filter.Tendsto` and `Metric.tendsto_atTop` / `Metric.tendsto_nhds`.
+      - For continuity, use `Continuous.comp`, `continuous_id`, `continuous_const`.
+      - For derivatives, use `HasDerivAt.mul`, `HasDerivAt.add`, `hasDerivAt_id`.
+      - `positivity` handles goals like `0 < f x` or `0 ≤ g x` automatically.
+      - `field_simp` simplifies goals involving division over fields.
+      - `gcongr` handles monotonicity/congruence goals.
+
+premises:
+  file: "premises.jsonl"
+  merge_mode: "prepend"
+
+few_shot:
+  file: "few_shot.md"
+
+hooks:
+  on_error:
+    - pattern: "type_mismatch.*ℝ.*ℕ|type_mismatch.*Real.*Nat"
+      action: "inject_context"
+      content: >
+        Type mismatch between ℝ and ℕ. Use `Nat.cast` or `(↑n : ℝ)` to coerce
+        natural numbers to reals. Useful lemmas: `Nat.cast_add`, `Nat.cast_mul`,
+        `Nat.cast_pos`, `Nat.cast_le`.
+    - pattern: "positivity.*failed"
+      action: "inject_context"
+      content: >
+        `positivity` failed. Try providing explicit bounds with `have : 0 < x := by ...`
+        or use `sq_nonneg`, `abs_nonneg`, `mul_self_nonneg` for specific cases.

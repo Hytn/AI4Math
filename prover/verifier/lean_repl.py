@@ -159,7 +159,8 @@ class LeanREPL:
     """
 
     def __init__(self, mode: str = "auto", lean_cmd: str = "lean",
-                 project_dir: str = ".", timeout: int = 60):
+                 project_dir: str = ".", timeout: int = 60,
+                 lean_pool: 'LeanPool' = None):
         if mode == "auto":
             mode = detect_best_backend(project_dir)
         self.mode = mode
@@ -171,10 +172,19 @@ class LeanREPL:
         self._cache = _global_cache
         self._lock = threading.Lock()
 
+        # ── 统一后端: 优先使用 engine.lean_pool.LeanPool ──
+        # LeanPool 提供连接池化、超时保护和原子会话管理。
+        # 当 lean_pool 可用时, verify_complete_proof / send_tactic 委托给它,
+        # 避免维护两套独立的 REPL 进程管理代码。
+        # LeanREPL 仍保留编译缓存作为薄层增值, 以及 subprocess fallback。
+        self._lean_pool = lean_pool
+
     @staticmethod
-    def create(project_dir: str = ".", timeout: int = 60) -> 'LeanREPL':
+    def create(project_dir: str = ".", timeout: int = 60,
+               lean_pool: 'LeanPool' = None) -> 'LeanREPL':
         """Factory: auto-detect backend and create REPL."""
-        return LeanREPL(mode="auto", project_dir=project_dir, timeout=timeout)
+        return LeanREPL(mode="auto", project_dir=project_dir,
+                        timeout=timeout, lean_pool=lean_pool)
 
     @property
     def is_alive(self) -> bool:
@@ -210,7 +220,26 @@ class LeanREPL:
             return REPLResponse(success=False, error="REPL not started")
 
         t0 = time.perf_counter()
-        if self.mode == "lean4-repl":
+
+        # ── 优先委托给 LeanPool ──
+        if self._lean_pool and self._state.env_id is not None:
+            pool_result = self._lean_pool.try_tactic(self._state.env_id, tactic)
+            if pool_result.success:
+                self._state.env_id = pool_result.new_env_id
+                self._state.tactic_history.append(tactic)
+                resp = REPLResponse(
+                    success=True,
+                    goals=pool_result.remaining_goals,
+                    is_complete=pool_result.is_proof_complete,
+                    env_id=pool_result.new_env_id,
+                )
+            else:
+                resp = REPLResponse(
+                    success=False,
+                    error=pool_result.error_message,
+                    goals=pool_result.remaining_goals,
+                )
+        elif self.mode == "lean4-repl":
             resp = self._lean4repl_tactic(tactic)
         elif self.mode == "subprocess":
             resp = self._subprocess_tactic(tactic)
@@ -230,15 +259,34 @@ class LeanREPL:
 
         This is the most common usage pattern: LLM generates a full proof,
         we verify it. Supports caching across calls.
+
+        Backend priority:
+          1. Cache hit → instant return
+          2. LeanPool (engine layer) → 连接池化, 超时保护, 原子会话管理
+          3. lean4-repl (self-managed process) → legacy path
+          4. subprocess → 最慢, 每次完整编译
         """
+        # 缓存键包含环境版本标识, 防止 Lean4/Mathlib 升级后返回过时结果
+        env_tag = self._get_env_version_tag()
         cache_key = hashlib.sha256(
-            f"{preamble}||{theorem}||{proof}".encode()).hexdigest()
+            f"{env_tag}||{preamble}||{theorem}||{proof}".encode()).hexdigest()
         cached = self._cache.get(cache_key)
         if cached is not None:
             return cached
 
         t0 = time.perf_counter()
-        if self.mode == "lean4-repl":
+
+        # ── 优先委托给 LeanPool (统一后端) ──
+        if self._lean_pool:
+            pool_result = self._lean_pool.verify_complete(theorem, proof, preamble)
+            resp = REPLResponse(
+                success=pool_result.success,
+                goals=pool_result.goals_remaining,
+                error=pool_result.stderr if not pool_result.success else "",
+                is_complete=pool_result.success and not pool_result.has_sorry,
+                env_id=pool_result.env_id,
+            )
+        elif self.mode == "lean4-repl":
             resp = self._lean4repl_verify_complete(theorem, proof, preamble)
         elif self.mode == "subprocess":
             resp = self._subprocess_verify_complete(theorem, proof, preamble)
@@ -270,6 +318,45 @@ class LeanREPL:
                 except Exception:
                     pass
             self._process = None
+
+    _env_version_cache: str = ""  # class-level cache
+
+    def _get_env_version_tag(self) -> str:
+        """获取 Lean4 + Mathlib 环境版本标识, 用于缓存键.
+
+        读取 lean-toolchain 和 lake-manifest.json (如果存在) 生成版本标签。
+        结果缓存在类级别, 避免重复 I/O。
+        """
+        if LeanREPL._env_version_cache:
+            return LeanREPL._env_version_cache
+
+        parts = ["lean"]
+        # 读取 lean-toolchain
+        toolchain_path = os.path.join(self.project_dir, "lean-toolchain")
+        try:
+            if os.path.isfile(toolchain_path):
+                with open(toolchain_path) as f:
+                    parts.append(f.read().strip()[:50])
+        except OSError:
+            pass
+
+        # 读取 lake-manifest.json 中 mathlib 的 rev
+        manifest_path = os.path.join(self.project_dir, "lake-manifest.json")
+        try:
+            if os.path.isfile(manifest_path):
+                import json as _json
+                with open(manifest_path) as f:
+                    manifest = _json.load(f)
+                for pkg in manifest.get("packages", []):
+                    if pkg.get("name") == "mathlib":
+                        parts.append(pkg.get("rev", "")[:12])
+                        break
+        except (OSError, ValueError):
+            pass
+
+        tag = "|".join(parts)
+        LeanREPL._env_version_cache = tag
+        return tag
 
     def get_history(self) -> list[str]:
         return list(self._state.tactic_history)

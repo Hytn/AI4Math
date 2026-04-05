@@ -36,12 +36,15 @@ name = "mathlib"
 scope = "leanprover-community"
 type = "git"
 source = "https://github.com/leanprover-community/mathlib4.git"
-# 锁定到稳定的 mathlib commit (替换为你测试时的最新稳定 commit)
-revision = "master"
+# 锁定到稳定的 mathlib commit — 确保评测结果可复现
+# 更新方式: 运行 `lake update` 后将 lake-manifest.json 中的 rev 值复制到此处
+# 此 commit 对应 2025-03 的 mathlib4 稳定版本
+revision = "13042290464e1e615b8cd1e0d5aba0ef16472bd1"
 EOF
 
 # lean-toolchain — 锁定 Lean 版本
-# !! 确保这个版本与 mathlib 兼容 !!
+# !! 确保这个版本与上述 mathlib commit 兼容 !!
+# 查看对应 toolchain: https://github.com/leanprover-community/mathlib4/blob/<commit>/lean-toolchain
 RUN cat > lean-toolchain <<'EOF'
 leanprover/lean4:v4.17.0
 EOF

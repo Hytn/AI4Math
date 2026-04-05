@@ -137,7 +137,7 @@ class APEEngine:
     劣势: 目前不覆盖 Lean4 的全部类型理论，最终仍需 Lean4 做 L2 认证。
     """
 
-    def __init__(self):
+    def __init__(self, lean_pool=None):
         import sys, os
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
         from engine.core import Expr, Name, Environment, ConstantInfo, MetaId
@@ -155,6 +155,7 @@ class APEEngine:
         self._ProofState = ProofState
         self._GoalView = GoalView
         self._SearchCoordinator = SearchCoordinator
+        self._lean_pool = lean_pool
 
     def prove_by_search(self, theorem_name: str, goal_expr,
                         env, tactics: list[str],
@@ -174,7 +175,8 @@ class APEEngine:
         """
         start = time.perf_counter()
 
-        coord = self._SearchCoordinator(env, goal_expr)
+        coord = self._SearchCoordinator(env, goal_expr,
+                                         lean_pool=self._lean_pool)
         nodes_explored = 0
         forks_created = 0
         l0_filtered = 0
@@ -357,9 +359,9 @@ class DualEngine:
         result = engine.prove_dual(theorem, theorem_desc, tactics)
     """
 
-    def __init__(self, lean_env=None):
+    def __init__(self, lean_env=None, lean_pool=None):
         self.lean4 = Lean4Engine(lean_env)
-        self.ape = APEEngine()
+        self.ape = APEEngine(lean_pool=lean_pool)
 
     def verify_lean4(self, theorem: str, proof: str) -> EngineResult:
         """Path 1: Traditional Lean4 verification."""

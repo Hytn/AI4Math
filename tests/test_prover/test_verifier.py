@@ -132,7 +132,7 @@ class TestIntegrityChecker:
     def test_sorry_fails(self):
         report = check_integrity("theorem t : True := by sorry")
         assert not report.passed
-        assert any("sorry" in i.lower() for i in report.issues)
+        assert any("sorry" in i.message.lower() for i in report.issues)
 
     def test_axiom_fails(self):
         report = check_integrity("axiom my_ax : False")

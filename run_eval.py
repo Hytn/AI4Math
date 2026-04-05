@@ -42,11 +42,17 @@ logger = logging.getLogger(__name__)
 
 def prove_single(problem: BenchmarkProblem, llm, premise_selector,
                  max_samples: int = 8, lean_env=None,
-                 lean_mode: str = "skip") -> ProofTrace:
+                 lean_mode: str = "skip",
+                 temperature: float = 0.8,
+                 temp_mode: str = "fixed") -> ProofTrace:
     """对单道题进行证明尝试。
 
     v2 fix: 不在首次成功时中断, 而是跑完所有 max_samples 次,
     以正确统计 correct_count (pass@k 所需)。
+
+    v3 fix: 温度调度模式可选:
+      - "fixed": 所有样本使用相同温度 (默认 0.8), 满足 pass@k 独立同分布假设
+      - "escalating": 逐步提高温度 (0.3 → 1.0) 增加多样性, 但 pass@k 公式不再严格适用
     """
     trace = ProofTrace(
         problem_id=problem.problem_id,
@@ -69,8 +75,13 @@ def prove_single(problem: BenchmarkProblem, llm, premise_selector,
                 premises=premise_strs[:10],
             )
 
-            # 逐步提高 temperature 以增加多样性
-            temp = 0.3 + (attempt_idx * 0.1)
+            # 温度调度
+            if temp_mode == "escalating":
+                temp = 0.3 + (attempt_idx * 0.1)
+                temp = min(temp, 1.0)
+            else:
+                # "fixed" 模式: 所有采样使用相同温度, 满足 pass@k i.i.d. 假设
+                temp = temperature
             resp = llm.generate(
                 system=ROLE_PROMPTS[AgentRole.PROOF_GENERATOR],
                 user=prompt,

@@ -161,31 +161,97 @@ class SubAgent:
 
     def _estimate_confidence(self, resp: LLMResponse,
                              proof_code: str) -> float:
-        """估计本次生成的质量 (0.0-1.0)"""
+        """估计本次生成的质量 (0.0-1.0)
+
+        这是生成阶段的初步估计, 基于代码结构特征。
+        验证完成后应调用 refine_confidence() 用实际反馈更新。
+        """
         if not proof_code.strip():
             return 0.0
 
         score = 0.3  # 有代码就有基础分
 
-        # sorry/admit 检测
+        # sorry/admit 检测 — 强烈负面信号
         if "sorry" in proof_code or "admit" in proof_code:
             score *= 0.3
 
-        # 代码长度合理性 (太短可能太简单, 太长可能有问题)
+        # 代码长度合理性
         lines = proof_code.strip().split("\n")
         if 2 <= len(lines) <= 30:
-            score += 0.2
+            score += 0.15
         elif len(lines) > 50:
             score -= 0.1
 
         # 结构化证明有 have 步骤 → 更可能正确
         if "have " in proof_code:
-            score += 0.15
+            score += 0.1
 
         # 使用了常见的 automation tactic → 更简洁
         auto_tactics = ["simp", "ring", "omega", "norm_num",
                         "linarith", "decide"]
         if any(t in proof_code for t in auto_tactics):
-            score += 0.1
+            score += 0.05
+
+        # 以 := by 开头 → 基本格式正确
+        stripped = proof_code.strip()
+        if stripped.startswith(":= by") or stripped.startswith("by"):
+            score += 0.05
 
         return min(1.0, max(0.0, score))
+
+    @staticmethod
+    def refine_confidence(result: 'AgentResult',
+                          feedback: 'AgentFeedback' = None,
+                          l0_passed: bool = True,
+                          l1_passed: bool = False,
+                          l2_passed: bool = False) -> float:
+        """用验证阶段的实际反馈更新置信度
+
+        在 Orchestrator 验证证明后调用此方法, 基于 L0/L1/L2 的
+        实际结果和 AgentFeedback 中的结构化信息重新评估。
+
+        置信度分级:
+          0.0-0.2: 生成了代码但可能有语法问题
+          0.2-0.4: L0 通过, 语法正确但未验证
+          0.4-0.7: L1 有部分进展 (关闭了一些 goal)
+          0.7-0.9: L1 通过, 所有 goal 关闭
+          0.9-1.0: L2 通过, 完整编译认证
+        """
+        base = result.confidence
+
+        if not l0_passed:
+            # L0 拒绝: 语法错误, 大幅降低
+            return min(base, 0.15)
+
+        if l2_passed:
+            # L2 通过: 最终认证, 最高置信度
+            return 0.95
+
+        if l1_passed:
+            # L1 通过: REPL 验证成功
+            return max(base, 0.80)
+
+        # L0 通过但 L1 未通过 → 用 feedback 细化
+        if feedback:
+            if feedback.is_proof_complete:
+                return max(base, 0.85)
+
+            # 根据 goal 关闭进度调整
+            if feedback.progress_score > 0:
+                progress_bonus = feedback.progress_score * 0.3
+                base = max(base, 0.3 + progress_bonus)
+
+            # 有修复候选 → 说明离成功不远
+            if feedback.repair_candidates:
+                high_conf = [r for r in feedback.repair_candidates
+                             if r.confidence > 0.7]
+                if high_conf:
+                    base = max(base, 0.35)
+
+            # 错误类型惩罚
+            if feedback.error_category == "type_mismatch":
+                base *= 0.8  # 类型不匹配, 可能需要根本性修改
+            elif feedback.error_category == "unknown_identifier":
+                base *= 0.85  # 可能只是名字拼错
+
+        return min(1.0, max(0.0, base))

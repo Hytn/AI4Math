@@ -130,14 +130,70 @@ class PremiseSelector:
             # Double-check after acquiring lock
             if self._initialized:
                 return
-            # Load built-in premises
+
+            # 1. Start with built-in premises (backward compat)
+            all_premises = list(_BUILTIN_PREMISES)
+
+            # 2. Load external premise files (data/premises/*.jsonl)
+            external = self._load_external_premises()
+            if external:
+                # Deduplicate by name (external overrides built-in)
+                seen = {p["name"] for p in all_premises}
+                for p in external:
+                    if p["name"] not in seen:
+                        all_premises.append(p)
+                        seen.add(p["name"])
+
+            # 3. Add any extra premises from config
             extra = self.config.get("extra_premises", [])
-            all_premises = _BUILTIN_PREMISES + extra
+            for p in extra:
+                if p.get("name") and p["name"] not in seen:
+                    all_premises.append(p)
+                    seen.add(p["name"])
+
             self._bm25.add_documents(all_premises)
             self._embed.add_documents(all_premises)
             self._bm25.build()
             self._embed.build()
             self._initialized = True
+            self._premise_count = len(all_premises)
+
+            import logging
+            logging.getLogger(__name__).info(
+                f"PremiseSelector initialized with {len(all_premises)} premises "
+                f"({len(_BUILTIN_PREMISES)} built-in + {len(external)} external)")
+
+    def _load_external_premises(self) -> list[dict]:
+        """Load premises from data/premises/*.jsonl files."""
+        import json
+        import os
+        import glob
+
+        premises = []
+        # Search multiple locations
+        search_dirs = self.config.get("premise_dirs", [
+            "data/premises",
+            os.path.join(os.path.dirname(__file__), "..", "..", "data", "premises"),
+        ])
+
+        for search_dir in search_dirs:
+            pattern = os.path.join(search_dir, "*.jsonl")
+            for filepath in sorted(glob.glob(pattern)):
+                try:
+                    with open(filepath) as f:
+                        for line in f:
+                            line = line.strip()
+                            if line:
+                                entry = json.loads(line)
+                                # Normalize: ensure 'name' and 'statement' exist
+                                if "name" in entry and "statement" in entry:
+                                    premises.append(entry)
+                except (json.JSONDecodeError, OSError) as e:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        f"Failed to load premise file {filepath}: {e}")
+
+        return premises
 
     def add_premises(self, premises: list[dict]):
         """Dynamically add premises at runtime."""
@@ -145,6 +201,59 @@ class PremiseSelector:
         self._embed.add_documents(premises)
         self._bm25.build()
         self._embed.build()
+
+    def load_from_mathlib_export(self, filepath: str) -> int:
+        """从 scripts/export_mathlib_premises.py 的输出加载完整 Mathlib 前提库.
+
+        用法::
+
+            selector = PremiseSelector()
+            count = selector.load_from_mathlib_export("data/premises/mathlib_full.jsonl")
+            print(f"Loaded {count} Mathlib premises")
+
+        文件格式: 每行一个 JSON 对象, 含 "name" 和 "statement" 字段。
+        支持增量加载: 可多次调用, 自动去重。
+
+        Returns:
+            新增的前提数量
+        """
+        import json as _json
+
+        self._ensure_init()
+        existing = set()
+        try:
+            # 收集已有名称用于去重
+            for doc in self._bm25._documents:
+                existing.add(doc.get("name", ""))
+        except (AttributeError, TypeError):
+            pass
+
+        new_premises = []
+        try:
+            with open(filepath) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    entry = _json.loads(line)
+                    name = entry.get("name", "")
+                    if name and name not in existing:
+                        new_premises.append(entry)
+                        existing.add(name)
+        except (OSError, _json.JSONDecodeError) as e:
+            import logging
+            logging.getLogger(__name__).error(
+                f"Failed to load Mathlib export from {filepath}: {e}")
+            return 0
+
+        if new_premises:
+            self.add_premises(new_premises)
+            import logging
+            logging.getLogger(__name__).info(
+                f"Loaded {len(new_premises)} new premises from {filepath} "
+                f"(total: {len(existing)})")
+
+        return len(new_premises)
 
     def retrieve(self, theorem: str, top_k: int = 10,
                  goal_type: str = "", tactic_hint: str = "") -> list[dict]:
@@ -178,4 +287,4 @@ class PremiseSelector:
     @property
     def size(self) -> int:
         self._ensure_init()
-        return self._bm25.size
+        return getattr(self, '_premise_count', self._bm25.size)

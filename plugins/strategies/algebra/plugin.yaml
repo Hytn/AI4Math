@@ -1,0 +1,59 @@
+name: algebra
+version: "1.0.0"
+description: "Specialized strategy for abstract algebra proofs (groups, rings, fields, modules)"
+domain:
+  branches: ["algebra"]
+  difficulty: ["easy", "medium", "hard"]
+  keywords:
+    - "Group"
+    - "Ring"
+    - "Field"
+    - "Module"
+    - "Subgroup"
+    - "RingHom"
+    - "Ideal"
+    - "Polynomial"
+    - "CommRing"
+    - "MonoidHom"
+    - "LinearMap"
+    - "Algebra"
+    - "QuotientGroup"
+    - "IsGroupHom"
+
+strategy:
+  inherits: "medium"
+  overrides:
+    temperature: 0.7
+    samples_per_round: 8
+  custom_params:
+    prefer_algebraic_tactics: true
+    strategic_hint: >
+      For abstract algebra proofs:
+      - Use `group` or `ring` tactics for equational reasoning in groups/rings.
+      - For subgroup/ideal membership, use `Subgroup.mem_closure` or `Ideal.mem_span`.
+      - For homomorphism properties, use `map_mul`, `map_add`, `map_one`, `map_zero`.
+      - For quotient structures, use `QuotientGroup.mk'_surjective` and lifting lemmas.
+      - Prefer `ext` for proving equality of algebraic morphisms.
+      - For polynomial goals, use `Polynomial.eval_map`, `Polynomial.degree_*` lemmas.
+
+premises:
+  file: "premises.jsonl"
+  merge_mode: "prepend"
+
+few_shot:
+  file: "few_shot.md"
+
+hooks:
+  on_error:
+    - pattern: "ring.*failed|tactic.*ring.*failed"
+      action: "inject_context"
+      content: >
+        `ring` only works for commutative (semi)rings. For non-commutative structures,
+        try `group` (for groups), `simp [mul_assoc, mul_comm]`, or manual rewriting
+        with `rw [mul_comm a b]`.
+    - pattern: "unknown.*Subgroup|unknown.*GroupHom"
+      action: "inject_context"
+      content: >
+        For Subgroup and GroupHom, ensure you have the right imports:
+        `import Mathlib.GroupTheory.Subgroup.Basic`
+        `import Mathlib.GroupTheory.GroupAction.Basic`

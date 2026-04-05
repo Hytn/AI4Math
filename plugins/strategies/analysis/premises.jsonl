@@ -1,0 +1,6 @@
+{"name": "sq_nonneg", "statement": "theorem sq_nonneg (a : α) [LinearOrderedRing α] : 0 ≤ a ^ 2"}
+{"name": "abs_nonneg", "statement": "theorem abs_nonneg (a : α) [LinearOrderedAddCommGroup α] : 0 ≤ |a|"}
+{"name": "mul_self_nonneg", "statement": "theorem mul_self_nonneg (a : α) [LinearOrderedRing α] : 0 ≤ a * a"}
+{"name": "div_add_div_same", "statement": "theorem div_add_div_same (a b c : α) [Field α] (hc : c ≠ 0) : a / c + b / c = (a + b) / c"}
+{"name": "Continuous.comp", "statement": "theorem Continuous.comp [TopologicalSpace α] [TopologicalSpace β] [TopologicalSpace γ] {g : β → γ} {f : α → β} (hg : Continuous g) (hf : Continuous f) : Continuous (g ∘ f)"}
+{"name": "HasDerivAt.add", "statement": "theorem HasDerivAt.add {f g : ℝ → ℝ} {f' g' x : ℝ} (hf : HasDerivAt f f' x) (hg : HasDerivAt g g' x) : HasDerivAt (fun x => f x + g x) (f' + g') x"}
