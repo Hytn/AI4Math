@@ -34,11 +34,16 @@ def compute_metrics(traces: list[dict],
     """Compute comprehensive evaluation metrics from proof traces.
 
     Args:
-        traces: List of trace dicts with 'solved', 'total_attempts', 'total_tokens', etc.
+        traces: List of trace dicts with 'solved', 'total_attempts',
+                'total_tokens', 'correct_count', etc.
         k_values: Values of k for pass@k computation.
 
     Returns:
         Dict with all computed metrics.
+
+    Key fix (v2): pass@k now uses the actual number of correct samples
+    per problem (correct_count), not just binary solved/unsolved. This
+    gives an unbiased estimate: 1 - C(n-c, k) / C(n, k).
     """
     k_values = k_values or [1, 5, 10]
     n = len(traces)
@@ -48,13 +53,15 @@ def compute_metrics(traces: list[dict],
     solved = sum(1 for t in traces if t.get("solved"))
     solve_rate = solved / n
 
-    # pass@k
+    # pass@k (unbiased estimator)
     pass_at = {}
     for k in k_values:
         scores = []
         for t in traces:
-            total_samples = t.get("total_attempts", 1)
-            correct = 1 if t.get("solved") else 0
+            total_samples = max(1, t.get("total_attempts", 1))
+            # v2 fix: use correct_count (number of successful samples)
+            # instead of binary 1/0. Falls back to binary for backward compat.
+            correct = t.get("correct_count", 1 if t.get("solved") else 0)
             scores.append(pass_at_k(total_samples, correct, min(k, total_samples)))
         pass_at[f"pass@{k}"] = sum(scores) / len(scores) if scores else 0
 

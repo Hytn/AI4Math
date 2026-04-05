@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI4Math — Architecture Map</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #08090e; --bg2: #0d0f18; --card: #111425; --card2: #161a30;
+  --border: #1e2240; --border2: #2a3058;
+  --text: #e4e2db; --text2: #8a87a0; --text3: #55536a;
+  --purple: #7c6cf0; --purple2: #a78bfa; --purple-d: rgba(124,108,240,0.08);
+  --green: #34d399; --green2: #6ee7b7; --green-d: rgba(52,211,153,0.08); --green-b: rgba(52,211,153,0.25);
+  --amber: #fbbf24; --amber2: #fcd34d; --amber-d: rgba(251,191,36,0.08); --amber-b: rgba(251,191,36,0.25);
+  --violet: #8b5cf6; --violet2: #a78bfa; --violet-d: rgba(139,92,246,0.08); --violet-b: rgba(139,92,246,0.25);
+  --blue: #60a5fa; --red: #f87171; --cyan: #22d3ee;
+  --mono: 'JetBrains Mono', monospace; --sans: 'Noto Sans SC', system-ui, sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); line-height: 1.6; padding: 3rem 2rem; max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 2rem; font-weight: 300; margin-bottom: 0.3rem; }
+h1 em { font-style: normal; background: linear-gradient(135deg, var(--purple2), var(--cyan)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.subtitle { color: var(--text2); font-size: 0.85rem; margin-bottom: 2.5rem; line-height: 1.8; }
+.subtitle code { font-family: var(--mono); font-size: 0.8rem; background: var(--card); padding: 2px 6px; border-radius: 4px; }
+
+/* Layer */
+.layer { margin-bottom: 1.5rem; position: relative; }
+.layer-head { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 0.8rem; padding-left: 1rem; border-left: 3px solid var(--border); }
+.layer-head h2 { font-size: 0.7rem; font-weight: 500; letter-spacing: 3px; text-transform: uppercase; }
+.layer-head span { font-size: 0.78rem; color: var(--text2); font-weight: 300; }
+
+/* Package grid */
+.pkgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+
+/* Package card */
+.pkg { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; transition: border-color 0.3s, box-shadow 0.3s; }
+.pkg:hover { border-color: var(--border2); box-shadow: 0 4px 30px rgba(0,0,0,0.3); }
+.pkg h3 { font-family: var(--mono); font-size: 0.82rem; font-weight: 500; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.pkg h3 .ct { font-family: var(--sans); font-size: 0.65rem; font-weight: 400; color: var(--text3); }
+
+/* File list */
+.files { display: flex; flex-direction: column; gap: 3px; }
+.file { display: flex; align-items: baseline; gap: 8px; font-size: 0.72rem; line-height: 1.5; }
+.file .fn { font-family: var(--mono); font-weight: 400; min-width: 140px; flex-shrink: 0; }
+.file .fd { color: var(--text3); font-size: 0.68rem; }
+
+/* NEW badge */
+.badge { font-size: 0.55rem; font-weight: 700; color: #fff; padding: 1px 6px; border-radius: 4px; letter-spacing: 1px; text-transform: uppercase; vertical-align: 2px; }
+
+/* Colored variants */
+.pkg.new-r { border-color: var(--green-b); background: linear-gradient(135deg, var(--green-d), var(--card)); }
+.pkg.new-r h3 { color: var(--green2); }
+.pkg.new-r .fn { color: var(--green); }
+
+.pkg.new-h { border-color: var(--amber-b); background: linear-gradient(135deg, var(--amber-d), var(--card)); }
+.pkg.new-h h3 { color: var(--amber2); }
+.pkg.new-h .fn { color: var(--amber); }
+
+.pkg.new-p { border-color: var(--violet-b); background: linear-gradient(135deg, var(--violet-d), var(--card)); }
+.pkg.new-p h3 { color: var(--violet2); }
+.pkg.new-p .fn { color: var(--violet); }
+
+.pkg.accent h3 { color: var(--purple2); }
+.pkg.accent .fn { color: var(--purple); }
+
+.pkg.engine h3 { color: var(--green2); }
+.pkg.engine .fn { color: #5aba8a; }
+
+.pkg.prover h3 { color: var(--amber2); }
+.pkg.prover .fn { color: #cca040; }
+
+/* Connector arrows */
+.connector { text-align: center; padding: 6px 0; color: var(--text3); font-size: 0.8rem; letter-spacing: 8px; }
+.connector span { font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0; color: var(--text3); margin: 0 1rem; }
+
+/* Data flow */
+.flow { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin: 2rem 0; font-family: var(--mono); font-size: 0.75rem; line-height: 2; color: var(--text2); white-space: pre-wrap; }
+.flow b { color: var(--text); font-weight: 500; }
+.flow .g { color: var(--green); }
+.flow .a { color: var(--amber); }
+.flow .v { color: var(--violet); }
+.flow .p { color: var(--purple2); }
+
+/* Legend */
+.legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 1.5rem; padding: 12px 16px; background: var(--bg2); border-radius: 8px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: var(--text2); }
+.legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+/* Highlight strip */
+.hl { background: var(--card2); border-left: 3px solid; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 0.8rem 0; font-size: 0.78rem; color: var(--text2); line-height: 1.7; }
+.hl b { color: var(--text); }
+.hl.green { border-color: var(--green); }
+.hl.amber { border-color: var(--amber); }
+.hl.violet { border-color: var(--violet); }
+</style>
+</head>
+<body>
+
+<h1>AI4Math · <em>Architecture Map</em></h1>
+<p class="subtitle">
+  项目全景：85+ 源文件 · 5 层架构 · 3 个架构创新<br>
+  每个文件都在下方标注了位置与作用。从上往下阅读即可理解整个系统。<br>
+  <code style="color:var(--green)">■</code> SubAgent Runtime &nbsp;
+  <code style="color:var(--amber)">■</code> Lifecycle Hooks &nbsp;
+  <code style="color:var(--violet)">■</code> Strategy Plugins &nbsp;
+  <code style="color:var(--text3)">■</code> Existing modules
+</p>
+
+<!-- ═══ LAYER 0 ═══ -->
+<div class="layer">
+  <div class="layer-head">
+    <h2 style="color:var(--text3)">Layer 0</h2>
+    <span>入口 · 配置 · 数据 · 基础设施</span>
+  </div>
+  <div class="pkgs">
+    <div class="pkg">
+      <h3>Entry Scripts <span class="ct">4 files</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn" style="color:var(--text2)">run_single.py</span><span class="fd">单题调试入口</span></div>
+        <div class="file"><span class="fn" style="color:var(--text2)">run_benchmark.py</span><span class="fd">批量评测</span></div>
+        <div class="file"><span class="fn" style="color:var(--text2)">run_eval.py</span><span class="fd">评测 Python 入口</span></div>
+        <div class="file"><span class="fn" style="color:var(--text2)">run_dual_demo.py</span><span class="fd">APE + Lean4 双引擎演示</span></div>
+      </div>
+    </div>
+    <div class="pkg">
+      <h3>Config <span class="ct">3 files</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn" style="color:var(--text2)">config/default.yaml</span><span class="fd">全局默认配置</span></div>
+        <div class="file"><span class="fn" style="color:var(--text2)">config/schema.py</span><span class="fd">配置校验与合并</span></div>
+        <div class="file"><span class="fn" style="color:var(--text2)">config/experiments/</span><span class="fd">每个基准的实验预设</span></div>
+      </div>
+    </div>
+    <div class="pkg">
+      <h3>Benchmarks <span class="ct">3+8 files</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn" style="color:var(--text2)">loader.py</span><span class="fd">统一数据集加载</span></div>
+        <div class="file"><span class="fn" style="color:var(--text2)">eval_runner.py</span><span class="fd">评测循环</span></div>
+        <div class="file"><span class="fn" style="color:var(--text2)">metrics.py</span><span class="fd">pass@k · solve_rate</span></div>
+        <div class="file"><span class="fn" style="color:var(--text2)">datasets/</span><span class="fd">7 大基准加载器 (miniF2F, FATE, Putnam...)</span></div>
+      </div>
+    </div>
+    <div class="pkg">
+      <h3>Infrastructure <span class="ct">4 files</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn" style="color:var(--text2)">docker/Dockerfile.lean</span><span class="fd">Lean4 + Mathlib 环境</span></div>
+        <div class="file"><span class="fn" style="color:var(--text2)">docker/Dockerfile.agent</span><span class="fd">智能体运行环境</span></div>
+        <div class="file"><span class="fn" style="color:var(--text2)">eval.sh</span><span class="fd">一键评测脚本</span></div>
+        <div class="file"><span class="fn" style="color:var(--text2)">index.html</span><span class="fd">前端演示页面</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="connector">↓ ↓ ↓ ↓<span>entry scripts call Orchestrator.prove()</span>↓ ↓ ↓ ↓</div>
+
+<!-- ═══ LAYER 1 ═══ -->
+<div class="layer">
+  <div class="layer-head">
+    <h2 style="color:var(--purple2)">Layer 1 — Agent</h2>
+    <span>决策层 · 9 个子包 · LLM 接口 / 策略 / 记忆 / 工具 / <b style="color:var(--green)">运行时</b> / <b style="color:var(--amber)">钩子</b> / <b style="color:var(--violet)">插件</b></span>
+  </div>
+
+  <div class="hl green"><b>架构创新 ①</b> — 异构多智能体并行。每个 SubAgent 拥有独立的 ContextWindow 和 WorkingMemory，4 个策略方向同时探索，ResultFuser 跨方向融合结果。</div>
+  <div class="hl amber"><b>架构创新 ②</b> — 生命周期钩子。9 个事件点的声明式规则替代散落的 if 判断。反思结论通过钩子自动注入下一轮 prompt。</div>
+  <div class="hl violet"><b>架构创新 ③</b> — 策略插件。YAML 声明式的领域知识包，按定理关键词自动匹配加载。</div>
+
+  <div class="pkgs">
+    <div class="pkg accent">
+      <h3>agent/brain/ <span class="ct">5 files</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">llm_provider.py</span><span class="fd">LLMProvider 抽象基类 + LRU 缓存</span></div>
+        <div class="file"><span class="fn">claude_provider.py</span><span class="fd">Claude API 封装 · 指数退避重试</span></div>
+        <div class="file"><span class="fn">roles.py</span><span class="fd">11 个 AgentRole + system prompts</span></div>
+        <div class="file"><span class="fn">prompt_builder.py</span><span class="fd">首次/重试 prompt 模板引擎</span></div>
+        <div class="file"><span class="fn">response_parser.py</span><span class="fd">从 LLM 输出提取 Lean 代码</span></div>
+      </div>
+    </div>
+    <div class="pkg accent">
+      <h3>agent/strategy/ <span class="ct">6 files</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">meta_controller.py</span><span class="fd">根据难度选初始策略</span></div>
+        <div class="file"><span class="fn">strategy_switcher.py</span><span class="fd">sequential→light→medium→heavy</span></div>
+        <div class="file"><span class="fn">confidence_estimator.py</span><span class="fd">置信度评估 + 主动放弃</span></div>
+        <div class="file"><span class="fn">budget_allocator.py</span><span class="fd">样本/token/时间 三维预算</span></div>
+        <div class="file"><span class="fn">reflection.py</span><span class="fd">Critic 角色分析失败</span></div>
+        <div class="file"><span class="fn">refinement_modes.py</span><span class="fd">L/M/H 参数配置</span></div>
+      </div>
+    </div>
+    <div class="pkg accent">
+      <h3>agent/memory/ <span class="ct">2</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">working_memory.py</span><span class="fd">当前任务状态 (线程安全)</span></div>
+        <div class="file"><span class="fn">episodic_memory.py</span><span class="fd">历史解题经验 (JSONL 持久化)</span></div>
+      </div>
+    </div>
+    <div class="pkg accent">
+      <h3>agent/context/ <span class="ct">4</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">context_window.py</span><span class="fd">优先级条目管理 + 自动压缩</span></div>
+        <div class="file"><span class="fn">compressor.py</span><span class="fd">截断/摘要/优先级 三策略</span></div>
+        <div class="file"><span class="fn">priority_ranker.py</span><span class="fd">12 类上下文优先级排序</span></div>
+        <div class="file"><span class="fn">error_summarizer.py</span><span class="fd">压缩错误历史</span></div>
+      </div>
+    </div>
+    <div class="pkg accent">
+      <h3>agent/tools/ <span class="ct">4</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">tool_registry.py</span><span class="fd">装饰器注册 + Claude schema 导出</span></div>
+        <div class="file"><span class="fn">tool_executor.py</span><span class="fd">名称解析 → 调用 → 错误处理</span></div>
+        <div class="file"><span class="fn">cas_bridge.py</span><span class="fd">SageMath 计算代数系统</span></div>
+        <div class="file"><span class="fn">lean_automation.py</span><span class="fd">自动化 tactic 调度</span></div>
+      </div>
+    </div>
+    <div class="pkg accent">
+      <h3>agent/executor/ <span class="ct">3</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">sandbox.py</span><span class="fd">subprocess + Docker 沙箱</span></div>
+        <div class="file"><span class="fn">lean_env.py</span><span class="fd">验证环境管理</span></div>
+        <div class="file"><span class="fn">resource_limiter.py</span><span class="fd">超时 + 内存限制</span></div>
+      </div>
+    </div>
+
+    <!-- NEW modules -->
+    <div class="pkg new-r">
+      <h3>agent/runtime/ <span class="badge" style="background:var(--green)">NEW</span> <span class="ct">3</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">sub_agent.py</span><span class="fd">独立上下文 + 独立模型 + 独立角色</span></div>
+        <div class="file"><span class="fn">agent_pool.py</span><span class="fd">并行调度 + 跨方向信息注入</span></div>
+        <div class="file"><span class="fn">result_fuser.py</span><span class="fd">选最优 + 合并洞察 + 提取引理</span></div>
+      </div>
+    </div>
+    <div class="pkg new-h">
+      <h3>agent/hooks/ <span class="badge" style="background:var(--amber)">NEW</span> <span class="ct">3</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">hook_types.py</span><span class="fd">9 事件 × 5 动作的协议定义</span></div>
+        <div class="file"><span class="fn">hook_manager.py</span><span class="fd">注册中心 + 正则模式匹配钩子</span></div>
+        <div class="file"><span class="fn">builtin_hooks.py</span><span class="fd">领域分类 · 重复检测 · ℕ安全 · 反思闭环</span></div>
+      </div>
+    </div>
+    <div class="pkg new-p">
+      <h3>agent/plugins/ <span class="badge" style="background:var(--violet)">NEW</span> <span class="ct">1 + plugins/</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">loader.py</span><span class="fd">发现 + YAML 解析 + 关键词匹配</span></div>
+        <div class="file"><span class="fn" style="color:var(--text3)">plugins/number-theory/</span><span class="fd">示例: plugin.yaml + premises + few_shot</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="connector">↓ ↓<span>Agent 调用 Engine 做验证和搜索</span>↓ ↓</div>
+
+<!-- ═══ LAYER 2 ═══ -->
+<div class="layer">
+  <div class="layer-head">
+    <h2 style="color:var(--green2)">Layer 2 — Engine</h2>
+    <span>APE 自研证明内核 · 持久化状态 · 分层类型检查 · MCTS 搜索</span>
+  </div>
+  <div class="pkgs">
+    <div class="pkg engine">
+      <h3>engine/core/ <span class="ct">6 files</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">expr.py</span><span class="fd">CIC 表达式 (de Bruijn 索引)</span></div>
+        <div class="file"><span class="fn">name.py</span><span class="fd">层级化名称</span></div>
+        <div class="file"><span class="fn">universe.py</span><span class="fd">Universe level 代数</span></div>
+        <div class="file"><span class="fn">environment.py</span><span class="fd">持久化环境 (PMap, O(1) fork)</span></div>
+        <div class="file"><span class="fn">local_ctx.py</span><span class="fd">局部上下文</span></div>
+        <div class="file"><span class="fn">meta.py</span><span class="fd">元变量</span></div>
+      </div>
+    </div>
+    <div class="pkg engine">
+      <h3>engine/state/ <span class="ct">5</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">proof_state.py</span><span class="fd">O(1) fork 的证明状态</span></div>
+        <div class="file"><span class="fn">search_tree.py</span><span class="fd">持久化搜索树</span></div>
+        <div class="file"><span class="fn">goal.py</span><span class="fd">目标管理</span></div>
+        <div class="file"><span class="fn">meta_ctx.py</span><span class="fd">元上下文</span></div>
+        <div class="file"><span class="fn">views.py</span><span class="fd">GoalView (for LLM consumption)</span></div>
+      </div>
+    </div>
+    <div class="pkg engine" style="background:linear-gradient(135deg, var(--green-d), var(--card))">
+      <h3>engine/search/ <span class="ct">1 (核心)</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">__init__.py</span><span class="fd">SearchCoordinator: MCTS + UCB1</span></div>
+        <div class="file"><span class="fn"></span><span class="fd">虚拟损失 · 反向传播 · 4 种搜索策略</span></div>
+        <div class="file"><span class="fn"></span><span class="fd">BFS / DFS / best-first / MCTS</span></div>
+      </div>
+    </div>
+    <div class="pkg engine">
+      <h3>engine/kernel/ <span class="ct">1</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">type_checker.py</span><span class="fd">L0 语法 / L1 类型 / L2 完整检查</span></div>
+      </div>
+    </div>
+    <div class="pkg engine">
+      <h3>engine/tactic/ <span class="ct">1</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">engine.py</span><span class="fd">execute_tactic: intro · apply · exact · simp · rw</span></div>
+      </div>
+    </div>
+    <div class="pkg engine">
+      <h3>engine/lean_bridge/ <span class="ct">2</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">prelude.py</span><span class="fd">Lean4 生态互操作</span></div>
+        <div class="file"><span class="fn">minif2f_problems.py</span><span class="fd">miniF2F 问题映射</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="connector">↓ ↓<span>Engine 为 Prover 提供验证和搜索基础设施</span>↓ ↓</div>
+
+<!-- ═══ LAYER 3 ═══ -->
+<div class="layer">
+  <div class="layer-head">
+    <h2 style="color:var(--amber2)">Layer 3 — Prover</h2>
+    <span>编排层 · 11 个子包 · Orchestrator / 证明循环 / 修复 / 分解 / 代码生成 / 验证</span>
+  </div>
+  <div class="pkgs">
+    <div class="pkg prover" style="grid-column: span 2; background: linear-gradient(135deg, rgba(251,191,36,0.04), var(--card))">
+      <h3>prover/pipeline/ <span class="ct">7 files — 核心编排</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn" style="color:var(--amber)">orchestrator.py</span><span class="fd"><b style="color:var(--text)">主入口</b> — 集成 hooks + plugins + agent pool</span></div>
+        <div class="file"><span class="fn">proof_loop.py</span><span class="fd">generate → verify → repair 单次循环</span></div>
+        <div class="file"><span class="fn" style="color:var(--green)">heterogeneous_engine.py</span><span class="fd"><span class="badge" style="background:var(--green);font-size:0.5rem">NEW</span> 4 方向异构并行 + 跨方向融合</span></div>
+        <div class="file"><span class="fn">rollout_engine.py</span><span class="fd">同质化并行采样 (legacy fallback)</span></div>
+        <div class="file"><span class="fn">dual_engine.py</span><span class="fd">APE + Lean4 双路径验证</span></div>
+        <div class="file"><span class="fn">sequential_engine.py</span><span class="fd">简单顺序引擎</span></div>
+        <div class="file"><span class="fn">models.py</span><span class="fd">ProofTrace · ProofAttempt · LeanError</span></div>
+      </div>
+    </div>
+    <div class="pkg prover">
+      <h3>prover/premise/ <span class="ct">5</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">selector.py</span><span class="fd">统一入口 (hybrid 模式)</span></div>
+        <div class="file"><span class="fn">bm25_retriever.py</span><span class="fd">稀疏检索</span></div>
+        <div class="file"><span class="fn">embedding_retriever.py</span><span class="fd">密集向量检索</span></div>
+        <div class="file"><span class="fn">reranker.py</span><span class="fd">RRF 融合排序</span></div>
+        <div class="file"><span class="fn">tactic_suggester.py</span><span class="fd">tactic 推荐</span></div>
+      </div>
+    </div>
+    <div class="pkg prover">
+      <h3>prover/repair/ <span class="ct">4</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">error_diagnostor.py</span><span class="fd">根因分析 + 修复提示</span></div>
+        <div class="file"><span class="fn">repair_generator.py</span><span class="fd">LLM + 规则 双路修复</span></div>
+        <div class="file"><span class="fn">repair_strategies.py</span><span class="fd">修复策略选择</span></div>
+        <div class="file"><span class="fn">patch_applier.py</span><span class="fd">补丁应用</span></div>
+      </div>
+    </div>
+    <div class="pkg prover">
+      <h3>prover/verifier/ <span class="ct">6</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">lean_checker.py</span><span class="fd">APE 预检 + Lean4 编译验证</span></div>
+        <div class="file"><span class="fn">lean_repl.py</span><span class="fd">交互式 REPL</span></div>
+        <div class="file"><span class="fn">error_parser.py</span><span class="fd">解析 Lean 错误</span></div>
+        <div class="file"><span class="fn">sorry_detector.py</span><span class="fd">检测未证目标</span></div>
+        <div class="file"><span class="fn">goal_extractor.py</span><span class="fd">提取剩余目标</span></div>
+        <div class="file"><span class="fn">integrity_checker.py</span><span class="fd">完整性最终检查</span></div>
+      </div>
+    </div>
+    <div class="pkg prover">
+      <h3>prover/codegen/ <span class="ct">5</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">tactic_generator.py</span><span class="fd">LLM → tactic 序列</span></div>
+        <div class="file"><span class="fn">scaffold_generator.py</span><span class="fd">sorry 骨架</span></div>
+        <div class="file"><span class="fn">sorry_closer.py</span><span class="fd">逐个关闭 sorry</span></div>
+        <div class="file"><span class="fn">code_formatter.py</span><span class="fd">格式化输出</span></div>
+        <div class="file"><span class="fn">import_resolver.py</span><span class="fd">解析 import</span></div>
+      </div>
+    </div>
+    <div class="pkg prover">
+      <h3>prover/decompose/ <span class="ct">3</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">goal_decomposer.py</span><span class="fd">定理分解为子目标</span></div>
+        <div class="file"><span class="fn">subgoal_scheduler.py</span><span class="fd">子目标调度</span></div>
+        <div class="file"><span class="fn">composition.py</span><span class="fd">组装最终证明</span></div>
+      </div>
+    </div>
+    <div class="pkg prover">
+      <h3>prover/conjecture/ <span class="ct">2</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">conjecture_proposer.py</span><span class="fd">辅助猜想生成</span></div>
+        <div class="file"><span class="fn">conjecture_verifier.py</span><span class="fd">猜想可行性过滤</span></div>
+      </div>
+    </div>
+    <div class="pkg prover">
+      <h3>prover/sketch/ <span class="ct">3</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">sketch_generator.py</span><span class="fd">证明骨架生成</span></div>
+        <div class="file"><span class="fn">hypothesis_generator.py</span><span class="fd">假设生成</span></div>
+        <div class="file"><span class="fn">templates.py</span><span class="fd">证明模式模板</span></div>
+      </div>
+    </div>
+    <div class="pkg prover">
+      <h3>prover/lemma_bank/ <span class="ct">3</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">bank.py</span><span class="fd">跨 rollout 引理存储</span></div>
+        <div class="file"><span class="fn">lemma_extractor.py</span><span class="fd">从证明中提取 have 步骤</span></div>
+        <div class="file"><span class="fn">lemma_verifier.py</span><span class="fd">Lean4 验证已提取引理</span></div>
+      </div>
+    </div>
+    <div class="pkg prover">
+      <h3>prover/formalize/ <span class="ct">2</span></h3>
+      <div class="files">
+        <div class="file"><span class="fn">autoformalize.py</span><span class="fd">自然语言 → 形式化</span></div>
+        <div class="file"><span class="fn">statement_verifier.py</span><span class="fd">形式化陈述验证</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ DATA FLOW ═══ -->
+<div style="margin-top:2rem">
+  <div style="font-size:0.7rem;font-weight:500;letter-spacing:3px;text-transform:uppercase;color:var(--text3);margin-bottom:0.5rem;padding-left:1rem;border-left:3px solid var(--cyan)">Core Data Flow</div>
+  <div class="flow"><b>run_single.py</b> → <b>Orchestrator.prove()</b>
+  │
+  ├── <span class="a">ON_PROBLEM_START</span> hook → <span class="a">DomainClassifierHook</span> classifies domain
+  ├── <span class="v">PluginLoader.match()</span> → loads number-theory plugin → injects ℕ warning
+  │
+  ├── <span class="g">HeterogeneousEngine.run_round()</span>
+  │   ├── <span class="g">SubAgent A</span>: automation (temp=0.2, try simp/omega/ring)
+  │   ├── <span class="g">SubAgent B</span>: induction expert (temp=0.7, plugin few-shot)
+  │   ├── <span class="g">SubAgent C</span>: algebraic alternative (temp=0.9)
+  │   └── <span class="g">SubAgent D</span>: lemma retrieval (→ prover/premise/selector.py)
+  │
+  ├── <span class="g">ResultFuser</span>: B closest + D found useful lemma
+  │   └── <span class="g">inject_cross_agent</span>: D's lemma → B' repair context
+  │
+  ├── <span class="a">PRE_VERIFICATION</span> hook → <span class="a">NatSubSafetyHook</span> checks ℕ subtraction
+  ├── engine/search/ → APE L0/L1 pre-filter (μs)
+  └── prover/verifier/lean_checker.py → Lean4 L2 final verify → <b style="color:var(--green)">✓ proved</b></div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--purple)"></div>Agent (决策)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Engine (计算) / NEW Runtime</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--amber)"></div>Prover (编排) / NEW Hooks</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--violet)"></div>NEW Plugins</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--text3)"></div>Config / Infra</div>
+  <div class="legend-item" style="margin-left:auto;font-size:0.65rem">85+ source files · 20,000+ lines</div>
+</div>
+
+</body>
+</html>

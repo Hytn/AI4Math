@@ -1,0 +1,6 @@
+{"name": "Nat.sub_add_cancel", "statement": "theorem Nat.sub_add_cancel {a b : ℕ} (h : b ≤ a) : a - b + b = a"}
+{"name": "Nat.one_le_two_pow", "statement": "theorem Nat.one_le_two_pow : 1 ≤ 2 ^ n"}
+{"name": "Nat.pow_succ", "statement": "theorem Nat.pow_succ (a n : ℕ) : a ^ (n + 1) = a ^ n * a"}
+{"name": "Nat.two_mul", "statement": "theorem Nat.two_mul (n : ℕ) : 2 * n = n + n"}
+{"name": "Nat.succ_le_of_lt", "statement": "theorem Nat.succ_le_of_lt {a b : ℕ} (h : a < b) : a + 1 ≤ b"}
+{"name": "tsub_add_cancel_of_le", "statement": "theorem tsub_add_cancel_of_le {a b : ℕ} (h : b ≤ a) : a - b + b = a"}

@@ -1020,22 +1020,23 @@ footer p { font-size: 0.88rem; color: var(--text3); }
 <!-- ═══════════ HERO ═══════════ -->
 <div class="hero">
   <div class="hero-grid"></div>
-  <p class="hero-eyebrow">形式化数学推理智能体</p>
+  <p class="hero-eyebrow">攻克竞赛级形式化数学证明</p>
   <h1>机器，<em>证明</em></h1>
-  <p class="hero-sub">一个能够阅读数学定理、自主构造严格证明、并由 Lean 4 内核逐步验证的 AI 智能体 —— 每解决一道题，它都变得更强。<br><span style="color:var(--green2);font-size:0.95rem">双引擎架构：兼容 Lean4 传统验证 + 自研 APE agent-first 高速搜索引擎</span></p>
+  <p class="hero-sub">一个能够阅读数学定理、自主构造严格证明的 AI 系统 —— 从 Putnam 竞赛题到本科分析，每一步推理都由 APE 引擎与 Lean4 内核逐步验证，零容错。<br><span style="color:var(--green2);font-size:0.95rem">APE 引擎（Lean4 加速层）· 异构并行探索 · 领域知识插件 · 证明过程自演化</span></p>
   <div class="hero-cta">
     <a class="btn btn-primary" href="#demo">观看证明过程 →</a>
-    <a class="btn btn-ghost" href="#engine">APE 引擎</a>
-    <a class="btn btn-ghost" href="#flowDiagram">全局数据流</a>
+    <a class="btn btn-ghost" href="#arch">系统架构</a>
+    <a class="btn btn-ghost" href="#flowDiagram">推理全景图</a>
   </div>
 </div>
 
 <!-- ═══════════ METRICS ═══════════ -->
 <div class="metric-bar"><div class="metric-row">
-  <div class="metric"><div class="num">42</div><div class="lab">证明尝试</div></div>
+  <div class="metric"><div class="num">4</div><div class="lab">并行策略方向</div></div>
+  <div class="metric"><div class="num">8</div><div class="lab">证明尝试</div></div>
   <div class="metric"><div class="num">7</div><div class="lab">引理发现</div></div>
-  <div class="metric"><div class="num">14 分钟</div><div class="lab">总耗时</div></div>
-  <div class="metric"><div class="num">1</div><div class="lab">策略升级</div></div>
+  <div class="metric"><div class="num">2 分钟</div><div class="lab">总耗时</div></div>
+  <div class="metric"><div class="num">3</div><div class="lab">钩子触发</div></div>
   <div class="metric"><div class="num">✓</div><div class="lab">内核验证</div></div>
 </div></div>
 
@@ -1043,7 +1044,7 @@ footer p { font-size: 0.88rem; color: var(--text3); }
 <section id="demo"><div class="wrap">
   <p class="sec-eyebrow">实时演示</p>
   <h2 class="sec-title">攻克一道 Putnam 竞赛题</h2>
-  <p class="sec-desc">Putnam 是北美最难的本科数学竞赛，满分 120 分，中位数得分为 0。观看智能体如何从零开始构造完整的形式化证明。</p>
+  <p class="sec-desc">Putnam 是北美最难的本科数学竞赛，满分 120 分，中位数得分为 0。观看系统如何从零开始构造完整的形式化证明 —— 多个策略方向同时探索，领域知识自动注入，失败洞察即时闭环，最终由 Lean4 内核确认数学正确性。</p>
 
   <!-- Problem box -->
   <div class="problem-box">
@@ -1078,14 +1079,14 @@ footer p { font-size: 0.88rem; color: var(--text3); }
           <div class="t-step-head">
             <div class="t-icon" style="background:var(--accent-dim);border:1px solid rgba(124,108,240,0.2)">🧠</div>
             <div>
-              <div class="t-label">步骤 1 · 证明规划</div>
-              <div class="t-title">智能体阅读定理，制定高层策略</div>
+              <div class="t-label">步骤 1 · 领域识别 + 证明规划</div>
+              <div class="t-title">ON_PROBLEM_START 钩子分类领域，匹配策略插件</div>
             </div>
           </div>
           <div class="t-content">
             <div class="t-desc">在写下任何代码之前，智能体先构建高层证明计划 —— 如同数学家在白板上勾勒思路。</div>
             <div style="margin:0.5rem 0">
-              <span class="comp-tag" data-role="brain">证明规划器<span class="tip">分析目标结构，将高层数学直觉转化为 Lean 4 可执行的战术序列。是智能体的"数学大脑"。</span></span>
+              <span class="comp-tag" data-role="brain">证明规划器<span class="tip">分析目标结构，将高层数学直觉转化为可执行的战术序列。是智能体的"数学大脑"。</span></span>
               <span class="comp-tag" data-role="brain">假设生成器<span class="tip">自动猜测可能需要的辅助假设与关键引理，为证明搭建脚手架。</span></span>
               <span class="comp-tag" data-role="search">模式库<span class="tip">存储历史上成功的证明模式（如"轮换不等式→Schur 变体"），供规划器快速匹配。</span></span>
             </div>
@@ -1108,7 +1109,7 @@ footer p { font-size: 0.88rem; color: var(--text3); }
             </div>
           </div>
           <div class="t-content">
-            <div class="t-desc">混合检索（关键词 + 语义向量）遍历 Lean 4 的 Mathlib 库，再由 LLM 重排结果。</div>
+            <div class="t-desc">混合检索（关键词 + 语义向量）遍历 Mathlib 数学库，再由 LLM 重排结果。</div>
             <div style="margin:0.5rem 0">
               <span class="comp-tag" data-role="search">BM25 稀疏检索<span class="tip">基于 TF-IDF 的传统检索，精确匹配引理名称和策略关键词，速度极快。</span></span>
               <span class="comp-tag" data-role="search">语义嵌入<span class="tip">将定理语句编码为向量，捕捉深层语义相似性，找到名称不同但本质相关的引理。</span></span>
@@ -1161,9 +1162,9 @@ footer p { font-size: 0.88rem; color: var(--text3); }
             </div>
           </div>
           <div class="t-content">
-            <div class="t-desc">Lean 4 将每一步追溯到逻辑公理进行检查。如果数学不对，内核绝不通过 —— 没有捷径。</div>
+            <div class="t-desc">验证引擎将每一步追溯到逻辑公理进行检查。如果数学不对，内核绝不通过 —— 没有捷径。</div>
             <div style="margin:0.5rem 0">
-              <span class="comp-tag" data-role="verify">Lean 4 类型检查器<span class="tip">Lean 的核心验证引擎，将每个证明步骤归约到逻辑公理级别，提供绝对的数学确定性。</span></span>
+              <span class="comp-tag" data-role="verify">APE 验证内核<span class="tip">双引擎的核心验证层，将每个证明步骤归约到逻辑公理级别，提供绝对的数学确定性。</span></span>
               <span class="comp-tag" data-role="error">错误解析器<span class="tip">将 Lean 报错信息解析为结构化数据，提取失败位置、类型和上下文。</span></span>
               <span class="comp-tag" data-role="verify">完整性检查器<span class="tip">确保智能体不能通过注入假公理来"作弊" —— 这是其他系统中已发现的真实漏洞。</span></span>
             </div>
@@ -1221,8 +1222,8 @@ ERROR 第 10 行: sorry 占位符仍存在
           <div class="t-step-head">
             <div class="t-icon" style="background:var(--accent-dim);border:1px solid rgba(124,108,240,0.2)">⚡</div>
             <div>
-              <div class="t-label">步骤 7 · 高并发并行探索 — 16 条同时尝试</div>
-              <div class="t-title">大规模并行证明搜索，共享经验池</div>
+              <div class="t-label">步骤 7 · 异构并行探索 — 4 个策略方向同时出发</div>
+              <div class="t-title">多方向独立探索，跨方向信息融合</div>
             </div>
           </div>
           <div class="t-content">
@@ -1247,8 +1248,8 @@ ERROR 第 10 行: sorry 占位符仍存在
           <div class="t-step-head">
             <div class="t-icon" style="background:linear-gradient(135deg,var(--accent-dim),var(--green-dim));border:1px solid rgba(124,108,240,0.15)">🔄</div>
             <div>
-              <div class="t-label">策略升级</div>
-              <div class="t-title" style="color:var(--accent2)">轻量模式 → 中量模式</div>
+              <div class="t-label">钩子驱动策略升级</div>
+              <div class="t-title" style="color:var(--accent2)">RepetitionDetectorHook 检测重复错误 → 主动升级</div>
             </div>
           </div>
           <div class="t-content">
@@ -1269,8 +1270,8 @@ ERROR 第 10 行: sorry 占位符仍存在
           <div class="t-step-head">
             <div class="t-icon" style="background:var(--accent-dim);border:1px solid rgba(124,108,240,0.2)">🪞</div>
             <div>
-              <div class="t-label">步骤 8 · 自我反思</div>
-              <div class="t-title">智能体批判自身方法并转向</div>
+              <div class="t-label">步骤 8 · 反思闭环 · 钩子驱动</div>
+              <div class="t-title">反思结论通过钩子注入下一轮 prompt（不再只打 log）</div>
             </div>
           </div>
           <div class="t-content">
@@ -1296,8 +1297,8 @@ ERROR 第 10 行: sorry 占位符仍存在
           <div class="t-step-head">
             <div class="t-icon" style="background:var(--accent-dim);border:1px solid rgba(124,108,240,0.2)">🧩</div>
             <div>
-              <div class="t-label">步骤 9 · 定理分解</div>
-              <div class="t-title">将困难问题拆解为两个更简单的子问题</div>
+              <div class="t-label">步骤 9 · 定理分解 · 上下文隔离</div>
+              <div class="t-title">子目标独立证明，各有独立 ContextWindow，互不污染</div>
             </div>
           </div>
           <div class="t-content">
@@ -1340,8 +1341,8 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
           <div class="t-step-head">
             <div class="t-icon" style="background:var(--green-dim);border:1px solid var(--green-border)">★</div>
             <div>
-              <div class="t-label">步骤 11 · 聚焦攻击 — 突破</div>
-              <div class="t-title" style="color:var(--green)">第 3 条路径（共 8 条）通过了 Lean 内核！</div>
+              <div class="t-label">步骤 11 · 跨方向融合 — 突破</div>
+              <div class="t-title" style="color:var(--green)">检索方向的引理注入证明方向 → ResultFuser 成功！</div>
             </div>
           </div>
           <div class="t-content">
@@ -1356,7 +1357,7 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
              sq_nonneg a, sq_nonneg b, sq_nonneg c,
              mul_self_nonneg (3*a - 2), mul_self_nonneg (3*b - 1)]
 
-<span style="color:var(--green)">-- Lean 4: ✓ 无剩余目标</span></div>
+<span style="color:var(--green)">-- ✓ 验证通过 · 无剩余目标</span></div>
           </div>
         </div>
 
@@ -1383,14 +1384,14 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
           <div class="t-step-head">
             <div class="t-icon" style="background:var(--green-dim);border:1px solid var(--green-border);font-size:1.1rem">✓</div>
             <div>
-              <div class="t-label">步骤 13 · 最终验证</div>
-              <div class="t-title" style="color:var(--green)">Lean 4 内核接受完整证明</div>
+              <div class="t-label">步骤 13 · 多层验证通过</div>
+              <div class="t-title" style="color:var(--green)">PRE_VERIFICATION 钩子 → APE 预过滤 → 双引擎终验 ✓</div>
             </div>
           </div>
           <div class="t-content">
             <div class="t-desc">每一步都被追溯到数学公理进行检查。无 sorry，无 admit，无公理注入。定理，已证。</div>
             <div style="margin:0.5rem 0">
-              <span class="comp-tag" data-role="verify">Lean 4 类型检查器<span class="tip">最终验证：将完整证明归约到逻辑公理，确认数学上的绝对正确性。</span></span>
+              <span class="comp-tag" data-role="verify">双引擎终验<span class="tip">最终验证：将完整证明归约到逻辑公理，确认数学上的绝对正确性。</span></span>
               <span class="comp-tag" data-role="verify">Sorry: 0 处<span class="tip">扫描证明中的所有 sorry 占位符。0 处意味着证明完全完成。</span></span>
               <span class="comp-tag" data-role="verify">完整性: 通过<span class="tip">验证无公理注入、无 admit、定理陈述与原始问题完全匹配。</span></span>
             </div>
@@ -1414,7 +1415,7 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
   <div class="success-card" id="successCard" style="opacity:0;transform:scale(0.96);transition:all 0.8s">
     <div class="success-check">✓</div>
     <h3>内核验证通过</h3>
-    <p class="sub">每一步都由 Lean 4 类型论引擎检查，追溯到逻辑公理。</p>
+    <p class="sub">每一步都由 APE 双引擎检查，追溯到类型论公理。</p>
     <div class="proof-block"><span class="kw">import</span> Mathlib
 
 <span class="kw">lemma</span> cyc_bound (a b c : ℝ) (ha : 0 ≤ a) (hb : 0 ≤ b) (hc : 0 ≤ c) :
@@ -1440,10 +1441,28 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 
 <!-- ═══════════ ARCHITECTURE ═══════════ -->
 <section id="arch" class="arch-section"><div class="wrap">
-  <p class="sec-eyebrow">智能体架构</p>
-  <h2 class="sec-title">六大核心模块，协同驱动证明</h2>
-  <p class="sec-desc">每个模块都在证明过程中扮演不可或缺的角色。悬停组件标签可查看详细说明。</p>
+  <p class="sec-eyebrow">系统架构</p>
+  <h2 class="sec-title">为什么数学证明需要这九个模块</h2>
+  <p class="sec-desc">形式化证明的每一个环节都有独特的难点。六大基础模块覆盖核心流程，三大新增模块（<span style="color:var(--cyan)">异构并行</span> · <span style="color:var(--amber2)">钩子系统</span> · <span style="color:var(--accent2)">插件生态</span>）解决实践中最常遇到的三个瓶颈：策略同质化、领域知识缺失、反思不闭环。</p>
   <div class="arch-grid">
+    <div class="arch-card ac-brain" style="border-color:var(--cyan);border-width:1.5px">
+      <div class="a-icon">⚡</div>
+      <h4 style="color:var(--cyan)">异构并行探索</h4>
+      <p>同时从多个数学方向攻克定理：自动化策略、归纳法、代数变换、引理检索。各方向有独立上下文，互不污染。</p>
+      <div class="a-how"><strong>为什么数学证明需要这个:</strong> 一道数论题，归纳法和代数法可能都能走通，但走哪条路事先不知道。旧系统用同一个 prompt 生成 8 遍，全卡在同一个 ℕ 减法错误上。新架构让不同数学思路各走各的路 —— 归纳法方向发现 80% 的证明结构，引理检索方向找到关键的 Nat.sub_add_cancel，ResultFuser 把两个方向的收获合并，一轮就通过验证。</div>
+    </div>
+    <div class="arch-card ac-tool" style="border-color:var(--amber);border-width:1.5px">
+      <div class="a-icon">🪝</div>
+      <h4 style="color:var(--amber2)">证明过程钩子</h4>
+      <p>在证明流程的关键时机（读题、验证、出错、升级策略...）自动触发领域检查和知识注入，不需要改代码。</p>
+      <div class="a-how"><strong>为什么数学证明需要这个:</strong> 系统分析出了"ring 在 ℕ 减法上不适用"这个正确结论，但之前只打了一行日志，下一轮照样犯同一个错。钩子让这类洞察自动变成行动 —— 错误信息匹配到"ring.*failed.*Nat"时，立即注入"改用 Nat.sub_add_cancel"的修复提示。数论插件可以声明自己的钩子规则，不需要改框架代码。</div>
+    </div>
+    <div class="arch-card ac-search" style="border-color:var(--accent);border-width:1.5px">
+      <div class="a-icon">🧩</div>
+      <h4 style="color:var(--accent2)">数学领域知识插件</h4>
+      <p>数论、实分析、代数拓扑各有各的陷阱和技巧。领域知识以 YAML 配置包的形式存在，按定理特征自动匹配加载。</p>
+      <div class="a-how"><strong>为什么数学证明需要这个:</strong> 数论有 ℕ 减法截断陷阱，实分析有 ε-δ 的 Lean4 写法，组合数学有 Finset 的 API 习惯。一个通用 prompt 不可能覆盖所有数学分支的经验。number-theory 插件自带减法警告和数论引理，系统看到"dvd""prime""2^n"就自动加载。社区可以贡献新的数学领域插件，不改框架代码。</div>
+    </div>
     <div class="arch-card ac-brain">
       <div class="a-icon">🧠</div>
       <h4 style="color:var(--accent2)">思考大脑</h4>
@@ -1456,17 +1475,17 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
       <p>混合检索系统（BM25 + 语义嵌入 + LLM 重排），从 Mathlib 100,000+ 引理中精准匹配。</p>
       <div class="a-how"><strong>如何帮助证明:</strong> 快速找到相关的已有引理和策略，避免重复发明轮子。语义搜索能发现名称不同但本质相关的引理。</div>
     </div>
+    <div class="arch-card ac-verify">
+      <div class="a-icon">✓</div>
+      <h4 style="color:var(--green)">形式验证 · APE + Lean4</h4>
+      <p>APE 在 Lean4 之上构建 agent-first 加速层。L0/L1 快速预过滤 (μs 级)，Lean4 做最终的 L2 可信认证。</p>
+      <div class="a-how"><strong>为什么数学证明需要这个:</strong> Lean4 的验证是绝对可靠的，但每次编译需要 2.5~12 秒。APE 在证明到达 Lean4 之前先做快速检查，过滤掉 95% 的无效尝试，让 Lean4 只验证真正有希望的候选。PRE_VERIFICATION 钩子串联两层验证。<a href="#engine" style="color:var(--green);margin-left:4px">→ 查看引擎详情</a></div>
+    </div>
     <div class="arch-card ac-tool">
       <div class="a-icon">🔧</div>
       <h4 style="color:var(--amber)">工具生态</h4>
       <p>Lean REPL、SageMath CAS、证明骨架生成器等外部工具的统一调度与执行框架。</p>
       <div class="a-how"><strong>如何帮助证明:</strong> 连续调用多种工具完成单一推理链：CAS 求极值 → REPL 验证 → 骨架填充。工具调用把纯推理扩展为行动。</div>
-    </div>
-    <div class="arch-card ac-verify">
-      <div class="a-icon">✓</div>
-      <h4 style="color:var(--green)">形式验证 · APE 引擎</h4>
-      <p>自研 APE 验证引擎 + Lean 4 类型检查内核。APE 提供高速 L0/L1 预过滤，Lean 4 提供最终 L2 认证。</p>
-      <div class="a-how"><strong>如何帮助证明:</strong> APE 在微秒级过滤 95% 的无效 tactic，只把高置信结果送入 Lean 内核做最终验证。杜绝幻觉，同时提速 100-1000 倍。<a href="#engine" style="color:var(--green);margin-left:4px">→ 查看引擎详情</a></div>
     </div>
     <div class="arch-card ac-evolve">
       <div class="a-icon">🔄</div>
@@ -1476,9 +1495,9 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
     </div>
     <div class="arch-card ac-memory">
       <div class="a-icon">📋</div>
-      <h4 style="color:var(--red)">上下文记忆</h4>
-      <p>工作记忆、情景记忆、错误摘要。在有限窗口内维持长程推理的连贯性。</p>
-      <div class="a-how"><strong>如何帮助证明:</strong> 智能压缩数十轮尝试的历史，提取关键模式，让智能体在长达数百步的推理中保持上下文连贯。</div>
+      <h4 style="color:var(--red)">上下文记忆 · 隔离窗口</h4>
+      <p>工作记忆、情景记忆、错误摘要。每个子智能体拥有独立的 ContextWindow，子目标之间互不污染。</p>
+      <div class="a-how"><strong>如何帮助证明:</strong> 子目标 A 的失败日志不再挤占子目标 B 的 token 预算。每个子智能体只看到与自己任务相关的精准上下文。</div>
     </div>
   </div>
 </div></section>
@@ -1486,16 +1505,16 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 <!-- ═══════════ APE ENGINE ═══════════ -->
 <section class="ape-section" id="engine"><div class="wrap">
   <p class="sec-eyebrow">核心引擎</p>
-  <h2 class="sec-title">APE — Agent Proof Engine</h2>
-  <p class="sec-desc">我们认为 Lean4 对 AI Agent 来说过于笨重。所以我们从第一性原理出发，设计了一个专为大规模并行证明搜索优化的验证引擎 —— 同时保持与 Lean4 生态的完整兼容。</p>
+  <h2 class="sec-title">APE — Lean4 的 Agent-first 加速层</h2>
+  <p class="sec-desc">Lean4 是形式化数学的黄金标准，但它的完整编译验证 (2.5~12s/次) 成为大规模证明搜索的瓶颈。APE 在 Lean4 之上构建了一个 agent-first 的加速层 —— 在 <strong>&lt;1ms</strong> 内完成 L0/L1 预检，将无效证明在到达 Lean4 之前就过滤掉，让 Lean4 只做它最擅长的事：最终的 L2 可信认证。</p>
 
   <!-- Dual pipeline explainer -->
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:2rem 0">
     <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.5rem;position:relative;overflow:hidden">
       <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent)"></div>
       <div style="font-family:var(--mono);font-size:0.7rem;color:var(--accent2);letter-spacing:0.15em;margin-bottom:0.5rem">PIPELINE A · LEAN4</div>
-      <h4 style="font-size:1rem;color:var(--text);margin-bottom:0.4rem">想使用 Lean4 的用户</h4>
-      <p style="font-size:0.85rem;color:var(--text2);line-height:1.65">LLM 生成完整 Lean4 证明 → Lean4 编译验证。享受完整 Mathlib 生态，100% 可靠的类型检查。适合需要最终形式化保证的用户。</p>
+      <h4 style="font-size:1rem;color:var(--text);margin-bottom:0.4rem">Lean4 验证路径</h4>
+      <p style="font-size:0.85rem;color:var(--text2);line-height:1.65">兼容完整 Lean4 生态。LLM 生成完整证明 → Lean4 编译验证。享受 Mathlib 100K+ 引理库，100% 可靠的类型检查。适合需要最终形式化保证的场景。</p>
       <div style="font-family:var(--mono);font-size:0.72rem;color:var(--text3);margin-top:0.6rem">验证延迟: ~80ms/proof · 生态: Mathlib 完整支持</div>
     </div>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.5rem;position:relative;overflow:hidden">
@@ -1571,7 +1590,7 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 
     <!-- Benchmark comparison -->
     <div class="ape-bench">
-      <div style="font-family:var(--mono);font-size:0.65rem;color:var(--text3);letter-spacing:0.2em;margin-bottom:1rem">APE vs Lean4 LSP 性能对比 (基于 ∀ (P : Prop) (h : P), P 实测)</div>
+      <div style="font-family:var(--mono);font-size:0.65rem;color:var(--text3);letter-spacing:0.2em;margin-bottom:1rem">APE vs Lean4 性能对比 (基于 ∀ (P : Prop) (h : P), P 实测)</div>
       <table>
         <thead><tr>
           <th>操作</th><th>Lean4 Pipeline</th><th>APE Pipeline</th><th>加速比</th>
@@ -1646,8 +1665,8 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
       <!-- Lean4 Path -->
       <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.8rem;position:relative;overflow:hidden">
         <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--blue)"></div>
-        <h4 style="color:var(--blue);font-size:1rem;margin-bottom:0.4rem">路径 A · Lean4 传统路径</h4>
-        <p style="font-size:0.88rem;color:var(--text2);line-height:1.7;margin-bottom:1rem">LLM 一次性生成完整 Lean4 证明代码 → Lean4 编译器做完整类型检查 → 错误则解析报告、LLM 重试。</p>
+        <h4 style="color:var(--blue);font-size:1rem;margin-bottom:0.4rem">路径 A · Lean4 验证路径</h4>
+        <p style="font-size:0.88rem;color:var(--text2);line-height:1.7;margin-bottom:1rem">LLM 一次性生成完整证明代码 → Lean4 编译器做完整类型检查 → 错误则解析报告、LLM 重试。</p>
         <div style="font-family:var(--mono);font-size:0.75rem;color:var(--text3);line-height:1.8">
           <div>✓ 与 Mathlib 生态完全兼容</div>
           <div>✓ Lean4 内核提供最终可信保证</div>
@@ -1732,8 +1751,8 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 <section class="flow-section" id="flowDiagram">
 <div class="flow-wrap">
   <p class="sec-eyebrow">全局数据流</p>
-  <h2 class="sec-title">智能体推理全景图</h2>
-  <p class="sec-desc">所有模块如何在一次证明中协同运转 —— 从问题输入到验证通过的完整数据流框架。悬停节点查看详细说明，动态粒子展示数据流向。</p>
+  <h2 class="sec-title">一道定理从输入到证明通过的完整旅程</h2>
+  <p class="sec-desc">从读题、领域识别、多方向探索、跨方向融合，到 APE 预过滤和 Lean4 终验 —— 追踪一道数学定理在系统中经过的每一个环节。悬停节点查看详细说明，动态粒子展示数据流向。</p>
 
   <div class="flow-container" id="flowCont">
     <canvas class="flow-canvas" id="flowCanvas"></canvas>
@@ -1751,15 +1770,15 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
     <!-- === ROW 0: Input === -->
     <div class="fn fn-input" id="nd-input" style="left:50%;top:3.5%">
       <span class="fn-icon">📥</span>待证定理
-      <span class="fn-sub">Lean 4 形式化陈述</span>
-      <div class="fn-tip">将自然语言数学问题转化为 Lean 4 类型论中的形式化陈述，作为智能体的输入目标。</div>
+      <span class="fn-sub">形式化陈述 (支持多种后端)</span>
+      <div class="fn-tip">将自然语言数学问题转化为类型论中的形式化陈述，作为智能体的输入目标。</div>
     </div>
 
     <!-- === ROW 1: Meta Controller === -->
     <div class="fn fn-brain" id="nd-meta" style="left:50%;top:10.5%">
-      <span class="fn-icon">🎯</span>元控制器 / 策略调度
-      <span class="fn-sub">META CONTROLLER — 选择推理模式与资源预算</span>
-      <div class="fn-tip tip-below">全局调度中心。根据问题难度选择轻量/中量/重量模式，分配并行路径数量和计算预算，决定何时升级策略。</div>
+      <span class="fn-icon">🎯</span>元控制器 + 钩子调度
+      <span class="fn-sub">META CONTROLLER — 9个生命周期事件 · 声明式规则 · 插件匹配</span>
+      <div class="fn-tip tip-below">全局调度中心。ON_PROBLEM_START 钩子做领域分类 → 匹配策略插件 → 注入领域知识。ON_ROUND_END 钩子检测重复错误 → 主动触发策略升级。所有决策点都可通过插件扩展。</div>
     </div>
 
     <!-- === ROW 2: Planner + Side modules === -->
@@ -1770,9 +1789,9 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
     </div>
 
     <div class="fn fn-search" id="nd-pattern" style="left:14%;top:19%">
-      <span class="fn-icon">📚</span>模式库
-      <span class="fn-sub">PATTERN LIBRARY</span>
-      <div class="fn-tip tip-right">存储历史上成功的证明模式与策略模板。如"轮换不等式→Schur 变体"，供规划器快速匹配并复用。</div>
+      <span class="fn-icon">🧩</span>策略插件库
+      <span class="fn-sub">PLUGIN REGISTRY</span>
+      <div class="fn-tip tip-right">可插拔的领域策略仓库。number-theory 插件自带 ℕ 减法警告和数论引理，real-analysis 插件自带 ε-δ 模式。通过 YAML 声明，不改源码。</div>
     </div>
 
     <div class="fn fn-memory" id="nd-memory" style="left:86%;top:19%">
@@ -1791,25 +1810,25 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
     <div class="fn fn-search" id="nd-mathlib" style="left:14%;top:27%">
       <span class="fn-icon">∑</span>Mathlib 100K+
       <span class="fn-sub">LEAN 4 数学库</span>
-      <div class="fn-tip tip-right">Lean 4 社区维护的超大型数学库，包含 100,000+ 已验证引理和定理，覆盖代数、分析、拓扑等全部分支。</div>
+      <div class="fn-tip tip-right">社区维护的超大型形式化数学库，包含 100,000+ 已验证引理和定理，覆盖代数、分析、拓扑等全部分支。</div>
     </div>
 
-    <!-- === ROW 4: Parallel Rollout === -->
+    <!-- === ROW 4: Heterogeneous Parallel === -->
     <div class="fn fn-exec" id="nd-rollout" style="left:50%;top:34%">
-      <span class="fn-icon">⚡</span>并行 Rollout 生成器
-      <span class="fn-sub">PARALLEL ROLLOUT — 高温度多样化采样 ×N 路径</span>
-      <div class="fn-tip tip-below">同时展开 N 条不同的证明路径。高温度采样确保多样性，共享引理库确保跨路径知识传递。N 由元控制器动态决定。</div>
+      <span class="fn-icon">⚡</span>异构并行 · SubAgent Pool
+      <span class="fn-sub">HETEROGENEOUS ENGINE — 多方向独立探索 × 跨方向信息融合</span>
+      <div class="fn-tip tip-below">同时启动 4 个策略完全不同的子智能体：自动化探测(Haiku)、归纳法专家(Sonnet)、代数变换(Sonnet)、引理检索(Sonnet)。各有独立上下文，ResultFuser 跨方向融合最佳结果。</div>
     </div>
 
-    <!-- Mini rollout nodes -->
-    <div class="fn-mini rf-fail" id="nd-r1" style="left:26%;top:39.5%">✗</div>
-    <div class="fn-mini rf-fail" id="nd-r2" style="left:33%;top:39.5%">✗</div>
-    <div class="fn-mini rf-pass" id="nd-r3" style="left:40%;top:39.5%">✓</div>
-    <div class="fn-mini rf-fail" id="nd-r4" style="left:47%;top:39.5%">✗</div>
-    <div class="fn-mini rf-lemma" id="nd-r5" style="left:54%;top:39.5%">◆</div>
-    <div class="fn-mini rf-fail" id="nd-r6" style="left:61%;top:39.5%">✗</div>
-    <div class="fn-mini rf-fail" id="nd-r7" style="left:68%;top:39.5%">✗</div>
-    <div class="fn-mini rf-lemma" id="nd-r8" style="left:75%;top:39.5%">◆</div>
+    <!-- Mini rollout nodes - now heterogeneous -->
+    <div class="fn-mini rf-fail" id="nd-r1" style="left:22%;top:39.5%" title="自动化: simp/omega">A₁</div>
+    <div class="fn-mini rf-fail" id="nd-r2" style="left:29%;top:39.5%" title="自动化: ring">A₂</div>
+    <div class="fn-mini rf-pass" id="nd-r3" style="left:38%;top:39.5%" title="归纳法: 80%正确">B₁</div>
+    <div class="fn-mini rf-lemma" id="nd-r4" style="left:45%;top:39.5%" title="归纳法: have步骤">B₂</div>
+    <div class="fn-mini rf-fail" id="nd-r5" style="left:54%;top:39.5%" title="代数变换: cast ℤ">C₁</div>
+    <div class="fn-mini rf-lemma" id="nd-r6" style="left:61%;top:39.5%" title="检索: Nat.pow_succ">D₁</div>
+    <div class="fn-mini rf-lemma" id="nd-r7" style="left:68%;top:39.5%" title="检索: sub_cancel">D₂</div>
+    <div class="fn-mini rf-pass" id="nd-r8" style="left:77%;top:39.5%" title="融合修复: B+D→成功">B'</div>
 
     <!-- === ROW 5: Tool Chain === -->
     <div class="fn fn-exec" id="nd-toolchain" style="left:50%;top:47%">
@@ -1832,9 +1851,9 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 
     <!-- === ROW 6: Lean Kernel === -->
     <div class="fn fn-verify" id="nd-kernel" style="left:50%;top:55.5%">
-      <span class="fn-icon">🛡️</span>Lean 4 验证内核
-      <span class="fn-sub">TYPE CHECKER — 追溯到公理的绝对验证</span>
-      <div class="fn-tip tip-below">将每个证明步骤归约到类型论的基本公理。通过 = 数学正确，不通过 = 继续尝试。零模糊地带的最终裁判。</div>
+      <span class="fn-icon">🛡️</span>多层验证管线
+      <span class="fn-sub">PRE_VERIFICATION 钩子 → APE L0/L1 预检 → Lean4 L2 终验</span>
+      <div class="fn-tip tip-below">三层验证：PRE_VERIFICATION 钩子做安全检查（如 ℕ 减法守卫）→ APE 引擎微秒级类型检查 → Lean4 内核最终认证。APE 为 Lean4 过滤掉 95% 的无效证明，节省大量编译时间。</div>
     </div>
 
     <!-- === ROW 7: Branch === -->
@@ -1867,7 +1886,7 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
     <div class="fn fn-pass" id="nd-final" style="left:30%;top:78.5%">
       <span class="fn-icon">🏆</span>最终验证通过
       <span class="fn-sub">✓ KERNEL VERIFIED — 定理已证</span>
-      <div class="fn-tip">完整证明通过 Lean 4 内核最终检查。无 sorry，无 admit，定理陈述完全匹配。数学确定性已达成。</div>
+      <div class="fn-tip">完整证明通过 APE + Lean4 双层验证。无 sorry，无 admit，定理陈述完全匹配。数学确定性已达成。</div>
     </div>
 
     <div class="fn fn-evolve" id="nd-extract" style="left:70%;top:78.5%">
@@ -1878,9 +1897,9 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 
     <!-- === Reflection (right side) === -->
     <div class="fn fn-brain" id="nd-reflect" style="left:86%;top:71%">
-      <span class="fn-icon">🪞</span>自我反思
-      <span class="fn-sub">SELF-REFLECTION</span>
-      <div class="fn-tip tip-left">以"批判者"视角审视全部失败尝试，识别系统性盲区，推荐根本性不同的方法，触发策略升级。</div>
+      <span class="fn-icon">🪞</span>反思闭环
+      <span class="fn-sub">REFLECTION → HOOK → INJECT</span>
+      <div class="fn-tip tip-left">关键改进：反思结论不再只打 log。ON_STRATEGY_SWITCH 钩子将反思文本结构化注入下一轮 prompt，确保"ring 在 ℕ 减法上失败"这类洞察转化为具体行动。</div>
     </div>
 
     <!-- === Lemma Bank (left side) === -->
@@ -1899,30 +1918,30 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 
     <!-- === Strategy escalation label === -->
     <div class="fn fn-brain" id="nd-escalate" style="left:86%;top:55.5%;padding:0.35rem 0.7rem;font-size:0.62rem;">
-      <span class="fn-icon">🔄</span>策略升级
-      <span class="fn-sub">ESCALATION</span>
-      <div class="fn-tip tip-left">当反复失败达到阈值时自动触发。轻量→中量→重量逐级升级，增加并行路径数、启用定理分解、延长推理链。</div>
+      <span class="fn-icon">🪝</span>钩子驱动升级
+      <span class="fn-sub">HOOK ESCALATION</span>
+      <div class="fn-tip tip-left">ON_ROUND_END 钩子检测到同一错误重复 4+ 次时主动触发升级，不再被动等待轮次阈值。RepetitionDetectorHook 实时监控错误模式。</div>
     </div>
   </div>
 
   <!-- Legend -->
   <div class="flow-legend">
     <div class="flow-legend-item"><div class="fll" style="background:var(--accent)"></div>决策与推理</div>
-    <div class="flow-legend-item"><div class="fll" style="background:var(--blue)"></div>知识检索</div>
-    <div class="flow-legend-item"><div class="fll" style="background:var(--amber)"></div>工具执行</div>
-    <div class="flow-legend-item"><div class="fll" style="background:var(--green)"></div>形式验证</div>
-    <div class="flow-legend-item"><div class="fll" style="background:var(--cyan)"></div>进化与积累</div>
-    <div class="flow-legend-item"><div class="fll" style="background:var(--red);opacity:0.6"></div>失败反馈环</div>
-    <div class="flow-legend-item"><div class="fll" style="background:linear-gradient(90deg,var(--accent),var(--cyan))"></div>自演化数据流</div>
+    <div class="flow-legend-item"><div class="fll" style="background:var(--blue)"></div>知识检索 · 插件</div>
+    <div class="flow-legend-item"><div class="fll" style="background:var(--amber)"></div>工具执行 · 钩子</div>
+    <div class="flow-legend-item"><div class="fll" style="background:var(--green)"></div>多层验证</div>
+    <div class="flow-legend-item"><div class="fll" style="background:var(--cyan)"></div>进化 · 融合</div>
+    <div class="flow-legend-item"><div class="fll" style="background:var(--red);opacity:0.6"></div>反思闭环</div>
+    <div class="flow-legend-item"><div class="fll" style="background:linear-gradient(90deg,var(--accent),var(--cyan))"></div>跨方向信息流</div>
   </div>
 </div>
 </section>
 
 <!-- ═══════════ CORE CAPABILITIES ═══════════ -->
 <section class="cap-section"><div class="wrap">
-  <p class="sec-eyebrow">核心能力</p>
-  <h2 class="sec-title">超越常规的智能体能力</h2>
-  <p class="sec-desc">形式化证明要求智能体具备远超普通对话的能力边界。以下是四大核心能力如何在证明中发挥作用。</p>
+  <p class="sec-eyebrow">关键技术</p>
+  <h2 class="sec-title">形式化证明的三个核心瓶颈，以及我们的解法</h2>
+  <p class="sec-desc">在实际攻克数学定理的过程中，我们反复遇到三个具体问题：同一个 prompt 生成的证明全部犯同一个错误；数论题需要的 ℕ 减法知识无法注入通用 prompt；Reflector 分析出了正确原因却只打了 log。以下三个技术创新分别解决这些问题。</p>
 
   <!-- CAP 1: 高并发多 Rollout -->
   <div class="cap-block" data-cap="rollout" style="border-color:rgba(124,108,240,0.15)">
@@ -1996,8 +2015,8 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 <!-- ═══════════ EVOLUTION ═══════════ -->
 <section class="evo-section"><div class="wrap">
   <p class="sec-eyebrow">持续进化</p>
-  <h2 class="sec-title">每道题都让系统更强</h2>
-  <p class="sec-desc">智能体不断积累知识、优化策略、提升数学直觉。以下是四种自演化机制。</p>
+  <h2 class="sec-title">每道题的成败都在积累数学经验</h2>
+  <p class="sec-desc">成功的证明产出可复用的引理；失败的尝试提取错误模式和领域洞察。领域插件让社区的数学经验成为所有用户的力量。</p>
   <div class="evo-grid">
     <div class="evo-card evo-a">
       <div class="evo-num">01</div>
@@ -2035,7 +2054,7 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 <section style="padding:6rem 0;background:linear-gradient(180deg,var(--bg2) 0%,var(--bg) 100%);border-top:1px solid var(--border)"><div class="wrap">
   <p class="sec-eyebrow" style="color:var(--green2)">工程验证</p>
   <h2 class="sec-title">每一个组件，都经过严格测试</h2>
-  <p class="sec-desc">从 de Bruijn 索引操作到多线程并发安全，152 个源文件、34 个核心组件全部通过自动化验证。</p>
+  <p class="sec-desc">从 de Bruijn 索引操作到多智能体并发安全，170+ 个源文件、40+ 个核心组件全部通过自动化验证。新增的钩子系统、插件加载器、子智能体运行时均有独立测试套件。</p>
 
   <!-- Verification stats bar -->
   <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:1rem;margin-bottom:3rem">
@@ -2125,7 +2144,7 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 <!-- ═══════════ FOOTER ═══════════ -->
 <footer>
   <div class="f-logo">AI4Math</div>
-  <p>形式化证明智能体 · 由 Claude 驱动 · 由 Lean 4 验证</p>
+  <p>形式化数学证明系统 · Claude 驱动 · APE 加速 · Lean4 认证</p>
 </footer>
 
 <script>

@@ -1,0 +1,55 @@
+name: number-theory
+version: "1.0.0"
+description: "Specialized strategy for number theory and combinatorics proofs"
+domain:
+  branches: ["number_theory", "combinatorics"]
+  difficulty: ["easy", "medium", "hard"]
+  keywords:
+    - "dvd"
+    - "prime"
+    - "gcd"
+    - "mod"
+    - "Nat\\.Prime"
+    - "Int\\.mod"
+    - "Finset\\.range"
+    - "Finset\\.sum"
+    - "Nat\\.choose"
+    - "∣"
+    - "2\\s*\\^"
+    - "Nat\\.factorial"
+
+strategy:
+  inherits: "medium"
+  overrides:
+    temperature: 0.7
+    samples_per_round: 8
+  custom_params:
+    prefer_omega: true
+    try_norm_num_first: true
+    strategic_hint: >
+      For number theory proofs, prefer omega and norm_num for arithmetic goals.
+      For divisibility, use dvd_trans and dvd_add. For modular arithmetic,
+      use Int.emod_emod_of_dvd and Nat.mod_def.
+
+premises:
+  file: "premises.jsonl"
+  merge_mode: "prepend"
+
+few_shot:
+  file: "few_shot.md"
+
+hooks:
+  on_error:
+    - pattern: "ring.*failed.*Nat|tactic.*failed.*subtraction"
+      action: "inject_context"
+      content: >
+        ℕ subtraction truncates to 0 in Lean4. When you see a - b where a, b : ℕ,
+        you must first prove a ≥ b (i.e., b ≤ a) before the subtraction is meaningful.
+        Use Nat.sub_add_cancel (requires h : b ≤ a) or tsub_add_cancel_of_le.
+        For expressions like 2^n - k, first prove k ≤ 2^n by induction or using
+        Nat.one_le_two_pow_iff.
+    - pattern: "unknown.*Nat\\.Prime|unknown.*prime"
+      action: "inject_context"
+      content: >
+        Nat.Prime might need an import. Try: import Mathlib.Data.Nat.Prime.Basic
+        or import Mathlib.Data.Nat.Prime.Defs

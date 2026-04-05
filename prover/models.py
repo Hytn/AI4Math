@@ -78,6 +78,7 @@ class ProofTrace:
     attempts: list[ProofAttempt] = field(default_factory=list)
     solved: bool = False
     total_attempts: int = 0
+    correct_count: int = 0  # v2: count of successful attempts (for pass@k)
     total_tokens: int = 0
     total_duration_ms: int = 0
     successful_proof: str = ""
@@ -94,6 +95,7 @@ class ProofTrace:
             cat = e.category.value
             self.error_distribution[cat] = self.error_distribution.get(cat, 0) + 1
         if a.lean_result == AttemptStatus.SUCCESS:
+            self.correct_count += 1
             self.solved = True
             self.successful_proof = a.generated_proof
 
@@ -105,6 +107,7 @@ class ProofTrace:
             "theorem_statement": self.theorem_statement,
             "solved": self.solved,
             "total_attempts": self.total_attempts,
+            "correct_count": self.correct_count,
             "total_tokens": self.total_tokens,
             "strategy_path": self.strategy_path,
             "successful_proof": self.successful_proof,
