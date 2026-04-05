@@ -7,3 +7,4 @@ results/evals/*.json
 results/rl_data/*.jsonl
 *.egg-info/
 dist/
+.DS_Store
