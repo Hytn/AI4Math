@@ -21,11 +21,27 @@ Legacy modules (retained for heuristic planning):
   search/     MCTS + UCB1 + search strategies
   tactic/     18 built-in tactics (heuristic scoring)
 """
-__version__ = "0.2.0"
+__version__ = "0.4.0"
 
-# APE v2 core exports
+# APE v2 core exports (synchronous)
 from engine.broadcast import BroadcastBus, BroadcastMessage, MessageType
 from engine.prefilter import PreFilter, FilterResult
 from engine.lean_pool import LeanPool, TacticFeedback, FullVerifyResult
 from engine.error_intelligence import ErrorIntelligence, AgentFeedback
 from engine.verification_scheduler import VerificationScheduler, VerificationResult
+
+# APE v3 async exports
+from engine.async_lean_pool import AsyncLeanSession, AsyncLeanPool, SyncLeanPool
+from engine.async_verification_scheduler import AsyncVerificationScheduler
+from engine.async_factory import AsyncEngineFactory, AsyncEngineComponents
+
+# APE v3 incremental verification + persistent state
+from engine.proof_session import ProofSessionManager, ProofSession
+from engine.incremental_verifier import IncrementalVerifier, IncrementalResult
+
+# APE v3 elastic scheduling
+from engine.pool_scaler import PoolScaler
+from engine.resource_scheduler import ResourceScheduler, ResourceBudget, Priority
+from engine.remote_session import (
+    RemoteSession, LocalTransport, TCPTransport, ElasticPool,
+)

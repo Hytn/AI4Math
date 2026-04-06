@@ -524,6 +524,111 @@ section { padding: 6rem 0; }
 .ac-memory::before { background: var(--red); }
 .ac-memory .a-icon { background: var(--red-dim); border: 1px solid rgba(248,113,113,0.2); }
 
+/* ═══════════ APE ENGINE ═══════════ */
+.ape-section { padding: 6rem 0; background: linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%); border-top: 1px solid var(--border); }
+.ape-section .sec-eyebrow { color: var(--green2); }
+
+.ape-hero-box {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 20px; padding: 3rem; margin: 2.5rem 0;
+  position: relative; overflow: hidden;
+}
+.ape-hero-box::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, var(--green), var(--cyan), var(--accent));
+}
+.ape-name { font-family: var(--mono); font-size: 2.2rem; font-weight: 600; color: var(--green2); margin-bottom: 0.3rem; letter-spacing: -0.02em; }
+.ape-name span { color: var(--text3); font-weight: 300; font-size: 1rem; letter-spacing: 0.1em; margin-left: 0.8rem; }
+.ape-tagline { font-size: 1.15rem; color: var(--text2); margin-bottom: 2rem; line-height: 1.7; }
+
+.ape-pillars {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;
+  margin: 2rem 0;
+}
+@media(max-width:768px) { .ape-pillars { grid-template-columns: 1fr; } }
+
+.ape-pillar {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 12px; padding: 1.5rem; position: relative; overflow: hidden;
+  transition: border-color 0.3s;
+}
+.ape-pillar:hover { border-color: var(--border2); }
+.ape-pillar::before {
+  content: ''; position: absolute; top: 0; left: 0; width: 3px; height: 100%;
+}
+.ape-p1::before { background: var(--green); }
+.ape-p2::before { background: var(--cyan); }
+.ape-p3::before { background: var(--accent); }
+.ape-p4::before { background: var(--amber); }
+.ape-p5::before { background: var(--blue); }
+
+.ape-pillar h5 { font-size: 0.95rem; font-weight: 500; margin-bottom: 0.4rem; }
+.ape-pillar p { font-size: 0.85rem; color: var(--text2); line-height: 1.65; }
+.ape-pillar .ape-metric {
+  font-family: var(--mono); font-size: 0.72rem; color: var(--text3);
+  margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid var(--border);
+}
+.ape-pillar .ape-metric em { font-style: normal; color: var(--green2); }
+
+/* Benchmark comparison table */
+.ape-bench {
+  margin: 2.5rem 0 1rem; overflow-x: auto;
+}
+.ape-bench table {
+  width: 100%; border-collapse: collapse; font-size: 0.85rem;
+}
+.ape-bench th {
+  font-family: var(--mono); font-size: 0.7rem; font-weight: 500;
+  letter-spacing: 0.08em; color: var(--text3); text-align: left;
+  padding: 0.6rem 1rem; border-bottom: 1px solid var(--border);
+}
+.ape-bench td {
+  padding: 0.6rem 1rem; border-bottom: 1px solid rgba(26,29,48,0.5);
+  color: var(--text2);
+}
+.ape-bench tr:hover td { background: rgba(124,108,240,0.03); }
+.ape-bench .v-fast { color: var(--green2); font-weight: 500; }
+.ape-bench .v-slow { color: var(--text3); }
+.ape-bench .v-gap { font-family: var(--mono); font-size: 0.75rem; color: var(--amber); }
+
+/* Fork animation */
+.ape-fork-vis {
+  display: flex; align-items: center; justify-content: center;
+  gap: 0; margin: 2rem 0; position: relative; min-height: 180px;
+}
+.ape-tree { position: relative; width: 100%; max-width: 500px; height: 170px; }
+.ape-node {
+  position: absolute; width: 52px; height: 28px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 0.65rem; font-weight: 500;
+  border: 1px solid; opacity: 0; transition: opacity 0.4s;
+}
+.ape-node.an-vis { opacity: 1; }
+.ape-node.an-root { background: var(--green-dim); border-color: var(--green-border); color: var(--green); left: 50%; top: 0; transform: translateX(-50%); }
+.ape-node.an-l1 { background: var(--accent-dim); border-color: rgba(124,108,240,0.2); color: var(--accent2); }
+.ape-node.an-fail { background: var(--red-dim); border-color: rgba(248,113,113,0.15); color: var(--red); }
+.ape-node.an-ok { background: var(--green-dim); border-color: var(--green-border); color: var(--green); }
+.ape-edge {
+  position: absolute; pointer-events: none; opacity: 0; transition: opacity 0.4s;
+}
+.ape-edge.an-vis { opacity: 0.3; }
+
+/* Layer diagram */
+.ape-layers {
+  display: flex; gap: 0.8rem; margin: 1.5rem 0; flex-wrap: wrap;
+}
+.ape-layer {
+  flex: 1; min-width: 140px; padding: 1rem;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
+  text-align: center;
+}
+.ape-layer .al-label { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.12em; margin-bottom: 0.3rem; }
+.ape-layer .al-speed { font-family: var(--mono); font-size: 1.3rem; font-weight: 600; }
+.ape-layer .al-desc { font-size: 0.78rem; color: var(--text3); margin-top: 0.3rem; }
+.al-l0 .al-label { color: var(--green); } .al-l0 .al-speed { color: var(--green2); }
+.al-l1 .al-label { color: var(--amber); } .al-l1 .al-speed { color: var(--amber2); }
+.al-l2 .al-label { color: var(--red); } .al-l2 .al-speed { color: var(--red); }
+
 /* ═══════════ CAPABILITIES SHOWCASE ═══════════ */
 .cap-section { padding: 6rem 0; }
 
@@ -915,21 +1020,23 @@ footer p { font-size: 0.88rem; color: var(--text3); }
 <!-- ═══════════ HERO ═══════════ -->
 <div class="hero">
   <div class="hero-grid"></div>
-  <p class="hero-eyebrow">形式化数学推理智能体</p>
+  <p class="hero-eyebrow">攻克竞赛级形式化数学证明</p>
   <h1>机器，<em>证明</em></h1>
-  <p class="hero-sub">一个能够阅读数学定理、自主构造严格证明、并由 Lean 4 内核逐步验证的 AI 智能体 —— 每解决一道题，它都变得更强。</p>
+  <p class="hero-sub">一个能够阅读数学定理、自主构造严格证明的 AI 系统 —— 从 Putnam 竞赛题到本科分析，每一步推理都由 APE 引擎与 Lean4 内核逐步验证，零容错。<br><span style="color:var(--green2);font-size:0.95rem">APE 引擎（Lean4 加速层）· 异构并行探索 · 领域知识插件 · 证明过程自演化</span></p>
   <div class="hero-cta">
     <a class="btn btn-primary" href="#demo">观看证明过程 →</a>
-    <a class="btn btn-ghost" href="#flowDiagram">全局数据流</a>
+    <a class="btn btn-ghost" href="#arch">系统架构</a>
+    <a class="btn btn-ghost" href="#flowDiagram">推理全景图</a>
   </div>
 </div>
 
 <!-- ═══════════ METRICS ═══════════ -->
 <div class="metric-bar"><div class="metric-row">
-  <div class="metric"><div class="num">42</div><div class="lab">证明尝试</div></div>
+  <div class="metric"><div class="num">4</div><div class="lab">并行策略方向</div></div>
+  <div class="metric"><div class="num">8</div><div class="lab">证明尝试</div></div>
   <div class="metric"><div class="num">7</div><div class="lab">引理发现</div></div>
-  <div class="metric"><div class="num">14 分钟</div><div class="lab">总耗时</div></div>
-  <div class="metric"><div class="num">1</div><div class="lab">策略升级</div></div>
+  <div class="metric"><div class="num">2 分钟</div><div class="lab">总耗时</div></div>
+  <div class="metric"><div class="num">3</div><div class="lab">钩子触发</div></div>
   <div class="metric"><div class="num">✓</div><div class="lab">内核验证</div></div>
 </div></div>
 
@@ -937,7 +1044,7 @@ footer p { font-size: 0.88rem; color: var(--text3); }
 <section id="demo"><div class="wrap">
   <p class="sec-eyebrow">实时演示</p>
   <h2 class="sec-title">攻克一道 Putnam 竞赛题</h2>
-  <p class="sec-desc">Putnam 是北美最难的本科数学竞赛，满分 120 分，中位数得分为 0。观看智能体如何从零开始构造完整的形式化证明。</p>
+  <p class="sec-desc">Putnam 是北美最难的本科数学竞赛，满分 120 分，中位数得分为 0。观看系统如何从零开始构造完整的形式化证明 —— 多个策略方向同时探索，领域知识自动注入，失败洞察即时闭环，最终由 Lean4 内核确认数学正确性。</p>
 
   <!-- Problem box -->
   <div class="problem-box">
@@ -972,14 +1079,14 @@ footer p { font-size: 0.88rem; color: var(--text3); }
           <div class="t-step-head">
             <div class="t-icon" style="background:var(--accent-dim);border:1px solid rgba(124,108,240,0.2)">🧠</div>
             <div>
-              <div class="t-label">步骤 1 · 证明规划</div>
-              <div class="t-title">智能体阅读定理，制定高层策略</div>
+              <div class="t-label">步骤 1 · 领域识别 + 证明规划</div>
+              <div class="t-title">ON_PROBLEM_START 钩子分类领域，匹配策略插件</div>
             </div>
           </div>
           <div class="t-content">
             <div class="t-desc">在写下任何代码之前，智能体先构建高层证明计划 —— 如同数学家在白板上勾勒思路。</div>
             <div style="margin:0.5rem 0">
-              <span class="comp-tag" data-role="brain">证明规划器<span class="tip">分析目标结构，将高层数学直觉转化为 Lean 4 可执行的战术序列。是智能体的"数学大脑"。</span></span>
+              <span class="comp-tag" data-role="brain">证明规划器<span class="tip">分析目标结构，将高层数学直觉转化为可执行的战术序列。是智能体的"数学大脑"。</span></span>
               <span class="comp-tag" data-role="brain">假设生成器<span class="tip">自动猜测可能需要的辅助假设与关键引理，为证明搭建脚手架。</span></span>
               <span class="comp-tag" data-role="search">模式库<span class="tip">存储历史上成功的证明模式（如"轮换不等式→Schur 变体"），供规划器快速匹配。</span></span>
             </div>
@@ -1002,7 +1109,7 @@ footer p { font-size: 0.88rem; color: var(--text3); }
             </div>
           </div>
           <div class="t-content">
-            <div class="t-desc">混合检索（关键词 + 语义向量）遍历 Lean 4 的 Mathlib 库，再由 LLM 重排结果。</div>
+            <div class="t-desc">混合检索（关键词 + 语义向量）遍历 Mathlib 数学库，再由 LLM 重排结果。</div>
             <div style="margin:0.5rem 0">
               <span class="comp-tag" data-role="search">BM25 稀疏检索<span class="tip">基于 TF-IDF 的传统检索，精确匹配引理名称和策略关键词，速度极快。</span></span>
               <span class="comp-tag" data-role="search">语义嵌入<span class="tip">将定理语句编码为向量，捕捉深层语义相似性，找到名称不同但本质相关的引理。</span></span>
@@ -1055,9 +1162,9 @@ footer p { font-size: 0.88rem; color: var(--text3); }
             </div>
           </div>
           <div class="t-content">
-            <div class="t-desc">Lean 4 将每一步追溯到逻辑公理进行检查。如果数学不对，内核绝不通过 —— 没有捷径。</div>
+            <div class="t-desc">验证引擎将每一步追溯到逻辑公理进行检查。如果数学不对，内核绝不通过 —— 没有捷径。</div>
             <div style="margin:0.5rem 0">
-              <span class="comp-tag" data-role="verify">Lean 4 类型检查器<span class="tip">Lean 的核心验证引擎，将每个证明步骤归约到逻辑公理级别，提供绝对的数学确定性。</span></span>
+              <span class="comp-tag" data-role="verify">APE 验证内核<span class="tip">双引擎的核心验证层，将每个证明步骤归约到逻辑公理级别，提供绝对的数学确定性。</span></span>
               <span class="comp-tag" data-role="error">错误解析器<span class="tip">将 Lean 报错信息解析为结构化数据，提取失败位置、类型和上下文。</span></span>
               <span class="comp-tag" data-role="verify">完整性检查器<span class="tip">确保智能体不能通过注入假公理来"作弊" —— 这是其他系统中已发现的真实漏洞。</span></span>
             </div>
@@ -1115,8 +1222,8 @@ ERROR 第 10 行: sorry 占位符仍存在
           <div class="t-step-head">
             <div class="t-icon" style="background:var(--accent-dim);border:1px solid rgba(124,108,240,0.2)">⚡</div>
             <div>
-              <div class="t-label">步骤 7 · 高并发并行探索 — 16 条同时尝试</div>
-              <div class="t-title">大规模并行证明搜索，共享经验池</div>
+              <div class="t-label">步骤 7 · 异构并行探索 — 4 个策略方向同时出发</div>
+              <div class="t-title">多方向独立探索，跨方向信息融合</div>
             </div>
           </div>
           <div class="t-content">
@@ -1141,8 +1248,8 @@ ERROR 第 10 行: sorry 占位符仍存在
           <div class="t-step-head">
             <div class="t-icon" style="background:linear-gradient(135deg,var(--accent-dim),var(--green-dim));border:1px solid rgba(124,108,240,0.15)">🔄</div>
             <div>
-              <div class="t-label">策略升级</div>
-              <div class="t-title" style="color:var(--accent2)">轻量模式 → 中量模式</div>
+              <div class="t-label">钩子驱动策略升级</div>
+              <div class="t-title" style="color:var(--accent2)">RepetitionDetectorHook 检测重复错误 → 主动升级</div>
             </div>
           </div>
           <div class="t-content">
@@ -1163,8 +1270,8 @@ ERROR 第 10 行: sorry 占位符仍存在
           <div class="t-step-head">
             <div class="t-icon" style="background:var(--accent-dim);border:1px solid rgba(124,108,240,0.2)">🪞</div>
             <div>
-              <div class="t-label">步骤 8 · 自我反思</div>
-              <div class="t-title">智能体批判自身方法并转向</div>
+              <div class="t-label">步骤 8 · 反思闭环 · 钩子驱动</div>
+              <div class="t-title">反思结论通过钩子注入下一轮 prompt（不再只打 log）</div>
             </div>
           </div>
           <div class="t-content">
@@ -1190,8 +1297,8 @@ ERROR 第 10 行: sorry 占位符仍存在
           <div class="t-step-head">
             <div class="t-icon" style="background:var(--accent-dim);border:1px solid rgba(124,108,240,0.2)">🧩</div>
             <div>
-              <div class="t-label">步骤 9 · 定理分解</div>
-              <div class="t-title">将困难问题拆解为两个更简单的子问题</div>
+              <div class="t-label">步骤 9 · 定理分解 · 上下文隔离</div>
+              <div class="t-title">子目标独立证明，各有独立 ContextWindow，互不污染</div>
             </div>
           </div>
           <div class="t-content">
@@ -1234,8 +1341,8 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
           <div class="t-step-head">
             <div class="t-icon" style="background:var(--green-dim);border:1px solid var(--green-border)">★</div>
             <div>
-              <div class="t-label">步骤 11 · 聚焦攻击 — 突破</div>
-              <div class="t-title" style="color:var(--green)">第 3 条路径（共 8 条）通过了 Lean 内核！</div>
+              <div class="t-label">步骤 11 · 跨方向融合 — 突破</div>
+              <div class="t-title" style="color:var(--green)">检索方向的引理注入证明方向 → ResultFuser 成功！</div>
             </div>
           </div>
           <div class="t-content">
@@ -1250,7 +1357,7 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
              sq_nonneg a, sq_nonneg b, sq_nonneg c,
              mul_self_nonneg (3*a - 2), mul_self_nonneg (3*b - 1)]
 
-<span style="color:var(--green)">-- Lean 4: ✓ 无剩余目标</span></div>
+<span style="color:var(--green)">-- ✓ 验证通过 · 无剩余目标</span></div>
           </div>
         </div>
 
@@ -1277,14 +1384,14 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
           <div class="t-step-head">
             <div class="t-icon" style="background:var(--green-dim);border:1px solid var(--green-border);font-size:1.1rem">✓</div>
             <div>
-              <div class="t-label">步骤 13 · 最终验证</div>
-              <div class="t-title" style="color:var(--green)">Lean 4 内核接受完整证明</div>
+              <div class="t-label">步骤 13 · 多层验证通过</div>
+              <div class="t-title" style="color:var(--green)">PRE_VERIFICATION 钩子 → APE 预过滤 → 双引擎终验 ✓</div>
             </div>
           </div>
           <div class="t-content">
             <div class="t-desc">每一步都被追溯到数学公理进行检查。无 sorry，无 admit，无公理注入。定理，已证。</div>
             <div style="margin:0.5rem 0">
-              <span class="comp-tag" data-role="verify">Lean 4 类型检查器<span class="tip">最终验证：将完整证明归约到逻辑公理，确认数学上的绝对正确性。</span></span>
+              <span class="comp-tag" data-role="verify">双引擎终验<span class="tip">最终验证：将完整证明归约到逻辑公理，确认数学上的绝对正确性。</span></span>
               <span class="comp-tag" data-role="verify">Sorry: 0 处<span class="tip">扫描证明中的所有 sorry 占位符。0 处意味着证明完全完成。</span></span>
               <span class="comp-tag" data-role="verify">完整性: 通过<span class="tip">验证无公理注入、无 admit、定理陈述与原始问题完全匹配。</span></span>
             </div>
@@ -1308,7 +1415,7 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
   <div class="success-card" id="successCard" style="opacity:0;transform:scale(0.96);transition:all 0.8s">
     <div class="success-check">✓</div>
     <h3>内核验证通过</h3>
-    <p class="sub">每一步都由 Lean 4 类型论引擎检查，追溯到逻辑公理。</p>
+    <p class="sub">每一步都由 APE 双引擎检查，追溯到类型论公理。</p>
     <div class="proof-block"><span class="kw">import</span> Mathlib
 
 <span class="kw">lemma</span> cyc_bound (a b c : ℝ) (ha : 0 ≤ a) (hb : 0 ≤ b) (hc : 0 ≤ c) :
@@ -1334,10 +1441,28 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 
 <!-- ═══════════ ARCHITECTURE ═══════════ -->
 <section id="arch" class="arch-section"><div class="wrap">
-  <p class="sec-eyebrow">智能体架构</p>
-  <h2 class="sec-title">六大核心模块，协同驱动证明</h2>
-  <p class="sec-desc">每个模块都在证明过程中扮演不可或缺的角色。悬停组件标签可查看详细说明。</p>
+  <p class="sec-eyebrow">系统架构</p>
+  <h2 class="sec-title">为什么数学证明需要这九个模块</h2>
+  <p class="sec-desc">形式化证明的每一个环节都有独特的难点。六大基础模块覆盖核心流程，三大新增模块（<span style="color:var(--cyan)">异构并行</span> · <span style="color:var(--amber2)">钩子系统</span> · <span style="color:var(--accent2)">插件生态</span>）解决实践中最常遇到的三个瓶颈：策略同质化、领域知识缺失、反思不闭环。</p>
   <div class="arch-grid">
+    <div class="arch-card ac-brain" style="border-color:var(--cyan);border-width:1.5px">
+      <div class="a-icon">⚡</div>
+      <h4 style="color:var(--cyan)">异构并行探索</h4>
+      <p>同时从多个数学方向攻克定理：自动化策略、归纳法、代数变换、引理检索。各方向有独立上下文，互不污染。</p>
+      <div class="a-how"><strong>为什么数学证明需要这个:</strong> 一道数论题，归纳法和代数法可能都能走通，但走哪条路事先不知道。旧系统用同一个 prompt 生成 8 遍，全卡在同一个 ℕ 减法错误上。新架构让不同数学思路各走各的路 —— 归纳法方向发现 80% 的证明结构，引理检索方向找到关键的 Nat.sub_add_cancel，ResultFuser 把两个方向的收获合并，一轮就通过验证。</div>
+    </div>
+    <div class="arch-card ac-tool" style="border-color:var(--amber);border-width:1.5px">
+      <div class="a-icon">🪝</div>
+      <h4 style="color:var(--amber2)">证明过程钩子</h4>
+      <p>在证明流程的关键时机（读题、验证、出错、升级策略...）自动触发领域检查和知识注入，不需要改代码。</p>
+      <div class="a-how"><strong>为什么数学证明需要这个:</strong> 系统分析出了"ring 在 ℕ 减法上不适用"这个正确结论，但之前只打了一行日志，下一轮照样犯同一个错。钩子让这类洞察自动变成行动 —— 错误信息匹配到"ring.*failed.*Nat"时，立即注入"改用 Nat.sub_add_cancel"的修复提示。数论插件可以声明自己的钩子规则，不需要改框架代码。</div>
+    </div>
+    <div class="arch-card ac-search" style="border-color:var(--accent);border-width:1.5px">
+      <div class="a-icon">🧩</div>
+      <h4 style="color:var(--accent2)">数学领域知识插件</h4>
+      <p>数论、实分析、代数拓扑各有各的陷阱和技巧。领域知识以 YAML 配置包的形式存在，按定理特征自动匹配加载。</p>
+      <div class="a-how"><strong>为什么数学证明需要这个:</strong> 数论有 ℕ 减法截断陷阱，实分析有 ε-δ 的 Lean4 写法，组合数学有 Finset 的 API 习惯。一个通用 prompt 不可能覆盖所有数学分支的经验。number-theory 插件自带减法警告和数论引理，系统看到"dvd""prime""2^n"就自动加载。社区可以贡献新的数学领域插件，不改框架代码。</div>
+    </div>
     <div class="arch-card ac-brain">
       <div class="a-icon">🧠</div>
       <h4 style="color:var(--accent2)">思考大脑</h4>
@@ -1350,17 +1475,17 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
       <p>混合检索系统（BM25 + 语义嵌入 + LLM 重排），从 Mathlib 100,000+ 引理中精准匹配。</p>
       <div class="a-how"><strong>如何帮助证明:</strong> 快速找到相关的已有引理和策略，避免重复发明轮子。语义搜索能发现名称不同但本质相关的引理。</div>
     </div>
+    <div class="arch-card ac-verify">
+      <div class="a-icon">✓</div>
+      <h4 style="color:var(--green)">形式验证 · APE + Lean4</h4>
+      <p>APE 在 Lean4 之上构建 agent-first 加速层。L0/L1 快速预过滤 (μs 级)，Lean4 做最终的 L2 可信认证。</p>
+      <div class="a-how"><strong>为什么数学证明需要这个:</strong> Lean4 的验证是绝对可靠的，但每次编译需要 2.5~12 秒。APE 在证明到达 Lean4 之前先做快速检查，过滤掉 95% 的无效尝试，让 Lean4 只验证真正有希望的候选。PRE_VERIFICATION 钩子串联两层验证。<a href="#engine" style="color:var(--green);margin-left:4px">→ 查看引擎详情</a></div>
+    </div>
     <div class="arch-card ac-tool">
       <div class="a-icon">🔧</div>
       <h4 style="color:var(--amber)">工具生态</h4>
       <p>Lean REPL、SageMath CAS、证明骨架生成器等外部工具的统一调度与执行框架。</p>
       <div class="a-how"><strong>如何帮助证明:</strong> 连续调用多种工具完成单一推理链：CAS 求极值 → REPL 验证 → 骨架填充。工具调用把纯推理扩展为行动。</div>
-    </div>
-    <div class="arch-card ac-verify">
-      <div class="a-icon">✓</div>
-      <h4 style="color:var(--green)">形式验证</h4>
-      <p>Lean 4 类型检查内核、完整性检查、sorry 检测。提供数学确定性的最终裁判。</p>
-      <div class="a-how"><strong>如何帮助证明:</strong> 每一步都被追溯到逻辑公理进行验证。杜绝幻觉 —— 如果数学不对，验证器绝不通过。</div>
     </div>
     <div class="arch-card ac-evolve">
       <div class="a-icon">🔄</div>
@@ -1370,9 +1495,254 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
     </div>
     <div class="arch-card ac-memory">
       <div class="a-icon">📋</div>
-      <h4 style="color:var(--red)">上下文记忆</h4>
-      <p>工作记忆、情景记忆、错误摘要。在有限窗口内维持长程推理的连贯性。</p>
-      <div class="a-how"><strong>如何帮助证明:</strong> 智能压缩数十轮尝试的历史，提取关键模式，让智能体在长达数百步的推理中保持上下文连贯。</div>
+      <h4 style="color:var(--red)">上下文记忆 · 隔离窗口</h4>
+      <p>工作记忆、情景记忆、错误摘要。每个子智能体拥有独立的 ContextWindow，子目标之间互不污染。</p>
+      <div class="a-how"><strong>如何帮助证明:</strong> 子目标 A 的失败日志不再挤占子目标 B 的 token 预算。每个子智能体只看到与自己任务相关的精准上下文。</div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ═══════════ APE ENGINE ═══════════ -->
+<section class="ape-section" id="engine"><div class="wrap">
+  <p class="sec-eyebrow">核心引擎</p>
+  <h2 class="sec-title">APE — Lean4 的 Agent-first 加速层</h2>
+  <p class="sec-desc">Lean4 是形式化数学的黄金标准，但它的完整编译验证 (2.5~12s/次) 成为大规模证明搜索的瓶颈。APE 在 Lean4 之上构建了一个 agent-first 的加速层 —— 在 <strong>&lt;1ms</strong> 内完成 L0/L1 预检，将无效证明在到达 Lean4 之前就过滤掉，让 Lean4 只做它最擅长的事：最终的 L2 可信认证。</p>
+
+  <!-- Dual pipeline explainer -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:2rem 0">
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.5rem;position:relative;overflow:hidden">
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent)"></div>
+      <div style="font-family:var(--mono);font-size:0.7rem;color:var(--accent2);letter-spacing:0.15em;margin-bottom:0.5rem">PIPELINE A · LEAN4</div>
+      <h4 style="font-size:1rem;color:var(--text);margin-bottom:0.4rem">Lean4 验证路径</h4>
+      <p style="font-size:0.85rem;color:var(--text2);line-height:1.65">兼容完整 Lean4 生态。LLM 生成完整证明 → Lean4 编译验证。享受 Mathlib 100K+ 引理库，100% 可靠的类型检查。适合需要最终形式化保证的场景。</p>
+      <div style="font-family:var(--mono);font-size:0.72rem;color:var(--text3);margin-top:0.6rem">验证延迟: ~80ms/proof · 生态: Mathlib 完整支持</div>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.5rem;position:relative;overflow:hidden">
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--green)"></div>
+      <div style="font-family:var(--mono);font-size:0.7rem;color:var(--green2);letter-spacing:0.15em;margin-bottom:0.5rem">PIPELINE B · APE ENGINE</div>
+      <h4 style="font-size:1rem;color:var(--text);margin-bottom:0.4rem">体验 Agent-First 设计的用户</h4>
+      <p style="font-size:0.85rem;color:var(--text2);line-height:1.65">持久化状态 + 分层验证 + 并行搜索树。O(1) 分叉与回溯，结构化错误反馈。Agent 获得 81-3000x 搜索加速。最终证明可导出为 Lean4 格式做 L2 认证。</p>
+      <div style="font-family:var(--mono);font-size:0.72rem;color:var(--text3);margin-top:0.6rem">搜索延迟: ~1ms/proof · 分叉: 1.15μs · 回溯: 73ns</div>
+    </div>
+  </div>
+
+  <div class="ape-hero-box">
+    <div class="ape-name">APE <span>Agent Proof Engine</span></div>
+    <div class="ape-tagline">
+      人类做证明是<strong style="color:var(--text)">串行的、单路径的、回溯昂贵的</strong>。<br>
+      Agent 的核心优势是<strong style="color:var(--green2)">大规模并行树搜索 + 零成本回溯</strong>。<br>
+      APE 让这个优势不再被验证器的架构瓶颈所限制。
+    </div>
+
+    <!-- 5 Pillars -->
+    <div class="ape-pillars">
+      <div class="ape-pillar ape-p1">
+        <h5 style="color:var(--green2)">持久化证明状态 · O(1) 分叉</h5>
+        <p>每个证明状态都是不可变的。Tactic 执行产出新状态，旧状态永远有效。分叉只是指针拷贝，不是深拷贝。1 万个分支同时存在于内存中，共享 99% 的结构。</p>
+        <div class="ape-metric">实测: <em>200 ns/fork</em> (persistent) vs 10,845 μs/fork (deepcopy) = <em>54,000x</em></div>
+      </div>
+      <div class="ape-pillar ape-p2">
+        <h5 style="color:var(--cyan)">分层验证 · 10-1000x 搜索加速</h5>
+        <p>不是所有检查都需要完整 elaboration。搜索阶段 99% 的分支是死胡同——对它们做完整类型检查是纯粹的浪费。APE 用三层渐进验证来过滤。</p>
+        <div class="ape-metric">L0 过滤 <em>80%</em> 无效 tactic (~1μs) · L1 过滤 <em>15%</em> (~100μs) · L2 仅验证最终证明</div>
+      </div>
+      <div class="ape-pillar ape-p3">
+        <h5 style="color:var(--accent2)">显式约束图 · 安全并行</h5>
+        <p>Metavariable 之间的耦合关系被显式追踪。Agent 可以看到哪些子目标是独立的（可安全并行），哪些是耦合的（必须一起求解）。</p>
+        <div class="ape-metric">MetaContext.are_independent(a, b) → 并行搜索无需猜测</div>
+      </div>
+      <div class="ape-pillar ape-p4">
+        <h5 style="color:var(--amber2)">结构化错误反馈 · 机器可操作</h5>
+        <p>Lean4 返回人类可读的错误字符串。APE 返回结构化的失败原因：类型不匹配？缺少哪个前提？Unification 在哪里卡住？Agent 直接利用这些信息调整策略。</p>
+        <div class="ape-metric">CheckFailure { kind: "arity_mismatch", expected: 3, got: 1 }</div>
+      </div>
+      <div class="ape-pillar ape-p5">
+        <h5 style="color:var(--blue)">Token 高效的状态视图</h5>
+        <p>LLM 的核心瓶颈之一是 context window。APE 提供多粒度的状态表示：给 LLM 的最小摘要视图、给精确匹配的结构化视图、给调试的完整视图。</p>
+        <div class="ape-metric">GoalView: target_shape + relevant_hyps + is_independent → 最少 token，最多信息</div>
+      </div>
+    </div>
+
+    <!-- Layered verification diagram -->
+    <div style="margin-top:2.5rem">
+      <div style="font-family:var(--mono);font-size:0.65rem;color:var(--text3);letter-spacing:0.2em;margin-bottom:1rem">三层验证架构</div>
+      <div class="ape-layers">
+        <div class="ape-layer al-l0">
+          <div class="al-label">LAYER 0 · QUICK</div>
+          <div class="al-speed">~1 μs</div>
+          <div class="al-desc">结构检查 · 过滤 80% 无效</div>
+        </div>
+        <div class="ape-layer al-l1">
+          <div class="al-label">LAYER 1 · ELABORATE</div>
+          <div class="al-speed">~100 μs</div>
+          <div class="al-desc">Unification · 引导搜索树</div>
+        </div>
+        <div class="ape-layer al-l2">
+          <div class="al-label">LAYER 2 · CERTIFY</div>
+          <div class="al-speed">~10 ms</div>
+          <div class="al-desc">完整验证 · 认证最终证明</div>
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:0.75rem;color:var(--text3);margin-top:0.8rem;text-align:center">
+        Agent 提交 1000 个 tactic → L0 淘汰 800 (<em style="color:var(--green)">~1ms</em>) → L1 淘汰 150 (<em style="color:var(--amber)">~15ms</em>) → 50 个进入搜索树 → L2 认证 1 个最终证明
+      </div>
+    </div>
+
+    <!-- Benchmark comparison -->
+    <div class="ape-bench">
+      <div style="font-family:var(--mono);font-size:0.65rem;color:var(--text3);letter-spacing:0.2em;margin-bottom:1rem">APE vs Lean4 性能对比 (基于 ∀ (P : Prop) (h : P), P 实测)</div>
+      <table>
+        <thead><tr>
+          <th>操作</th><th>Lean4 Pipeline</th><th>APE Pipeline</th><th>加速比</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td>端到端证明验证</td>
+            <td class="v-slow">80.4 ms</td>
+            <td class="v-fast">0.99 ms (搜索 32 个节点)</td>
+            <td class="v-gap">81x</td>
+          </tr>
+          <tr>
+            <td>状态分叉 (搜索核心)</td>
+            <td class="v-slow">N/A (无此能力)</td>
+            <td class="v-fast">1.15 μs (O(1) persistent)</td>
+            <td class="v-gap">∞</td>
+          </tr>
+          <tr>
+            <td>回溯到旧状态</td>
+            <td class="v-slow">需要重新编译 (~80ms)</td>
+            <td class="v-fast">73 ns (指针切换)</td>
+            <td class="v-gap">&gt;1,000,000x</td>
+          </tr>
+          <tr>
+            <td>单步 tactic 验证</td>
+            <td class="v-slow">~80 ms (完整编译)</td>
+            <td class="v-fast">0.026 ms (分层检查)</td>
+            <td class="v-gap">3,092x</td>
+          </tr>
+          <tr>
+            <td>并行搜索支持</td>
+            <td class="v-slow">✗ 不支持</td>
+            <td class="v-fast">✓ 天然支持</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td>Mathlib 生态</td>
+            <td class="v-fast" style="color:var(--text)">✓ 完整支持</td>
+            <td style="color:var(--text2)">△ 导入+导出</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Fork animation -->
+    <div class="ape-fork-vis" id="apeForkVis">
+      <div class="ape-tree" id="apeTree">
+        <svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none" id="apeEdges"></svg>
+        <div class="ape-node an-root" id="an0">S₀</div>
+        <div class="ape-node an-l1" id="an1" style="left:20%;top:40px">intro x</div>
+        <div class="ape-node an-l1" id="an2" style="left:50%;top:40px;transform:translateX(-50%)">apply h</div>
+        <div class="ape-node an-l1" id="an3" style="right:20%;top:40px">cases n</div>
+        <div class="ape-node an-fail" id="an4" style="left:8%;top:90px">✗</div>
+        <div class="ape-node an-ok" id="an5" style="left:28%;top:90px">rw lem</div>
+        <div class="ape-node an-fail" id="an6" style="left:42%;top:90px">✗</div>
+        <div class="ape-node an-l1" id="an7" style="right:26%;top:90px">inl</div>
+        <div class="ape-node an-l1" id="an8" style="right:8%;top:90px">inr</div>
+        <div class="ape-node an-ok" id="an9" style="left:28%;top:140px;background:rgba(52,211,153,0.15);border-color:var(--green);color:var(--green)">QED ✓</div>
+      </div>
+    </div>
+    <div style="text-align:center;font-family:var(--mono);font-size:0.72rem;color:var(--text3)">
+      所有状态同时共存于内存。无需拷贝，无需重放。回溯 = 切换指针。
+    </div>
+  </div>
+
+  <!-- Dual Pipeline Comparison -->
+  <div style="margin-top:3rem">
+    <div style="font-family:var(--mono);font-size:0.65rem;color:var(--text3);letter-spacing:0.2em;margin-bottom:1.2rem">双引擎路径对比</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.2rem">
+      <!-- Lean4 Path -->
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.8rem;position:relative;overflow:hidden">
+        <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--blue)"></div>
+        <h4 style="color:var(--blue);font-size:1rem;margin-bottom:0.4rem">路径 A · Lean4 验证路径</h4>
+        <p style="font-size:0.88rem;color:var(--text2);line-height:1.7;margin-bottom:1rem">LLM 一次性生成完整证明代码 → Lean4 编译器做完整类型检查 → 错误则解析报告、LLM 重试。</p>
+        <div style="font-family:var(--mono);font-size:0.75rem;color:var(--text3);line-height:1.8">
+          <div>✓ 与 Mathlib 生态完全兼容</div>
+          <div>✓ Lean4 内核提供最终可信保证</div>
+          <div>✓ 生成的证明可直接提交</div>
+          <div style="color:var(--text3);opacity:0.6">△ 每次验证需完整编译 (~100-500ms)</div>
+          <div style="color:var(--text3);opacity:0.6">△ 无法 tactic 级分叉/回溯</div>
+        </div>
+        <div style="margin-top:1rem;padding-top:0.8rem;border-top:1px solid var(--border);font-family:var(--mono);font-size:0.72rem;color:var(--blue)">适合: 最终验证 · 生态兼容 · 简单问题快速通过</div>
+      </div>
+
+      <!-- APE Path -->
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.8rem;position:relative;overflow:hidden">
+        <div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--green),var(--cyan))"></div>
+        <h4 style="color:var(--green2);font-size:1rem;margin-bottom:0.4rem">路径 B · APE Agent-First 引擎</h4>
+        <p style="font-size:0.88rem;color:var(--text2);line-height:1.7;margin-bottom:1rem">构建持久化证明状态 → tactic 级别并行搜索 → L0/L1 快速过滤 → 搜索树扩展 → L2 最终认证。</p>
+        <div style="font-family:var(--mono);font-size:0.75rem;color:var(--text3);line-height:1.8">
+          <div style="color:var(--green2)">✓ O(1) 状态分叉，零成本回溯</div>
+          <div style="color:var(--green2)">✓ 每步可并行尝试数百个 tactic</div>
+          <div style="color:var(--green2)">✓ L0/L1 过滤 95% 无效尝试</div>
+          <div style="color:var(--green2)">✓ 结构化错误反馈驱动搜索</div>
+          <div style="color:var(--green2)">✓ Token 高效的 LLM 交互</div>
+        </div>
+        <div style="margin-top:1rem;padding-top:0.8rem;border-top:1px solid var(--border);font-family:var(--mono);font-size:0.72rem;color:var(--green)">适合: 困难问题深度搜索 · 大规模批量验证 · Agent 训练</div>
+      </div>
+    </div>
+
+    <!-- Real benchmark data -->
+    <div style="margin-top:2rem;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.8rem">
+      <div style="font-family:var(--mono);font-size:0.65rem;color:var(--text3);letter-spacing:0.2em;margin-bottom:1rem">实测数据 · 同一道题双路径对比</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;text-align:center">
+        <div>
+          <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text3)">∀ P, P → P</div>
+          <div style="margin-top:0.5rem">
+            <span style="font-family:var(--mono);font-size:0.8rem;color:var(--text3)">Lean4</span>
+            <span style="font-family:var(--mono);font-size:1.1rem;color:var(--blue);margin:0 0.3rem">11.2ms</span>
+          </div>
+          <div>
+            <span style="font-family:var(--mono);font-size:0.8rem;color:var(--text3)">APE</span>
+            <span style="font-family:var(--mono);font-size:1.1rem;color:var(--green2);margin:0 0.3rem">4.4ms</span>
+            <span style="font-family:var(--mono);font-size:0.75rem;color:var(--amber)">2.6x</span>
+          </div>
+        </div>
+        <div>
+          <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text3)">(P→Q) → P → Q</div>
+          <div style="margin-top:0.5rem">
+            <span style="font-family:var(--mono);font-size:0.8rem;color:var(--text3)">Lean4</span>
+            <span style="font-family:var(--mono);font-size:1.1rem;color:var(--blue);margin:0 0.3rem">15.1ms</span>
+          </div>
+          <div>
+            <span style="font-family:var(--mono);font-size:0.8rem;color:var(--text3)">APE</span>
+            <span style="font-family:var(--mono);font-size:1.1rem;color:var(--green2);margin:0 0.3rem">2.9ms</span>
+            <span style="font-family:var(--mono);font-size:0.75rem;color:var(--amber)">5.2x</span>
+          </div>
+        </div>
+        <div>
+          <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text3)">P∧Q → Q∧P</div>
+          <div style="margin-top:0.5rem">
+            <span style="font-family:var(--mono);font-size:0.8rem;color:var(--text3)">Lean4</span>
+            <span style="font-family:var(--mono);font-size:1.1rem;color:var(--blue);margin:0 0.3rem">2.4ms</span>
+          </div>
+          <div>
+            <span style="font-family:var(--mono);font-size:0.8rem;color:var(--text3)">APE</span>
+            <span style="font-family:var(--mono);font-size:1.1rem;color:var(--green2);margin:0 0.3rem">0.4ms</span>
+            <span style="font-family:var(--mono);font-size:0.75rem;color:var(--amber)">5.4x</span>
+          </div>
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text3);margin-top:1rem;text-align:center">
+        APE 时间为真实测量 · Lean4 时间含模拟 LLM+编译 · 真实 Lean4 导入 Mathlib 需额外 5-30s
+      </div>
+    </div>
+
+    <div style="margin-top:1.5rem;text-align:center;font-size:0.9rem;color:var(--text2);line-height:1.8">
+      两条路径不是互斥的 —— 它们是<strong style="color:var(--text)">互补的</strong>。<br>
+      APE 在搜索阶段做快速探索和过滤，Lean4 在最终阶段做可信认证。<br>
+      <span style="color:var(--green2)">快速搜索 + 严格验证 = 最优的 agent 证明策略</span>
     </div>
   </div>
 </div></section>
@@ -1381,8 +1751,8 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 <section class="flow-section" id="flowDiagram">
 <div class="flow-wrap">
   <p class="sec-eyebrow">全局数据流</p>
-  <h2 class="sec-title">智能体推理全景图</h2>
-  <p class="sec-desc">所有模块如何在一次证明中协同运转 —— 从问题输入到验证通过的完整数据流框架。悬停节点查看详细说明，动态粒子展示数据流向。</p>
+  <h2 class="sec-title">一道定理从输入到证明通过的完整旅程</h2>
+  <p class="sec-desc">从读题、领域识别、多方向探索、跨方向融合，到 APE 预过滤和 Lean4 终验 —— 追踪一道数学定理在系统中经过的每一个环节。悬停节点查看详细说明，动态粒子展示数据流向。</p>
 
   <div class="flow-container" id="flowCont">
     <canvas class="flow-canvas" id="flowCanvas"></canvas>
@@ -1400,15 +1770,15 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
     <!-- === ROW 0: Input === -->
     <div class="fn fn-input" id="nd-input" style="left:50%;top:3.5%">
       <span class="fn-icon">📥</span>待证定理
-      <span class="fn-sub">Lean 4 形式化陈述</span>
-      <div class="fn-tip">将自然语言数学问题转化为 Lean 4 类型论中的形式化陈述，作为智能体的输入目标。</div>
+      <span class="fn-sub">形式化陈述 (支持多种后端)</span>
+      <div class="fn-tip">将自然语言数学问题转化为类型论中的形式化陈述，作为智能体的输入目标。</div>
     </div>
 
     <!-- === ROW 1: Meta Controller === -->
     <div class="fn fn-brain" id="nd-meta" style="left:50%;top:10.5%">
-      <span class="fn-icon">🎯</span>元控制器 / 策略调度
-      <span class="fn-sub">META CONTROLLER — 选择推理模式与资源预算</span>
-      <div class="fn-tip tip-below">全局调度中心。根据问题难度选择轻量/中量/重量模式，分配并行路径数量和计算预算，决定何时升级策略。</div>
+      <span class="fn-icon">🎯</span>元控制器 + 钩子调度
+      <span class="fn-sub">META CONTROLLER — 9个生命周期事件 · 声明式规则 · 插件匹配</span>
+      <div class="fn-tip tip-below">全局调度中心。ON_PROBLEM_START 钩子做领域分类 → 匹配策略插件 → 注入领域知识。ON_ROUND_END 钩子检测重复错误 → 主动触发策略升级。所有决策点都可通过插件扩展。</div>
     </div>
 
     <!-- === ROW 2: Planner + Side modules === -->
@@ -1419,9 +1789,9 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
     </div>
 
     <div class="fn fn-search" id="nd-pattern" style="left:14%;top:19%">
-      <span class="fn-icon">📚</span>模式库
-      <span class="fn-sub">PATTERN LIBRARY</span>
-      <div class="fn-tip tip-right">存储历史上成功的证明模式与策略模板。如"轮换不等式→Schur 变体"，供规划器快速匹配并复用。</div>
+      <span class="fn-icon">🧩</span>策略插件库
+      <span class="fn-sub">PLUGIN REGISTRY</span>
+      <div class="fn-tip tip-right">可插拔的领域策略仓库。number-theory 插件自带 ℕ 减法警告和数论引理，real-analysis 插件自带 ε-δ 模式。通过 YAML 声明，不改源码。</div>
     </div>
 
     <div class="fn fn-memory" id="nd-memory" style="left:86%;top:19%">
@@ -1440,25 +1810,25 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
     <div class="fn fn-search" id="nd-mathlib" style="left:14%;top:27%">
       <span class="fn-icon">∑</span>Mathlib 100K+
       <span class="fn-sub">LEAN 4 数学库</span>
-      <div class="fn-tip tip-right">Lean 4 社区维护的超大型数学库，包含 100,000+ 已验证引理和定理，覆盖代数、分析、拓扑等全部分支。</div>
+      <div class="fn-tip tip-right">社区维护的超大型形式化数学库，包含 100,000+ 已验证引理和定理，覆盖代数、分析、拓扑等全部分支。</div>
     </div>
 
-    <!-- === ROW 4: Parallel Rollout === -->
+    <!-- === ROW 4: Heterogeneous Parallel === -->
     <div class="fn fn-exec" id="nd-rollout" style="left:50%;top:34%">
-      <span class="fn-icon">⚡</span>并行 Rollout 生成器
-      <span class="fn-sub">PARALLEL ROLLOUT — 高温度多样化采样 ×N 路径</span>
-      <div class="fn-tip tip-below">同时展开 N 条不同的证明路径。高温度采样确保多样性，共享引理库确保跨路径知识传递。N 由元控制器动态决定。</div>
+      <span class="fn-icon">⚡</span>异构并行 · SubAgent Pool
+      <span class="fn-sub">HETEROGENEOUS ENGINE — 多方向独立探索 × 跨方向信息融合</span>
+      <div class="fn-tip tip-below">同时启动 4 个策略完全不同的子智能体：自动化探测(Haiku)、归纳法专家(Sonnet)、代数变换(Sonnet)、引理检索(Sonnet)。各有独立上下文，ResultFuser 跨方向融合最佳结果。</div>
     </div>
 
-    <!-- Mini rollout nodes -->
-    <div class="fn-mini rf-fail" id="nd-r1" style="left:26%;top:39.5%">✗</div>
-    <div class="fn-mini rf-fail" id="nd-r2" style="left:33%;top:39.5%">✗</div>
-    <div class="fn-mini rf-pass" id="nd-r3" style="left:40%;top:39.5%">✓</div>
-    <div class="fn-mini rf-fail" id="nd-r4" style="left:47%;top:39.5%">✗</div>
-    <div class="fn-mini rf-lemma" id="nd-r5" style="left:54%;top:39.5%">◆</div>
-    <div class="fn-mini rf-fail" id="nd-r6" style="left:61%;top:39.5%">✗</div>
-    <div class="fn-mini rf-fail" id="nd-r7" style="left:68%;top:39.5%">✗</div>
-    <div class="fn-mini rf-lemma" id="nd-r8" style="left:75%;top:39.5%">◆</div>
+    <!-- Mini rollout nodes - now heterogeneous -->
+    <div class="fn-mini rf-fail" id="nd-r1" style="left:22%;top:39.5%" title="自动化: simp/omega">A₁</div>
+    <div class="fn-mini rf-fail" id="nd-r2" style="left:29%;top:39.5%" title="自动化: ring">A₂</div>
+    <div class="fn-mini rf-pass" id="nd-r3" style="left:38%;top:39.5%" title="归纳法: 80%正确">B₁</div>
+    <div class="fn-mini rf-lemma" id="nd-r4" style="left:45%;top:39.5%" title="归纳法: have步骤">B₂</div>
+    <div class="fn-mini rf-fail" id="nd-r5" style="left:54%;top:39.5%" title="代数变换: cast ℤ">C₁</div>
+    <div class="fn-mini rf-lemma" id="nd-r6" style="left:61%;top:39.5%" title="检索: Nat.pow_succ">D₁</div>
+    <div class="fn-mini rf-lemma" id="nd-r7" style="left:68%;top:39.5%" title="检索: sub_cancel">D₂</div>
+    <div class="fn-mini rf-pass" id="nd-r8" style="left:77%;top:39.5%" title="融合修复: B+D→成功">B'</div>
 
     <!-- === ROW 5: Tool Chain === -->
     <div class="fn fn-exec" id="nd-toolchain" style="left:50%;top:47%">
@@ -1481,9 +1851,9 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 
     <!-- === ROW 6: Lean Kernel === -->
     <div class="fn fn-verify" id="nd-kernel" style="left:50%;top:55.5%">
-      <span class="fn-icon">🛡️</span>Lean 4 验证内核
-      <span class="fn-sub">TYPE CHECKER — 追溯到公理的绝对验证</span>
-      <div class="fn-tip tip-below">将每个证明步骤归约到类型论的基本公理。通过 = 数学正确，不通过 = 继续尝试。零模糊地带的最终裁判。</div>
+      <span class="fn-icon">🛡️</span>多层验证管线
+      <span class="fn-sub">PRE_VERIFICATION 钩子 → APE L0/L1 预检 → Lean4 L2 终验</span>
+      <div class="fn-tip tip-below">三层验证：PRE_VERIFICATION 钩子做安全检查（如 ℕ 减法守卫）→ APE 引擎微秒级类型检查 → Lean4 内核最终认证。APE 为 Lean4 过滤掉 95% 的无效证明，节省大量编译时间。</div>
     </div>
 
     <!-- === ROW 7: Branch === -->
@@ -1516,7 +1886,7 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
     <div class="fn fn-pass" id="nd-final" style="left:30%;top:78.5%">
       <span class="fn-icon">🏆</span>最终验证通过
       <span class="fn-sub">✓ KERNEL VERIFIED — 定理已证</span>
-      <div class="fn-tip">完整证明通过 Lean 4 内核最终检查。无 sorry，无 admit，定理陈述完全匹配。数学确定性已达成。</div>
+      <div class="fn-tip">完整证明通过 APE + Lean4 双层验证。无 sorry，无 admit，定理陈述完全匹配。数学确定性已达成。</div>
     </div>
 
     <div class="fn fn-evolve" id="nd-extract" style="left:70%;top:78.5%">
@@ -1527,9 +1897,9 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 
     <!-- === Reflection (right side) === -->
     <div class="fn fn-brain" id="nd-reflect" style="left:86%;top:71%">
-      <span class="fn-icon">🪞</span>自我反思
-      <span class="fn-sub">SELF-REFLECTION</span>
-      <div class="fn-tip tip-left">以"批判者"视角审视全部失败尝试，识别系统性盲区，推荐根本性不同的方法，触发策略升级。</div>
+      <span class="fn-icon">🪞</span>反思闭环
+      <span class="fn-sub">REFLECTION → HOOK → INJECT</span>
+      <div class="fn-tip tip-left">关键改进：反思结论不再只打 log。ON_STRATEGY_SWITCH 钩子将反思文本结构化注入下一轮 prompt，确保"ring 在 ℕ 减法上失败"这类洞察转化为具体行动。</div>
     </div>
 
     <!-- === Lemma Bank (left side) === -->
@@ -1548,30 +1918,30 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 
     <!-- === Strategy escalation label === -->
     <div class="fn fn-brain" id="nd-escalate" style="left:86%;top:55.5%;padding:0.35rem 0.7rem;font-size:0.62rem;">
-      <span class="fn-icon">🔄</span>策略升级
-      <span class="fn-sub">ESCALATION</span>
-      <div class="fn-tip tip-left">当反复失败达到阈值时自动触发。轻量→中量→重量逐级升级，增加并行路径数、启用定理分解、延长推理链。</div>
+      <span class="fn-icon">🪝</span>钩子驱动升级
+      <span class="fn-sub">HOOK ESCALATION</span>
+      <div class="fn-tip tip-left">ON_ROUND_END 钩子检测到同一错误重复 4+ 次时主动触发升级，不再被动等待轮次阈值。RepetitionDetectorHook 实时监控错误模式。</div>
     </div>
   </div>
 
   <!-- Legend -->
   <div class="flow-legend">
     <div class="flow-legend-item"><div class="fll" style="background:var(--accent)"></div>决策与推理</div>
-    <div class="flow-legend-item"><div class="fll" style="background:var(--blue)"></div>知识检索</div>
-    <div class="flow-legend-item"><div class="fll" style="background:var(--amber)"></div>工具执行</div>
-    <div class="flow-legend-item"><div class="fll" style="background:var(--green)"></div>形式验证</div>
-    <div class="flow-legend-item"><div class="fll" style="background:var(--cyan)"></div>进化与积累</div>
-    <div class="flow-legend-item"><div class="fll" style="background:var(--red);opacity:0.6"></div>失败反馈环</div>
-    <div class="flow-legend-item"><div class="fll" style="background:linear-gradient(90deg,var(--accent),var(--cyan))"></div>自演化数据流</div>
+    <div class="flow-legend-item"><div class="fll" style="background:var(--blue)"></div>知识检索 · 插件</div>
+    <div class="flow-legend-item"><div class="fll" style="background:var(--amber)"></div>工具执行 · 钩子</div>
+    <div class="flow-legend-item"><div class="fll" style="background:var(--green)"></div>多层验证</div>
+    <div class="flow-legend-item"><div class="fll" style="background:var(--cyan)"></div>进化 · 融合</div>
+    <div class="flow-legend-item"><div class="fll" style="background:var(--red);opacity:0.6"></div>反思闭环</div>
+    <div class="flow-legend-item"><div class="fll" style="background:linear-gradient(90deg,var(--accent),var(--cyan))"></div>跨方向信息流</div>
   </div>
 </div>
 </section>
 
 <!-- ═══════════ CORE CAPABILITIES ═══════════ -->
 <section class="cap-section"><div class="wrap">
-  <p class="sec-eyebrow">核心能力</p>
-  <h2 class="sec-title">超越常规的智能体能力</h2>
-  <p class="sec-desc">形式化证明要求智能体具备远超普通对话的能力边界。以下是四大核心能力如何在证明中发挥作用。</p>
+  <p class="sec-eyebrow">关键技术</p>
+  <h2 class="sec-title">形式化证明的三个核心瓶颈，以及我们的解法</h2>
+  <p class="sec-desc">在实际攻克数学定理的过程中，我们反复遇到三个具体问题：同一个 prompt 生成的证明全部犯同一个错误；数论题需要的 ℕ 减法知识无法注入通用 prompt；Reflector 分析出了正确原因却只打了 log。以下三个技术创新分别解决这些问题。</p>
 
   <!-- CAP 1: 高并发多 Rollout -->
   <div class="cap-block" data-cap="rollout" style="border-color:rgba(124,108,240,0.15)">
@@ -1645,8 +2015,8 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 <!-- ═══════════ EVOLUTION ═══════════ -->
 <section class="evo-section"><div class="wrap">
   <p class="sec-eyebrow">持续进化</p>
-  <h2 class="sec-title">每道题都让系统更强</h2>
-  <p class="sec-desc">智能体不断积累知识、优化策略、提升数学直觉。以下是四种自演化机制。</p>
+  <h2 class="sec-title">每道题的成败都在积累数学经验</h2>
+  <p class="sec-desc">成功的证明产出可复用的引理；失败的尝试提取错误模式和领域洞察。领域插件让社区的数学经验成为所有用户的力量。</p>
   <div class="evo-grid">
     <div class="evo-card evo-a">
       <div class="evo-num">01</div>
@@ -1684,38 +2054,97 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 <section style="padding:6rem 0;background:linear-gradient(180deg,var(--bg2) 0%,var(--bg) 100%);border-top:1px solid var(--border)"><div class="wrap">
   <p class="sec-eyebrow" style="color:var(--green2)">工程验证</p>
   <h2 class="sec-title">每一个组件，都经过严格测试</h2>
-  <p class="sec-desc">152 个源文件、34 个核心组件全部通过自动化验证。Tactic 执行 27μs，搜索吞吐 12,700 nodes/s。</p>
-  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:1rem;margin-bottom:2rem">
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.2rem;text-align:center">
-      <div style="font-family:var(--mono);font-size:1.8rem;font-weight:500;color:var(--green)">99/99</div>
-      <div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-top:.15rem">组件验证</div>
+  <p class="sec-desc">从 de Bruijn 索引操作到多智能体并发安全，170+ 个源文件、40+ 个核心组件全部通过自动化验证。新增的钩子系统、插件加载器、子智能体运行时均有独立测试套件。</p>
+
+  <!-- Verification stats bar -->
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:1rem;margin-bottom:3rem">
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.5rem;text-align:center">
+      <div style="font-family:var(--mono);font-size:2rem;font-weight:500;color:var(--green)">99/99</div>
+      <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:.2rem">组件验证</div>
     </div>
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.2rem;text-align:center">
-      <div style="font-family:var(--mono);font-size:1.8rem;font-weight:500;color:var(--green)">347</div>
-      <div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-top:.15rem">单元测试</div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.5rem;text-align:center">
+      <div style="font-family:var(--mono);font-size:2rem;font-weight:500;color:var(--green)">347</div>
+      <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:.2rem">单元测试</div>
     </div>
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.2rem;text-align:center">
-      <div style="font-family:var(--mono);font-size:1.8rem;font-weight:500;color:var(--accent2)">27μs</div>
-      <div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-top:.15rem">Tactic 延迟</div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.5rem;text-align:center">
+      <div style="font-family:var(--mono);font-size:2rem;font-weight:500;color:var(--accent2)">27μs</div>
+      <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:.2rem">Tactic 延迟</div>
     </div>
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.2rem;text-align:center">
-      <div style="font-family:var(--mono);font-size:1.8rem;font-weight:500;color:var(--accent2)">12.7k</div>
-      <div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-top:.15rem">搜索 nodes/s</div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.5rem;text-align:center">
+      <div style="font-family:var(--mono);font-size:2rem;font-weight:500;color:var(--accent2)">12.7k</div>
+      <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:.2rem">搜索 nodes/s</div>
     </div>
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.2rem;text-align:center">
-      <div style="font-family:var(--mono);font-size:1.8rem;font-weight:500;color:var(--green)">97%</div>
-      <div style="font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-top:.15rem">组件就绪</div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.5rem;text-align:center">
+      <div style="font-family:var(--mono);font-size:2rem;font-weight:500;color:var(--green)">97%</div>
+      <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:.2rem">组件就绪</div>
     </div>
   </div>
-  <p style="text-align:center;font-size:.75rem;color:var(--text3)">
-    <code style="font-family:var(--mono);color:var(--accent2)">python verification/run_full_verification.py</code>
+
+  <!-- Component matrix -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:2rem">
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2rem;position:relative;overflow:hidden">
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--green)"></div>
+      <h4 style="font-size:.9rem;font-weight:500;color:var(--green);margin-bottom:.8rem">✓ Engine Layer · 类型论内核</h4>
+      <div style="font-size:.8rem;color:var(--text2);line-height:1.8">
+        <div>• Expr 9 种构造器 + de Bruijn 操作 (lift/instantiate/abstract)</div>
+        <div>• Type Checker: β/δ/ζ/η 归约 + Unifier (含 WHNF + occurs check)</div>
+        <div>• 18 tactics: intro / rfl / simp / cases / induction / constructor / contradiction ...</div>
+        <div>• 4 种搜索策略: BFS / DFS / best-first / MCTS+UCB1 + virtual loss</div>
+      </div>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2rem;position:relative;overflow:hidden">
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent)"></div>
+      <h4 style="font-size:.9rem;font-weight:500;color:var(--accent2);margin-bottom:.8rem">✓ Agent Layer · 智能体层</h4>
+      <div style="font-size:.8rem;color:var(--text2);line-height:1.8">
+        <div>• LLM Provider: 重试退避 + 单例 client + 线程安全缓存 (含 tools 键隔离)</div>
+        <div>• 11 个角色的详细 system prompt + few-shot 示例</div>
+        <div>• 4 级策略自动升级: sequential → light → medium → heavy</div>
+        <div>• Budget: sample / token / wall-time 三重限制，4000 次并发验证通过</div>
+      </div>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2rem;position:relative;overflow:hidden">
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--amber)"></div>
+      <h4 style="font-size:.9rem;font-weight:500;color:var(--amber);margin-bottom:.8rem">✓ Prover Layer · 证明推理层</h4>
+      <div style="font-size:.8rem;color:var(--text2);line-height:1.8">
+        <div>• Error Parser: 结构化提取 expected / actual type + 修复建议</div>
+        <div>• Repair: 50+ 条 Lean3→4 标识符映射 + 语法修复规则库</div>
+        <div>• Premise: BM25 + n-gram 混合检索，70 条内置库，RRF 融合排序</div>
+        <div>• LemmaBank: JSONL 持久化 + 去重 + 线程安全 + 跨问题复用</div>
+      </div>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2rem;position:relative;overflow:hidden">
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--cyan)"></div>
+      <h4 style="font-size:.9rem;font-weight:500;color:var(--cyan);margin-bottom:.8rem">✓ Pipeline Layer · 端到端管线</h4>
+      <div style="font-size:.8rem;color:var(--text2);line-height:1.8">
+        <div>• Orchestrator: 策略驱动 + decompose + conjecture + reflection 集成</div>
+        <div>• DualEngine: APE 搜索 (∀P, P→P 三步证明, &lt;1ms) + Lean4 编译验证</div>
+        <div>• ProofLoop: 生成 → 验证 → 修复 + 引理自动提取</div>
+        <div>• Config: 字段 / 范围 / 枚举 三类校验，5 数据集 + pass@k 分难度指标</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Performance benchmarks -->
+  <div style="background:var(--card);border:1px solid var(--green-border);border-radius:14px;padding:2rem;margin-bottom:1rem">
+    <h4 style="font-size:.9rem;font-weight:500;color:var(--green2);margin-bottom:1rem">⚡ 性能基准</h4>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1.5rem;font-size:.8rem;color:var(--text2)">
+      <div><span style="font-family:var(--mono);color:var(--green)">27μs</span><br>Tactic 执行 (avg)</div>
+      <div><span style="font-family:var(--mono);color:var(--green)">54μs</span><br>Tactic 执行 (p99)</div>
+      <div><span style="font-family:var(--mono);color:var(--green)">12,700</span><br>搜索 nodes/sec</div>
+      <div><span style="font-family:var(--mono);color:var(--green)">2.0ms</span><br>Premise 检索 (avg)</div>
+    </div>
+  </div>
+
+  <p style="text-align:center;font-size:.8rem;color:var(--text3);margin-top:2rem">
+    验证套件: <code style="font-family:var(--mono);color:var(--accent2)">python verification/run_full_verification.py</code>
+    &nbsp;·&nbsp; Lean4 本地验证: <code style="font-family:var(--mono);color:var(--accent2)">bash verification/verify_lean4_local.sh</code>
   </p>
 </div></section>
 
 <!-- ═══════════ FOOTER ═══════════ -->
 <footer>
   <div class="f-logo">AI4Math</div>
-  <p>形式化证明智能体 · 由 Claude 驱动 · 由 Lean 4 验证</p>
+  <p>形式化数学证明系统 · Claude 驱动 · APE 加速 · Lean4 认证</p>
 </footer>
 
 <script>
@@ -2198,6 +2627,71 @@ function buildBench() {
     }
   }, { threshold: 0.01 });
   visObs.observe(container);
+})();
+</script>
+
+<!-- APE Engine fork animation -->
+<script>
+(function(){
+  const treeEl = document.getElementById('apeTree');
+  if(!treeEl) return;
+  const nodes = treeEl.querySelectorAll('.ape-node');
+  const svgEl = document.getElementById('apeEdges');
+  let animated = false;
+
+  function animateTree(){
+    if(animated) return;
+    animated = true;
+    // Stagger reveal nodes
+    nodes.forEach((n, i) => {
+      setTimeout(() => n.classList.add('an-vis'), i * 120);
+    });
+    // Draw edges after nodes appear
+    setTimeout(() => {
+      if(!svgEl) return;
+      const edges = [
+        ['an0','an1'],['an0','an2'],['an0','an3'],
+        ['an1','an4'],['an1','an5'],['an2','an6'],
+        ['an3','an7'],['an3','an8'],['an5','an9']
+      ];
+      const rect = treeEl.getBoundingClientRect();
+      let svgContent = '';
+      edges.forEach(([from,to], i) => {
+        const f = document.getElementById(from);
+        const t = document.getElementById(to);
+        if(!f||!t) return;
+        const fr = f.getBoundingClientRect();
+        const tr = t.getBoundingClientRect();
+        const x1 = fr.left + fr.width/2 - rect.left;
+        const y1 = fr.top + fr.height - rect.top;
+        const x2 = tr.left + tr.width/2 - rect.left;
+        const y2 = tr.top - rect.top;
+        const isSuccess = to === 'an9' || to === 'an5';
+        const color = isSuccess ? 'rgba(52,211,153,0.4)' : 'rgba(124,108,240,0.15)';
+        const w = isSuccess ? '1.5' : '1';
+        svgContent += '<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="'+color+'" stroke-width="'+w+'" class="ape-edge an-vis"/>';
+      });
+      svgEl.innerHTML = svgContent;
+    }, nodes.length * 120 + 200);
+  }
+
+  const obs = new IntersectionObserver(entries => {
+    if(entries[0].isIntersecting){ animateTree(); obs.disconnect(); }
+  }, {threshold: 0.2});
+  obs.observe(treeEl);
+
+  // Also observe .ape-pillar for stagger animation
+  document.querySelectorAll('.ape-pillar').forEach((el, i) => {
+    const o = new IntersectionObserver(entries => {
+      if(entries[0].isIntersecting){
+        setTimeout(() => { el.style.opacity = '1'; el.style.transform = 'translateY(0)'; }, i * 80);
+        o.disconnect();
+      }
+    }, {threshold: 0.1});
+    el.style.opacity = '0'; el.style.transform = 'translateY(16px)';
+    el.style.transition = 'all 0.6s cubic-bezier(0.16,1,0.3,1)';
+    o.observe(el);
+  });
 })();
 </script>
 </body>

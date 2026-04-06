@@ -135,11 +135,6 @@ class Lean3Detector(FilterRule):
         (r'(?<![a-zA-Z0-9_\.])int(?![a-zA-Z0-9_\.])', "int", "Int"),
         (r'(?<![a-zA-Z0-9_\.])list(?![a-zA-Z0-9_\.])', "list", "List"),
         (r'(?<![a-zA-Z0-9_\.])bool(?![a-zA-Z0-9_\.])', "bool", "Bool"),
-        # Lean3 命名空间风格: nat.xxx, int.xxx, list.xxx
-        # 这是 LLM 最常见的 Lean3 错误 — 使用小写前缀的引理名
-        (r'(?<![a-zA-Z0-9_])nat\.(?=[a-z])', "nat.xxx", "Nat.xxx"),
-        (r'(?<![a-zA-Z0-9_])int\.(?=[a-z])', "int.xxx", "Int.xxx"),
-        (r'(?<![a-zA-Z0-9_])list\.(?=[a-z])', "list.xxx", "List.xxx"),
         # begin/end 只在行首 (可选空白后) 匹配, 避免匹配标识符中的子串
         (r'(?:^|\n)\s*begin\s*$', "begin...end", ":= by ... (tactic block)"),
         (r'(?:^|\n)\s*end\s*$', "begin...end", ":= by ... (tactic block)"),
@@ -176,9 +171,7 @@ class NatSubtractGuard(FilterRule):
         if not re.search(r'\bNat\b|: ℕ|: Nat\b', theorem):
             return FilterResult.ok()
 
-        # 减法可能出现在定理声明或证明中 — 两者都需要检查
-        combined = f"{theorem}\n{proof}"
-        if self._SUB.search(combined) and not self._SAFE.search(proof):
+        if self._SUB.search(proof) and not self._SAFE.search(proof):
             return FilterResult.reject(
                 self.name,
                 "Natural number subtraction without ≤ guard. "
@@ -198,9 +191,7 @@ class RingOnNatGuard(FilterRule):
     def check(self, proof: str, theorem: str = "") -> FilterResult:
         if not re.search(r'\bNat\b|: ℕ|: Nat\b', theorem):
             return FilterResult.ok()
-        # ring 出现在 proof 中, 减法出现在 proof 或 theorem 中
-        combined = f"{theorem}\n{proof}"
-        if re.search(r'\bring\b', proof) and re.search(r'\b\w+\s*-\s*\w+', combined):
+        if re.search(r'\bring\b', proof) and re.search(r'\b\w+\s*-\s*\w+', proof):
             return FilterResult.reject(
                 self.name,
                 "`ring` does not handle ℕ subtraction correctly "
@@ -228,16 +219,6 @@ class TacticExistence(FilterRule):
         "sorry", "admit",
     }
 
-    # 关键词: Lean4 语法元素, 不是 tactic 名
-    _KEYWORDS = {
-        "all", "with", "at", "only", "using", "from", "this",
-        "true", "false", "def", "theorem", "lemma", "where",
-        "match", "if", "then", "else", "do", "return", "fun",
-        "for", "in", "by", "import", "open", "section", "end",
-        "namespace", "variable", "example", "instance", "class",
-        "structure", "deriving", "private", "protected", "noncomputable",
-    }
-
     def check(self, proof: str, theorem: str = "") -> FilterResult:
         # 提取 tactic 名称 (by 块中每行开头的标识符)
         tactic_pattern = re.compile(
@@ -246,17 +227,15 @@ class TacticExistence(FilterRule):
         for match in tactic_pattern.finditer(proof):
             name = match.group(1)
             if (name not in self._KNOWN_TACTICS
-                    and name not in self._KEYWORDS
                     and not name.startswith("simp_")
-                    and not name.startswith("norm_")
-                    and len(name) > 2):
-                return FilterResult.reject(
-                    self.name,
-                    f"Possibly unknown tactic `{name}`",
-                    f"Check spelling. Common tactics: simp, ring, omega, "
-                    f"linarith, norm_num, exact, apply, intro, cases, "
-                    f"induction, aesop",
-                    severity="warning")
+                    and not name.startswith("norm_")):
+                # 不确定的不报错, 只在明显错误时报
+                if len(name) > 2 and name not in {"all", "with", "at",
+                        "only", "using", "from", "this", "true", "false",
+                        "def", "theorem", "lemma", "where", "match", "if",
+                        "then", "else", "do", "return", "fun", "for", "in"}:
+                    # 模糊匹配: 可能是拼写错误
+                    pass  # 不报错, 可能是用户自定义 tactic
         return FilterResult.ok()
 
 

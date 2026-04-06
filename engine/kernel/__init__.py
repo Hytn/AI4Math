@@ -1,3 +1,5 @@
+# DEPRECATED: Legacy APE v1 module. Not called by any active code path.
+# See engine/LEGACY.md for details. Do NOT add new dependencies.
 """Layered verification engine.
 
 L0 (~1μs):  Quick structural sanity check

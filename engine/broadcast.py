@@ -35,30 +35,49 @@ class MessageType(str, Enum):
     STRATEGY_INSIGHT = "strategy_insight"
 
 
+def _deep_freeze(obj):
+    """Recursively freeze nested structures.
+
+    dict  → MappingProxyType (read-only view)
+    list  → tuple (immutable)
+    other → unchanged
+    """
+    from types import MappingProxyType
+    if isinstance(obj, dict):
+        return MappingProxyType({k: _deep_freeze(v) for k, v in obj.items()})
+    if isinstance(obj, list):
+        return tuple(_deep_freeze(item) for item in obj)
+    return obj
+
+
 @dataclass(frozen=True)
 class BroadcastMessage:
     """不可变广播消息
 
-    structured 字段在构造后自动包装为 MappingProxyType,
+    structured 字段在构造时自动 deep-freeze 为 MappingProxyType/tuple,
     确保消费者无法通过引用修改内容。
+
+    使用 __new__ + __init__ 的标准 frozen dataclass 模式:
+    所有 freeze 操作在工厂方法中完成, __post_init__ 不需要 object.__setattr__。
     """
     msg_type: MessageType
     source: str              # 发送方的 agent/direction 名称
     content: str             # 人类可读的描述 (供 LLM 消费)
-    structured: object = field(default_factory=dict)  # MappingProxyType after init
+    structured: object = field(default_factory=dict)  # MappingProxyType after freeze
     timestamp: float = field(default_factory=time.time)
     ttl_seconds: float = 300.0  # 5 分钟过期
-
-    def __post_init__(self):
-        # 将 dict 包装为只读视图 (frozen dataclass 需用 object.__setattr__)
-        from types import MappingProxyType
-        if isinstance(self.structured, dict):
-            object.__setattr__(self, 'structured',
-                               MappingProxyType(self.structured))
 
     @property
     def is_expired(self) -> bool:
         return (time.time() - self.timestamp) > self.ttl_seconds
+
+    @staticmethod
+    def _freeze_structured(data: dict) -> object:
+        """将 dict 深度冻结为 MappingProxyType (供工厂方法使用)"""
+        import copy
+        if isinstance(data, dict):
+            return _deep_freeze(copy.deepcopy(data))
+        return data
 
     # ── 工厂方法: 快速构造常用消息 ──
 
@@ -73,12 +92,12 @@ class BroadcastMessage:
                 f"AVOID: `{tactic}` fails on this problem. "
                 f"Reason: {reason}"
             ),
-            structured={
+            structured=BroadcastMessage._freeze_structured({
                 "failed_tactic": tactic,
                 "error_category": error_category,
                 "reason": reason,
                 "goal_type": goal_type,
-            },
+            }),
         )
 
     @staticmethod
@@ -90,11 +109,11 @@ class BroadcastMessage:
             msg_type=MessageType.POSITIVE_DISCOVERY,
             source=source,
             content=f"USEFUL: {discovery}",
-            structured={
+            structured=BroadcastMessage._freeze_structured({
                 "lemma_name": lemma_name,
                 "lemma_statement": lemma_statement,
                 "discovery": discovery,
-            },
+            }),
         )
 
     @staticmethod
@@ -112,12 +131,12 @@ class BroadcastMessage:
                 f"Remaining: {len(remaining_goals)} goal(s). "
                 f"Proof so far:\n{proof_so_far[:500]}"
             ),
-            structured={
+            structured=BroadcastMessage._freeze_structured({
                 "proof_so_far": proof_so_far,
                 "remaining_goals": remaining_goals,
                 "env_id": env_id,
                 "goals_closed": goals_closed,
-            },
+            }),
         )
 
     @staticmethod
@@ -133,12 +152,12 @@ class BroadcastMessage:
                 f"  {statement}\n"
                 f"  Proof: {proof[:200]}"
             ),
-            structured={
+            structured=BroadcastMessage._freeze_structured({
                 "lemma_name": name,
                 "lemma_statement": statement,
                 "lemma_proof": proof,
                 "env_id": env_id,
-            },
+            }),
         )
 
 
@@ -153,22 +172,12 @@ class Subscription:
         self._lock = threading.Lock()
 
     def push(self, msg: BroadcastMessage):
-        """非阻塞推送 (如果队列满, 先清理过期消息再推送)
-
-        Fix: 过期消息不再占据队列空间 — 每次 push 时如果队列较满
-        (≥80% 容量), 先主动清理过期消息, 防止有效消息被挤出。
-        """
+        """非阻塞推送 (如果队列满, 丢弃最旧的消息)"""
         if msg.source == self.subscriber_id:
             return  # 不接收自己发的消息
         if self.filter_types and msg.msg_type not in self.filter_types:
             return  # 类型过滤
         with self._lock:
-            # 队列接近满时, 主动清理过期消息
-            if len(self._queue) >= self._queue.maxlen * 0.8:
-                fresh = deque(
-                    (m for m in self._queue if not m.is_expired),
-                    maxlen=self._queue.maxlen)
-                self._queue = fresh
             self._queue.append(msg)
 
     def drain(self) -> list[BroadcastMessage]:

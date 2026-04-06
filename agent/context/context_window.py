@@ -181,9 +181,15 @@ class ContextWindow:
                 summary_parts = []
                 for key in to_summarize:
                     e = self._entries[key]
-                    # Extract first line as summary
-                    first_line = e.content.split("\n")[0][:100]
-                    summary_parts.append(f"[{key}] {first_line}")
+                    # Extract first 2 non-empty lines + any error category marker
+                    lines = [l.strip() for l in e.content.split("\n") if l.strip()]
+                    excerpt = " | ".join(lines[:2])[:200]
+                    # Look for structured error info
+                    for line in lines:
+                        if "error_category" in line or "category:" in line.lower():
+                            excerpt += f" [{line.strip()[:60]}]"
+                            break
+                    summary_parts.append(f"- [{key}] {excerpt}")
                     self.remove_entry(key)
 
                 summary_text = ("Earlier attempts (summarized):\n"

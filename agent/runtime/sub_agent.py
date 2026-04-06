@@ -73,6 +73,11 @@ class AgentResult:
     error: str = ""
     metadata: dict = field(default_factory=dict)
 
+    @property
+    def is_error(self) -> bool:
+        """True if this result represents an execution failure (not a proof failure)."""
+        return bool(self.error)
+
 
 class SubAgent:
     """独立的子智能体实例
@@ -142,7 +147,7 @@ class SubAgent:
                 tokens_used=resp.tokens_in + resp.tokens_out,
                 latency_ms=latency,
                 confidence=self._estimate_confidence(resp, proof_code),
-                success=bool(proof_code.strip()),
+                success=False,  # success 仅在验证通过后由 Orchestrator 设置
                 metadata=task.metadata,
             )
 
@@ -205,53 +210,13 @@ class SubAgent:
                           l0_passed: bool = True,
                           l1_passed: bool = False,
                           l2_passed: bool = False) -> float:
-        """用验证阶段的实际反馈更新置信度
+        """用验证反馈更新置信度 (委托给 ConfidenceEstimator)
 
-        在 Orchestrator 验证证明后调用此方法, 基于 L0/L1/L2 的
-        实际结果和 AgentFeedback 中的结构化信息重新评估。
-
-        置信度分级:
-          0.0-0.2: 生成了代码但可能有语法问题
-          0.2-0.4: L0 通过, 语法正确但未验证
-          0.4-0.7: L1 有部分进展 (关闭了一些 goal)
-          0.7-0.9: L1 通过, 所有 goal 关闭
-          0.9-1.0: L2 通过, 完整编译认证
+        .. deprecated:: v4
+            直接使用 ConfidenceEstimator.refine_confidence() 代替。
         """
-        base = result.confidence
-
-        if not l0_passed:
-            # L0 拒绝: 语法错误, 大幅降低
-            return min(base, 0.15)
-
-        if l2_passed:
-            # L2 通过: 最终认证, 最高置信度
-            return 0.95
-
-        if l1_passed:
-            # L1 通过: REPL 验证成功
-            return max(base, 0.80)
-
-        # L0 通过但 L1 未通过 → 用 feedback 细化
-        if feedback:
-            if feedback.is_proof_complete:
-                return max(base, 0.85)
-
-            # 根据 goal 关闭进度调整
-            if feedback.progress_score > 0:
-                progress_bonus = feedback.progress_score * 0.3
-                base = max(base, 0.3 + progress_bonus)
-
-            # 有修复候选 → 说明离成功不远
-            if feedback.repair_candidates:
-                high_conf = [r for r in feedback.repair_candidates
-                             if r.confidence > 0.7]
-                if high_conf:
-                    base = max(base, 0.35)
-
-            # 错误类型惩罚
-            if feedback.error_category == "type_mismatch":
-                base *= 0.8  # 类型不匹配, 可能需要根本性修改
-            elif feedback.error_category == "unknown_identifier":
-                base *= 0.85  # 可能只是名字拼错
-
-        return min(1.0, max(0.0, base))
+        from agent.strategy.confidence_estimator import ConfidenceEstimator
+        return ConfidenceEstimator.refine_confidence(
+            result, feedback=feedback,
+            l0_passed=l0_passed, l1_passed=l1_passed,
+            l2_passed=l2_passed)

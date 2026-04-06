@@ -23,48 +23,30 @@ import queue
 import subprocess
 import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Optional
+
+# Import shared types and functions from _core (single source of truth)
+from engine._core import (
+    CompileCache as _CompileCache,
+    TacticFeedback,
+    FullVerifyResult,
+    which as _which,
+    assemble_code as _assemble_code,
+    classify_error as _classify_error,
+    classify_error_structured as _classify_error_structured,
+    extract_expected as _extract_expected,
+    extract_actual as _extract_actual,
+    make_cache_key,
+)
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class TacticFeedback:
-    """单条 tactic 的执行反馈 (面向 Agent 的结构化输出)"""
-    success: bool
-    tactic: str
-    # 成功时的信息
-    new_env_id: int = -1
-    remaining_goals: list[str] = field(default_factory=list)
-    goals_closed: int = 0
-    goals_opened: int = 0
-    is_proof_complete: bool = False
-    # 失败时的信息
-    error_message: str = ""
-    error_category: str = ""
-    expected_type: str = ""
-    actual_type: str = ""
-    # 性能信息
-    elapsed_ms: int = 0
-    session_id: int = -1
-
-    @property
-    def progress_delta(self) -> int:
-        """目标净变化: 正 = 进展, 负 = 增加了新目标"""
-        return self.goals_closed - self.goals_opened
-
-
-@dataclass
-class FullVerifyResult:
-    """完整证明验证结果"""
-    success: bool
-    env_id: int = -1
-    errors: list[dict] = field(default_factory=list)
-    stderr: str = ""
-    elapsed_ms: int = 0
-    goals_remaining: list[str] = field(default_factory=list)
-    has_sorry: bool = False
+# _CompileCache, TacticFeedback, FullVerifyResult, and helper functions
+# are now imported from engine._core (single source of truth).
+# Backward-compatible names are available via the imports above.
 
 
 @dataclass
@@ -76,6 +58,7 @@ class _SessionState:
     busy: bool = False
     alive: bool = False
     fallback_mode: bool = False  # True = 无真实 REPL, 所有验证不可信
+    is_overflow: bool = False    # True = 临时创建的溢出会话, 用完即关
     last_heartbeat: float = 0.0
     total_requests: int = 0
     total_errors: int = 0
@@ -96,6 +79,7 @@ class LeanSession:
         self._timeout = timeout_seconds
         self._lock = threading.Lock()
         self._repl_binary = self._find_repl_binary(project_dir)
+        self._selector = None  # 延迟创建, 在 start() 中注册 stdout
 
     @staticmethod
     def _find_repl_binary(project_dir: str) -> Optional[str]:
@@ -138,6 +122,12 @@ class LeanSession:
                 text=True,
                 bufsize=1,
             )
+            # 创建持久 selector, 注册 stdout 用于带超时的 readline
+            import selectors
+            self._selector = selectors.DefaultSelector()
+            self._selector.register(
+                self._state.process.stdout, selectors.EVENT_READ)
+
             # 发送预加载命令
             if preamble:
                 resp = self._send_raw({"cmd": preamble, "env": 0})
@@ -171,55 +161,62 @@ class LeanSession:
         从一个证明状态 (env_id) 出发, 执行一条 tactic,
         返回结构化的反馈 (新状态/错误/进度)。
 
-        线程安全: _lock 保护整个 REPL 交互过程 (stdin 写入 + stdout 读取),
-        确保两个线程不会交错发送命令并误读彼此的响应。
-        busy 标志由 LeanPool 原子管理, 不在此处设置/清除。
+        注意: busy 标志由 LeanPool 原子管理, 不在此处设置/清除。
+        会话级 _lock 仅用于保护 REPL 进程的 stdin/stdout 串行化。
         """
         t0 = time.time()
         with self._lock:
             self._state.total_requests += 1
-            if self._state.process and self._state.process.poll() is None:
-                return self._try_tactic_repl(env_id, tactic, t0)
-            else:
-                return self._try_tactic_fallback(env_id, tactic, t0)
+
+        if self._state.process and self._state.process.poll() is None:
+            return self._try_tactic_repl(env_id, tactic, t0)
+        else:
+            return self._try_tactic_fallback(env_id, tactic, t0)
 
     def verify_complete(self, theorem: str, proof: str,
                         preamble: str = "") -> FullVerifyResult:
         """验证一个完整的定理+证明
 
-        线程安全: _lock 保护整个 REPL 交互过程。
+        注意: busy 标志由 LeanPool 原子管理, 不在此处设置/清除。
+        会话级 _lock 仅用于保护 REPL 进程的 stdin/stdout 串行化。
         """
         t0 = time.time()
         with self._lock:
-            self._state.busy = True
             self._state.total_requests += 1
 
-            try:
-                full_code = _assemble_code(theorem, proof, preamble)
+        try:
+            full_code = _assemble_code(theorem, proof, preamble)
 
-                if self._state.process and self._state.process.poll() is None:
-                    resp = self._send_raw({
-                        "cmd": full_code,
-                        "env": 0,
-                    })
-                    elapsed = int((time.time() - t0) * 1000)
-                    return self._parse_verify_response(resp, elapsed)
-                else:
-                    return self._verify_fallback(full_code, t0)
-            finally:
-                self._state.busy = False
+            if self._state.process and self._state.process.poll() is None:
+                resp = self._send_raw({
+                    "cmd": full_code,
+                    "env": 0,
+                })
+                elapsed = int((time.time() - t0) * 1000)
+                return self._parse_verify_response(resp, elapsed)
+            else:
+                return self._verify_fallback(full_code, t0)
+        except Exception:
+            raise
 
     def get_goals(self, env_id: int) -> list[str]:
         """获取指定 env_id 下的当前 goal state"""
-        with self._lock:
-            if self._state.process and self._state.process.poll() is None:
-                resp = self._send_raw({"cmd": "-- goals", "env": env_id})
-                if resp and "goals" in resp:
-                    return resp["goals"]
+        if self._state.process and self._state.process.poll() is None:
+            resp = self._send_raw({"cmd": "-- goals", "env": env_id})
+            if resp and "goals" in resp:
+                return resp["goals"]
         return []
 
     def close(self):
         """关闭会话"""
+        # 先关闭 selector (避免操作已关闭的 fd)
+        if self._selector:
+            try:
+                self._selector.close()
+            except Exception:
+                pass
+            self._selector = None
+
         if self._state.process:
             try:
                 self._state.process.terminate()
@@ -235,7 +232,7 @@ class LeanSession:
 
     def _try_tactic_repl(self, env_id: int, tactic: str,
                          t0: float) -> TacticFeedback:
-        """通过 REPL 进程执行 tactic"""
+        """通过 REPL 进程执行 tactic (P1-9: 结构化错误解析)"""
         resp = self._send_raw({"cmd": tactic, "env": env_id})
         elapsed = int((time.time() - t0) * 1000)
 
@@ -252,11 +249,13 @@ class LeanSession:
         goals = resp.get("goals", [])
 
         if errors:
+            # P1-9: 使用结构化分类, 聚合多条错误
+            category, combined_msg, meta = _classify_error_structured(messages)
             err = errors[0]
             return TacticFeedback(
                 success=False, tactic=tactic,
-                error_message=err.get("data", ""),
-                error_category=_classify_error(err.get("data", "")),
+                error_message=combined_msg[:500] if combined_msg else err.get("data", ""),
+                error_category=category,
                 expected_type=_extract_expected(err.get("data", "")),
                 actual_type=_extract_actual(err.get("data", "")),
                 elapsed_ms=elapsed, session_id=self._state.session_id)
@@ -327,8 +326,8 @@ class LeanSession:
     def _send_raw(self, cmd: dict) -> Optional[dict]:
         """向 REPL 进程发送 JSON 命令并读取响应
 
-        使用 selectors 实现读超时, 防止 REPL 进程挂起时永久阻塞
-        调用线程 (及其持有的会话锁)。
+        使用持久 selectors 实现读超时, 防止 REPL 进程挂起时永久阻塞。
+        selector 在 start() 中创建, 在 close() 中销毁, 避免每次调用的开销。
         """
         proc = self._state.process
         if not proc or proc.poll() is not None:
@@ -337,12 +336,9 @@ class LeanSession:
             proc.stdin.write(json.dumps(cmd) + "\n")
             proc.stdin.flush()
 
-            # 带超时的 readline — 防止 REPL 进程挂起时永久阻塞
-            import selectors
-            sel = selectors.DefaultSelector()
-            sel.register(proc.stdout, selectors.EVENT_READ)
-            try:
-                events = sel.select(timeout=self._timeout)
+            # 带超时的 readline — 复用持久 selector
+            if self._selector:
+                events = self._selector.select(timeout=self._timeout)
                 if not events:
                     logger.warning(
                         f"Session {self._state.session_id}: REPL read timed out "
@@ -350,9 +346,9 @@ class LeanSession:
                     self._state.total_errors += 1
                     return None
                 line = proc.stdout.readline()
-            finally:
-                sel.unregister(proc.stdout)
-                sel.close()
+            else:
+                # Fallback: 无 selector 时直接 readline (可能阻塞)
+                line = proc.stdout.readline()
 
             if line:
                 return json.loads(line)
@@ -419,8 +415,22 @@ class LeanPool:
         self._total_requests = 0
         self._total_latency_ms = 0
 
+        # P1-5: 环境缓存 — preamble_hash → base_env_id
+        self._env_cache: dict[str, int] = {}
+        self._env_cache_lock = threading.Lock()
+
+        # P0-1: 编译缓存 (从 lean_repl.py 统一到此处)
+        self._compile_cache = _CompileCache(maxsize=1024)
+
+        # 单调递增的 session ID, 避免 overflow session ID 冲突
+        self._next_session_id = pool_size
+
+        # 环境版本: share_lemma 每次成功注入时递增,
+        # 使 CompileCache 的旧条目自动失效
+        self._env_version = 0
+
     def start(self) -> bool:
-        """启动所有会话 (预加载环境)"""
+        """启动所有会话 (预加载环境, P1-5: 带环境缓存)"""
         if self._started:
             return True
 
@@ -436,6 +446,12 @@ class LeanPool:
             if session.start(self.preamble):
                 self._sessions.append(session)
                 success_count += 1
+                # P1-5: 缓存 preamble → env_id 映射
+                if session.base_env_id > 0:
+                    cache_key = hashlib.sha256(
+                        self.preamble.encode()).hexdigest()[:16]
+                    with self._env_cache_lock:
+                        self._env_cache[cache_key] = session.base_env_id
             else:
                 logger.warning(f"Session {i} failed to start")
 
@@ -505,63 +521,128 @@ class LeanPool:
 
     def verify_complete(self, theorem: str, proof: str,
                         preamble: str = "") -> FullVerifyResult:
-        """在空闲会话上验证完整证明"""
+        """在空闲会话上验证完整证明 (P0-1: 带编译缓存)"""
+        # 缓存查找 (env_version 确保 share_lemma 后旧缓存失效)
+        cache_key = make_cache_key(
+            theorem, proof, preamble,
+            env_fingerprint=f"v{self._env_version}")
+        cached = self._compile_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         session = self._acquire_session()
         try:
-            return session.verify_complete(theorem, proof, preamble)
+            result = session.verify_complete(theorem, proof, preamble)
+            # 只缓存确定性结果 (成功, 或非超时的失败)
+            if result.success or "timeout" not in result.stderr.lower():
+                # 缓存时将 env_id 置为 -1:
+                # env_id 是特定 REPL 会话的状态引用, 跨会话无效
+                import copy
+                cacheable = copy.copy(result)
+                cacheable.env_id = -1
+                self._compile_cache.put(cache_key, cacheable)
+            return result
         finally:
             self._release_session(session)
 
-    def fork_env(self, env_id: int) -> int:
-        """Fork 一个环境快照
 
-        lean4-repl 的 env_id 天然支持分叉:
-        多个命令可以引用同一个 env_id, 各自产生不同的后继状态。
-        所以 fork 实际上是零成本的 — 直接返回原 env_id。
-
-        注意: fork 只适用于"只读引用"场景 (从同一状态尝试不同 tactic)。
-        如果通过 share_lemma() 修改了会话环境, 需要使用
-        share_lemma() 返回的新 env_id 来引用包含新引理的环境。
-        """
-        return env_id
-
-    def share_lemma(self, lemma_code: str) -> list[int]:
-        """将已证引理注入所有会话的环境中
+    def share_lemma(self, lemma_code: str, *,
+                    name: str = "", statement: str = "",
+                    proof: str = "") -> list[int]:
+        """将已证引理注入所有会话的环境中 (并行)
 
         这使得跨方向的引理复用成为可能:
         方向 A 证明了辅助引理, 方向 B/C/D 的 REPL 环境中立即可用。
 
+        支持两种调用方式:
+          1. share_lemma(完整代码)  — lemma_code 必须是完整的 Lean4 声明
+          2. share_lemma("", name=..., statement=..., proof=...)
+             — 自动拼装为 ``lemma name : statement := by proof``
+
         Returns:
-            每个成功注入的会话的新 env_id 列表。后续操作如果需要引用
-            包含此引理的环境, 应使用这些新的 env_id 而非原始 env_id。
-            调用者应通过 latest_env_ids 属性获取每个会话的最新环境。
+            注入成功的 session 中产生的 env_id 列表
         """
-        new_env_ids = []
-        for session in self._sessions:
-            if session.is_alive and not session.is_fallback:
-                result = session.verify_complete("", lemma_code)
-                if result.success:
-                    new_env_ids.append(result.env_id)
-                    # 更新会话的基础 env_id, 使后续操作能看到新引理
-                    session._state.current_env_id = result.env_id
-                    logger.debug(
-                        f"share_lemma: session {session._state.session_id} "
-                        f"→ new env_id={result.env_id}")
-                else:
+        # ── 构建合法的 Lean4 代码 ──
+        if name and statement and proof:
+            # 结构化参数 → 拼装
+            lemma_code = f"lemma {name} : {statement} := by {proof}"
+        elif name and statement and not proof:
+            lemma_code = f"lemma {name} : {statement} := by sorry"
+            logger.warning(
+                f"share_lemma: no proof provided for '{name}', "
+                f"using sorry placeholder")
+
+        if not lemma_code or not lemma_code.strip():
+            logger.warning("share_lemma: empty lemma code, skipping")
+            return []
+
+        # ── L0 基础验证: 至少要是合法的 Lean4 声明 ──
+        code = lemma_code.strip()
+        has_decl = any(code.startswith(kw) for kw in
+                       ("lemma ", "theorem ", "def ", "instance ",
+                        "noncomputable ", "private ", "protected ",
+                        "section", "namespace", "open ", "set_option",
+                        "#check", "@["))
+        if not has_decl:
+            logger.warning(
+                f"share_lemma: code does not start with a Lean4 declaration "
+                f"keyword, skipping: {code[:80]}...")
+            return []
+
+        if "sorry" in code and "sorry" not in (proof or ""):
+            logger.info(
+                f"share_lemma: code contains sorry, injecting anyway "
+                f"(may be intentional placeholder)")
+
+        alive_sessions = [s for s in self._sessions if s.is_alive]
+        if not alive_sessions:
+            return []
+
+        results = [None] * len(alive_sessions)
+
+        def _inject(idx, session):
+            try:
+                # 直接发送声明作为 REPL 命令, 在 session 的当前环境上执行。
+                # 使用 _send_raw 而非 verify_complete, 避免 _assemble_code
+                # 拼装出 "\n\ncode" 这样缺少声明头的无效代码。
+                resp = session._send_raw({
+                    "cmd": code,
+                    "env": session.base_env_id,
+                })
+                if resp is None:
                     logger.warning(
-                        f"share_lemma: failed on session "
-                        f"{session._state.session_id}: {result.stderr[:100]}")
-        return new_env_ids
+                        f"share_lemma: REPL returned None on session "
+                        f"{session.session_id}")
+                    return
+                messages = resp.get("messages", [])
+                errors = [m for m in messages if m.get("severity") == "error"]
+                if errors:
+                    err_text = errors[0].get("data", "")[:200]
+                    logger.warning(
+                        f"share_lemma: injection failed on session "
+                        f"{session.session_id}: {err_text}")
+                    return
+                new_env = resp.get("env", -1)
+                if new_env >= 0:
+                    # 更新 session 的 base env_id, 使后续命令在包含此引理的环境上执行
+                    session._state.current_env_id = new_env
+                results[idx] = new_env
+            except Exception as e:
+                logger.warning(
+                    f"share_lemma failed on session {session.session_id}: {e}")
 
-    @property
-    def latest_env_ids(self) -> dict[int, int]:
-        """每个会话的最新 env_id (share_lemma 后可能已更新)
+        threads = []
+        for i, session in enumerate(alive_sessions):
+            t = threading.Thread(target=_inject, args=(i, session), daemon=True)
+            threads.append(t)
+            t.start()
+        for t in threads:
+            t.join(timeout=self.timeout)
 
-        Returns:
-            {session_id: current_env_id} 映射
-        """
-        return {s._state.session_id: s._state.current_env_id
-                for s in self._sessions if s.is_alive}
+        successful = [r for r in results if r is not None and r >= 0]
+        if successful:
+            self._env_version += 1
+        return successful
 
     def shutdown(self):
         """关闭所有会话"""
@@ -589,6 +670,14 @@ class LeanPool:
             except Exception:
                 pass
 
+    @property
+    def base_env_id(self) -> int:
+        """Base env_id after preamble loading (for SearchCoordinator)."""
+        for s in self._sessions:
+            if s.is_alive:
+                return s._state.current_env_id
+        return 0
+
     def stats(self) -> dict:
         avg_latency = (self._total_latency_ms / self._total_requests
                        if self._total_requests else 0)
@@ -601,23 +690,26 @@ class LeanPool:
             "all_fallback": fallback_count == len(self._sessions) and len(self._sessions) > 0,
             "total_requests": self._total_requests,
             "avg_latency_ms": round(avg_latency, 1),
+            "compile_cache": self._compile_cache.stats(),
+            "env_cache_size": len(self._env_cache),
         }
 
+    def get_cached_env_id(self, preamble: str) -> Optional[int]:
+        """P1-5: 查询环境缓存, 避免重复 import 预加载"""
+        cache_key = hashlib.sha256(preamble.encode()).hexdigest()[:16]
+        with self._env_cache_lock:
+            return self._env_cache.get(cache_key)
+
     def _acquire_session(self) -> LeanSession:
-        """原子获取一个空闲会话 (阻塞等待策略)
+        """原子获取一个空闲会话 (条件变量等待)
 
-        线程安全: 通过条件变量阻塞等待, 直到有空闲会话可用。
-        获取到的会话立即被标记为 busy, 防止其他线程在锁释放后
-        再次获取它。
-
-        调用者必须在使用完会话后调用 _release_session(session)。
-
-        超时后 (timeout 秒) 如仍无空闲会话, 返回请求数最少的
-        已有会话 — 此时两个线程共用一个会话, 但由于会话级 _lock
-        保护了 REPL I/O, 不会出现命令/响应交错。
+        线程安全: 通过 Condition 变量保证获取到的会话立即被标记为
+        busy, 消除原有的竞态条件。当所有会话都忙时, 等待最多
+        timeout 秒; 超时则创建临时 overflow 会话。
         """
-        deadline = time.time() + self.timeout
         with self._session_available:
+            deadline = time.time() + self.timeout
+
             while True:
                 # 优先选择空闲的
                 for session in self._sessions:
@@ -625,31 +717,49 @@ class LeanPool:
                         session._state.busy = True
                         return session
 
-                # 无空闲 — 等待释放或超时
+                # 所有会话都忙 — 等待有会话被释放
                 remaining = deadline - time.time()
                 if remaining <= 0:
                     break
                 self._session_available.wait(timeout=min(remaining, 1.0))
 
-            # 超时回退: 返回请求数最少的会话 (会在会话的 _lock 上排队)
-            if self._sessions:
-                chosen = min(self._sessions,
-                             key=lambda s: s._state.total_requests)
-                logger.debug(
-                    f"LeanPool: all sessions busy, sharing session "
-                    f"{chosen._state.session_id} (requests will serialize "
-                    f"on session lock)")
-                return chosen
-
-            # 无会话 — 创建一个 fallback
-            fallback = LeanSession(session_id=-1, project_dir=self.project_dir)
-            fallback.start("")
-            return fallback
+            # 超时: 创建临时 overflow 会话 (标记 busy + overflow)
+            logger.warning("LeanPool: all sessions busy, creating overflow session")
+            sid = self._next_session_id
+            self._next_session_id += 1
+            overflow = LeanSession(
+                session_id=sid,
+                project_dir=self.project_dir,
+                timeout_seconds=self.timeout)
+            overflow.start(self.preamble)
+            overflow._state.busy = True
+            overflow._state.is_overflow = True
+            self._sessions.append(overflow)
+            return overflow
 
     def _release_session(self, session: LeanSession):
-        """释放会话, 标记为空闲并通知等待线程"""
+        """释放会话, 标记为空闲并通知等待线程
+
+        Overflow 会话在释放时自动关闭并从池中移除,
+        防止 session 列表无限增长。
+        """
         with self._session_available:
             session._state.busy = False
+
+            if session._state.is_overflow:
+                # 关闭并移除 overflow 会话
+                try:
+                    session.close()
+                except Exception as e:
+                    logger.warning(f"Failed to close overflow session: {e}")
+                try:
+                    self._sessions.remove(session)
+                except ValueError:
+                    pass
+                logger.debug(
+                    f"LeanPool: removed overflow session "
+                    f"{session.session_id}, pool size={len(self._sessions)}")
+
             self._session_available.notify()
 
     def _record_latency(self, ms: int):
@@ -658,105 +768,3 @@ class LeanPool:
             self._total_latency_ms += ms
 
 
-# ── 辅助函数 ──
-
-def _which(cmd: str) -> Optional[str]:
-    """跨平台的 which 实现"""
-    import shutil
-    return shutil.which(cmd)
-
-
-def _assemble_code(theorem: str, proof: str, preamble: str = "") -> str:
-    """组装完整的 Lean4 源文件
-
-    拼接逻辑:
-      - 如果 theorem 已经包含完整证明 (以 ':= by' 或 ':= fun' 或
-        ':= show' 等开头的证明体), 则不再拼接 proof
-      - 否则将 proof 追加到 theorem 之后
-    """
-    parts = []
-    if preamble:
-        parts.append(preamble)
-    else:
-        parts.append("import Mathlib")
-    parts.append("")
-    if theorem.strip():
-        full = theorem.strip()
-        if proof.strip():
-            # 检查 theorem 是否已含证明体:
-            # 匹配最外层的 ':=' (不在括号/花括号/角括号内)
-            if not _has_toplevel_assign(full):
-                full += f" {proof.strip()}"
-        parts.append(full)
-    return "\n".join(parts)
-
-
-def _has_toplevel_assign(code: str) -> bool:
-    """检查代码是否在顶层包含 ':=' 赋值 (不在括号/引号内)"""
-    depth = 0
-    in_string = False
-    i = 0
-    while i < len(code):
-        ch = code[i]
-        if ch == '"' and (i == 0 or code[i-1] != '\\'):
-            in_string = not in_string
-        elif not in_string:
-            if ch in ('(', '[', '{', '⟨'):
-                depth += 1
-            elif ch in (')', ']', '}', '⟩'):
-                depth = max(0, depth - 1)
-            elif depth == 0 and ch == ':' and i + 1 < len(code) and code[i+1] == '=':
-                return True
-        i += 1
-    return False
-
-
-def _classify_error(msg: str) -> str:
-    """将错误消息分类"""
-    msg_lower = msg.lower()
-    if "type mismatch" in msg_lower:
-        return "type_mismatch"
-    if "unknown identifier" in msg_lower or "unknown constant" in msg_lower:
-        return "unknown_identifier"
-    if "tactic" in msg_lower and "failed" in msg_lower:
-        return "tactic_failed"
-    if "unsolved goals" in msg_lower:
-        return "unsolved_goals"
-    if "sorry" in msg_lower:
-        return "sorry"
-    if "syntax" in msg_lower or "expected" in msg_lower:
-        return "syntax_error"
-    if "timeout" in msg_lower or "heartbeat" in msg_lower:
-        return "timeout"
-    return "other"
-
-
-def _extract_expected(msg: str) -> str:
-    """从错误消息中提取 expected type"""
-    for marker in ["expected to have type", "expected type"]:
-        if marker in msg:
-            idx = msg.index(marker) + len(marker)
-            rest = msg[idx:].strip()
-            # 取到下一个换行或关键词
-            end = len(rest)
-            for stop in ["\n", "but is expected", "has type"]:
-                pos = rest.find(stop)
-                if pos > 0:
-                    end = min(end, pos)
-            return rest[:end].strip()
-    return ""
-
-
-def _extract_actual(msg: str) -> str:
-    """从错误消息中提取 actual type"""
-    for marker in ["has type", "actual type"]:
-        if marker in msg:
-            idx = msg.index(marker) + len(marker)
-            rest = msg[idx:].strip()
-            end = len(rest)
-            for stop in ["\n", "but is expected", "expected"]:
-                pos = rest.find(stop)
-                if pos > 0:
-                    end = min(end, pos)
-            return rest[:end].strip()
-    return ""

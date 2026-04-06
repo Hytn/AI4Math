@@ -196,6 +196,10 @@ class ErrorIntelligence:
         # 跨尝试的错误模式积累
         self._error_history: list[dict] = []
         self._known_failures: set[str] = set()
+        # exact?/apply?/rw? 调用计数 (防止每个问题无限搜索)
+        self._search_calls: int = 0
+        self._max_search_calls: int = 15  # 每个问题最多 15 次搜索
+        self._search_timeout: int = 5     # 每次搜索最多 5 秒
 
     def analyze(self, result: TacticFeedback,
                 goals_before: int = 1,
@@ -431,70 +435,67 @@ class ErrorIntelligence:
         让 Lean4 自己搜索可用的引理和 tactic, 而不是靠 BM25 文本匹配。
         exact? 做的是类型驱动的精确匹配, 比任何检索方法都准确。
 
-        支持多种 Lean4/Mathlib 版本的输出格式:
-          - "Try this: exact <term>"  (标准 Mathlib 格式)
-          - "exact <term>"            (无 Try this 前缀)
-          - 多行输出中嵌入的建议
-          - error_message 中的 "Try this:" 提示 (某些版本)
+        安全措施:
+          - 每次搜索独立超时 (默认 5s), 防止 REPL 阻塞
+          - 每个问题最多 max_search_calls 次搜索, 防止资源耗尽
         """
         candidates = []
 
         if not self.pool:
             return candidates
 
+        if self._search_calls >= self._max_search_calls:
+            logger.debug(
+                f"exact?/apply? search skipped: limit reached "
+                f"({self._search_calls}/{self._max_search_calls})")
+            return candidates
+
+        import threading
+
+        # 尝试 exact? — 搜索精确匹配当前 goal type 的引理
         for search_tac in ["exact?", "apply?", "rw?"]:
-            try:
-                result = self.pool.try_tactic(env_id, search_tac)
+            if self._search_calls >= self._max_search_calls:
+                break
+            self._search_calls += 1
 
-                # 收集所有可能包含建议的文本来源
-                suggestion_sources = []
-                if result.remaining_goals:
-                    suggestion_sources.extend(result.remaining_goals[:5])
-                if result.error_message:
-                    # 某些版本把建议放在 error message 中
-                    suggestion_sources.extend(
-                        result.error_message.split("\n"))
+            # 用独立线程 + join(timeout) 实现搜索超时,
+            # 避免 exact? 在复杂 goal 上阻塞整个 REPL session 几十秒。
+            search_result = [None]
+            search_error = [None]
 
-                for line in suggestion_sources:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    tac = self._parse_suggestion(line, search_tac)
-                    if tac:
+            def _do_search():
+                try:
+                    search_result[0] = self.pool.try_tactic(env_id, search_tac)
+                except Exception as e:
+                    search_error[0] = e
+
+            t = threading.Thread(target=_do_search, daemon=True)
+            t.start()
+            t.join(timeout=self._search_timeout)
+
+            if t.is_alive():
+                logger.info(
+                    f"{search_tac} search timed out after "
+                    f"{self._search_timeout}s on env_id={env_id}")
+                # 线程会在后台继续, 但我们不等它了
+                continue
+
+            if search_error[0]:
+                logger.debug(f"{search_tac} search failed: {search_error[0]}")
+                continue
+
+            result = search_result[0]
+            if result and result.success and result.remaining_goals is not None:
+                # exact?/apply? 返回的 "goal" 其实是建议列表
+                for suggestion in result.remaining_goals[:3]:
+                    if suggestion.startswith("Try this:"):
+                        tac = suggestion.replace("Try this:", "").strip()
                         candidates.append(RepairCandidate(
                             tac, 0.85,
                             f"Lean4 {search_tac} found this match",
                             source=search_tac))
-                        if len(candidates) >= 5:
-                            break
-            except Exception as e:
-                logger.debug(f"{search_tac} search failed: {e}")
 
         return candidates
-
-    @staticmethod
-    def _parse_suggestion(line: str, search_tac: str) -> str:
-        """从 exact?/apply?/rw? 的一行输出中提取可用的 tactic
-
-        支持格式:
-          "Try this: exact Nat.add_comm n m"
-          "exact Nat.add_comm n m"
-          "Try this: rw [Nat.add_comm]"
-        """
-        # 格式 1: "Try this: <tactic>"
-        if line.startswith("Try this:"):
-            return line[len("Try this:"):].strip()
-
-        # 格式 2: 直接以 tactic 名开头 (exact, apply, rw)
-        tac_prefix = search_tac.rstrip("?")  # exact? → exact
-        if line.startswith(tac_prefix + " ") or line.startswith(tac_prefix + "\t"):
-            return line.strip()
-
-        # 格式 3: rw? 可能返回 "rw [lemma_name]"
-        if search_tac == "rw?" and line.startswith("rw "):
-            return line.strip()
-
-        return ""
 
     def _record_failure(self, result: TacticFeedback):
         """记录失败模式, 用于跨尝试知识积累"""
@@ -513,3 +514,4 @@ class ErrorIntelligence:
         """重置 (新问题开始时调用)"""
         self._error_history.clear()
         self._known_failures.clear()
+        self._search_calls = 0

@@ -59,3 +59,53 @@ class ConfidenceEstimator:
                        threshold: float = None) -> bool:
         t = threshold if threshold is not None else self.base_threshold
         return self.estimate(memory) < t
+
+    @staticmethod
+    def refine_confidence(result: 'AgentResult',
+                          feedback: 'AgentFeedback' = None,
+                          l0_passed: bool = True,
+                          l1_passed: bool = False,
+                          l2_passed: bool = False) -> float:
+        """用验证阶段的实际反馈更新置信度
+
+        统一的置信度精化逻辑 — 在验证完成后调用。
+        之前分散在 SubAgent 中, 现在统一到 ConfidenceEstimator。
+
+        置信度分级:
+          0.0-0.2: 生成了代码但可能有语法问题
+          0.2-0.4: L0 通过, 语法正确但未验证
+          0.4-0.7: L1 有部分进展 (关闭了一些 goal)
+          0.7-0.9: L1 通过, 所有 goal 关闭
+          0.9-1.0: L2 通过, 完整编译认证
+        """
+        base = result.confidence
+
+        if not l0_passed:
+            return min(base, 0.15)
+
+        if l2_passed:
+            return 0.95
+
+        if l1_passed:
+            return max(base, 0.80)
+
+        if feedback:
+            if feedback.is_proof_complete:
+                return max(base, 0.85)
+
+            if feedback.progress_score > 0:
+                progress_bonus = feedback.progress_score * 0.3
+                base = max(base, 0.3 + progress_bonus)
+
+            if feedback.repair_candidates:
+                high_conf = [r for r in feedback.repair_candidates
+                             if r.confidence > 0.7]
+                if high_conf:
+                    base = max(base, 0.35)
+
+            if feedback.error_category == "type_mismatch":
+                base *= 0.8
+            elif feedback.error_category == "unknown_identifier":
+                base *= 0.85
+
+        return min(1.0, max(0.0, base))

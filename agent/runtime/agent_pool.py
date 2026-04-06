@@ -67,8 +67,19 @@ class AgentPool:
             return agent.execute(task)
 
         if workers <= 1:
-            for st in specs_and_tasks:
-                results.append(_run(st))
+            for idx, st in enumerate(specs_and_tasks):
+                try:
+                    results.append(_run(st))
+                except Exception as e:
+                    logger.error(f"SubAgent execution error: {e}")
+                    spec, _ = st
+                    results.append(AgentResult(
+                        agent_name=spec.name,
+                        role=spec.role,
+                        content="",
+                        error=f"Execution error: {e}",
+                        confidence=0.0,
+                    ))
         else:
             # 使用 index 映射确保异常时结果列表长度与输入一致
             indexed_results = [None] * len(specs_and_tasks)

@@ -19,16 +19,9 @@ from agent.runtime.agent_pool import AgentPool
 from agent.runtime.sub_agent import AgentResult
 from agent.hooks.hook_manager import HookManager
 from agent.hooks.hook_types import HookEvent, HookContext, HookAction
-from agent.hooks.builtin_hooks import (
-    DomainClassifierHook, RepetitionDetectorHook,
-    NatSubSafetyHook, ReflectionCloserHook,
-)
 from agent.plugins.loader import PluginLoader
-from agent.strategy.meta_controller import MetaController
 from agent.strategy.strategy_switcher import StrategySwitcher
-from agent.strategy.reflection import Reflector
 from agent.strategy.budget_allocator import Budget
-from agent.strategy.confidence_estimator import ConfidenceEstimator
 from agent.memory.working_memory import WorkingMemory
 from agent.context.context_window import ContextWindow
 
@@ -37,100 +30,45 @@ logger = logging.getLogger(__name__)
 
 class Orchestrator:
     def __init__(self, lean_env, llm_provider, retriever=None,
-                 config=None, on_attempt=None):
+                 config=None, on_attempt=None,
+                 components: 'EngineComponents' = None):
         self.lean = lean_env
         self.llm = llm_provider
+        self.retriever = retriever
         self.config = config or {}
         self.on_attempt = on_attempt
 
-        # ── 自动创建 retriever (如果未提供) ──
-        if retriever is not None:
-            self.retriever = retriever
+        # P0-4: 依赖注入 — 接收预构建的组件, 或通过 SystemAssembler 构建
+        if components is not None:
+            self._components = components
         else:
-            try:
-                from knowledge.retriever import KnowledgeRetriever
-                self.retriever = KnowledgeRetriever(
-                    self.config.get("premise", {}))
-                logger.info("Orchestrator: auto-created KnowledgeRetriever "
-                            "(BM25 mode with built-in Mathlib premises)")
-            except Exception as e:
-                logger.warning(f"Orchestrator: failed to create retriever: {e}")
-                self.retriever = None
+            from prover.assembly import SystemAssembler
+            assembler = SystemAssembler(self.config)
+            self._components = assembler.build(
+                llm_provider=llm_provider, retriever=retriever)
 
-        # ── 原有模块 ──
-        self.meta = MetaController(self.config)
-        self.reflector = Reflector(llm_provider)
-        self.confidence = ConfidenceEstimator()
-        self.budget = Budget(
-            max_samples=self.config.get("max_samples", 128),
-            max_wall_seconds=self.config.get("max_wall_seconds", 3600),
-        )
+        # 解包组件引用 (向后兼容)
+        self.meta = self._components.meta_controller
+        self.reflector = self._components.reflector
+        self.confidence = self._components.confidence
+        self.budget = self._components.budget
+        self.pool = self._components.agent_pool
+        self.hooks = self._components.hooks
+        self.plugins = self._components.plugins
+        self.broadcast = self._components.broadcast
+        self.lean_pool = self._components.lean_pool
+        self.prefilter = self._components.prefilter
+        self.error_intel = self._components.error_intel
+        self.scheduler = self._components.scheduler
+        self.hetero_engine = self._components.hetero_engine
 
-        # ── 新增: 子智能体运行时 ──
-        self.pool = AgentPool(
-            llm=llm_provider,
-            max_workers=self.config.get("max_workers", 4),
-        )
-
-        # ── 新增: 钩子系统 ──
-        self.hooks = HookManager()
-        self._register_builtin_hooks()
-
-        # ── 新增: 插件系统 ──
-        plugin_dirs = self.config.get("plugin_dirs", ["plugins/strategies"])
-        self.plugins = PluginLoader(plugin_dirs)
-        self.plugins.discover()
+        # 注册插件钩子
         self._register_plugin_hooks()
 
-        # ── APE v2: 广播总线 ──
-        from engine.broadcast import BroadcastBus
-        self.broadcast = BroadcastBus()
-
-        # ── APE v2: REPL 连接池 + 验证调度器 ──
-        from engine.lean_pool import LeanPool
-        from engine.prefilter import PreFilter
-        from engine.error_intelligence import ErrorIntelligence
-        from engine.verification_scheduler import VerificationScheduler
-
-        pool_size = self.config.get("lean_pool_size", 4)
-        project_dir = self.config.get("lean_project_dir", ".")
-        self.lean_pool = LeanPool(
-            pool_size=pool_size, project_dir=project_dir)
-        self.lean_pool.start()
-
-        self.prefilter = PreFilter()
-        self.error_intel = ErrorIntelligence(
-            lean_pool=self.lean_pool, premise_index=self.retriever)
-
-        self.scheduler = VerificationScheduler(
-            prefilter=self.prefilter,
-            lean_pool=self.lean_pool,
-            error_intel=self.error_intel,
-            broadcast=self.broadcast,
-            project_dir=project_dir,
-        )
-
-        # ── 新增: 异构引擎 (集成广播 + 调度器) ──
-        pipeline_cfg = self.config.get("pipeline", self.config)
-        self.hetero_engine = HeterogeneousEngine(
-            pool=self.pool,
-            plugin_loader=self.plugins,
-            hook_manager=self.hooks,
-            retriever=self.retriever,
-            broadcast=self.broadcast,
-            verification_scheduler=self.scheduler,
-            config=pipeline_cfg,
-        )
-
-    def _register_builtin_hooks(self):
-        self.hooks.register(HookEvent.ON_PROBLEM_START,
-                            DomainClassifierHook(), priority=10)
-        self.hooks.register(HookEvent.ON_ROUND_END,
-                            RepetitionDetectorHook(threshold=4), priority=20)
-        self.hooks.register(HookEvent.PRE_VERIFICATION,
-                            NatSubSafetyHook(), priority=30)
-        self.hooks.register(HookEvent.ON_STRATEGY_SWITCH,
-                            ReflectionCloserHook(), priority=40)
+        # v3: ProofPipeline (Orchestrator.prove 的重构版本)
+        from prover.pipeline.proof_pipeline import ProofPipeline
+        self._pipeline = ProofPipeline(
+            self._components, self.config, self.on_attempt)
 
     def _register_plugin_hooks(self):
         for name in self.plugins.list_plugins():
@@ -139,7 +77,35 @@ class Orchestrator:
                 self.hooks.register_from_plugin(plugin.hooks)
 
     def prove(self, problem: BenchmarkProblem) -> ProofTrace:
-        """主证明入口 — 集成钩子 + 插件 + 异构并行"""
+        """主证明入口
+
+        默认使用 ProofPipeline (推荐路径)。
+        设置 config['use_legacy_prove'] = True 可回退到旧的内联逻辑。
+        """
+        if self.config.get("use_legacy_prove", False):
+            return self._prove_legacy(problem)
+        return self._pipeline.run(problem)
+
+    def prove_pipeline(self, problem: BenchmarkProblem) -> ProofTrace:
+        """使用 ProofPipeline 的证明入口
+
+        等价于 prove() (ProofPipeline 已是默认路径)。
+        """
+        return self._pipeline.run(problem)
+
+    def _prove_legacy(self, problem: BenchmarkProblem) -> ProofTrace:
+        """原有的内联证明逻辑
+
+        .. deprecated::
+            使用 ProofPipeline (prove() 的默认路径) 代替。
+            本方法将在未来版本中移除。
+            设置 config['use_legacy_prove'] = True 可临时启用。
+        """
+        import warnings
+        warnings.warn(
+            "_prove_legacy is deprecated; prove() now uses ProofPipeline by default. "
+            "Set config['use_legacy_prove']=True only as temporary fallback.",
+            DeprecationWarning, stacklevel=2)
         start_time = time.time()
 
         memory = WorkingMemory(
@@ -354,8 +320,8 @@ class Orchestrator:
         if pre.action == HookAction.SKIP:
             logger.info("PRE_VERIFICATION hook: SKIP (proof rejected by pre-filter)")
             if agent_result:
-                from agent.runtime.sub_agent import SubAgent
-                agent_result.confidence = SubAgent.refine_confidence(
+                from agent.strategy.confidence_estimator import ConfidenceEstimator
+                agent_result.confidence = ConfidenceEstimator.refine_confidence(
                     agent_result, l0_passed=False)
             return False
         if pre.action == HookAction.MODIFY and pre.inject_context:
@@ -378,8 +344,8 @@ class Orchestrator:
 
                 # ── 用验证反馈精化置信度 ──
                 if agent_result:
-                    from agent.runtime.sub_agent import SubAgent
-                    agent_result.confidence = SubAgent.refine_confidence(
+                    from agent.strategy.confidence_estimator import ConfidenceEstimator
+                    agent_result.confidence = ConfidenceEstimator.refine_confidence(
                         agent_result,
                         feedback=result.feedback,
                         l0_passed=result.l0_passed,
@@ -467,11 +433,9 @@ class Orchestrator:
     # ── Context manager + 资源清理 ──
 
     def close(self):
-        """释放所有资源 (REPL 池、广播总线等)"""
-        if hasattr(self, 'lean_pool') and self.lean_pool:
-            self.lean_pool.shutdown()
-        if hasattr(self, 'broadcast') and self.broadcast:
-            self.broadcast.clear()
+        """释放所有资源 (P0-4: 通过 EngineComponents 统一管理)"""
+        if hasattr(self, '_components') and self._components:
+            self._components.close()
         logger.info("Orchestrator: shutdown complete")
 
     def __enter__(self):

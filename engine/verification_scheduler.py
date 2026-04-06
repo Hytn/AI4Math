@@ -22,6 +22,7 @@
 """
 from __future__ import annotations
 import shutil
+import os
 import subprocess
 import time
 import logging
@@ -108,6 +109,10 @@ class VerificationScheduler:
         self.error_intel = error_intel or ErrorIntelligence(lean_pool)
         self.broadcast = broadcast
         self.project_dir = project_dir
+
+        # 指标收集
+        from engine.observability import metrics as _metrics
+        self._metrics = _metrics
 
         # 统计
         self._stats = {
@@ -415,66 +420,70 @@ class VerificationScheduler:
                          timeout: int = 120) -> FullVerifyResult:
         """L2 最终认证: 在独立 subprocess 中从零编译完整 Lean4 文件。
 
-        与 L1 的区别:
-          - L1 在预热的 REPL 进程中增量执行 (快但可能有状态残留)
-          - L2 启动全新 lean 进程, 从 import 开始编译 (慢但 100% 可信)
-
-        这是唯一的最终裁决路径: L2 通过 = 证明有效, 可计入 pass@k。
-
-        实现方式: 写入临时 .lean 文件后用 `lean <file>` 编译。
-        不使用 `lean --run` (其语义是编译并执行 main 函数, 对纯定理
-        证明会报 'main function not found')。
+        P1-6 修复:
+          - 写入临时 .lean 文件 (而非 stdin pipe), 避免 --run 误用
+          - 优先使用 `lake env lean` (正确的编译命令)
+          - 更精确的错误判定: 使用正则匹配避免误判
         """
-        lean_bin = shutil.which("lean")
-        if not lean_bin:
-            logger.warning("L2: lean binary not found, cannot perform full compile")
-            return FullVerifyResult(
-                success=False,
-                stderr="L2 full compile unavailable: lean binary not found. "
-                       "Install elan + lean4 to enable L2 certification.",
-            )
+        import tempfile
+        import re
+        from engine._core import assemble_code as _assemble_code
 
-        # 组装完整源文件
+        # 使用统一的 assemble_code (与 LeanSession 保持一致)
         full_code = _assemble_code(theorem, proof, preamble)
 
-        import tempfile
+        # 使用 TemporaryDirectory 确保完整清理 (包括目录本身)
         try:
-            # 写入临时文件 — `lean <file>` 仅做类型检查, 不要求 main
-            with tempfile.NamedTemporaryFile(
-                    mode='w', suffix='.lean', dir=self.project_dir,
-                    delete=False) as f:
-                f.write(full_code)
-                tmp_path = f.name
+            with tempfile.TemporaryDirectory(
+                    prefix="ai4math_l2_",
+                    dir=self.project_dir) as tmp_dir:
+                tmp_path = os.path.join(tmp_dir, "verify.lean")
+                with open(tmp_path, 'w') as f:
+                    f.write(full_code)
 
-            try:
+                # 选择编译命令 (优先 lake env lean)
+                lakefile = os.path.join(self.project_dir, "lakefile.lean")
+                lake_bin = shutil.which("lake")
+                lean_bin = shutil.which("lean")
+
+                if lake_bin and os.path.isfile(lakefile):
+                    cmd = [lake_bin, "env", "lean", tmp_path]
+                elif lean_bin:
+                    cmd = [lean_bin, tmp_path]
+                else:
+                    return FullVerifyResult(
+                        success=False,
+                        stderr="L2 full compile unavailable: neither lake nor lean found. "
+                               "Install elan + lean4 to enable L2 certification.",
+                    )
+
                 result = subprocess.run(
-                    [lean_bin, tmp_path],
+                    cmd,
                     capture_output=True,
                     text=True,
                     timeout=timeout,
                     cwd=self.project_dir,
                 )
-            finally:
-                import os
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
+                stderr = result.stderr or ""
+                stdout = result.stdout or ""
+                combined = stderr + stdout
 
-            stderr = result.stderr or ""
-            stdout = result.stdout or ""
+                # P1-6: 精确判定 — 使用 Lean4 错误输出格式匹配
+                _ERROR_RE = re.compile(
+                    r'(?:^|\n)\S+:\d+:\d+:\s*error\b|'
+                    r"\bdeclaration uses 'sorry'\b|"
+                    r'\bunsolved goals\b',
+                    re.IGNORECASE
+                )
+                has_error = bool(_ERROR_RE.search(combined))
+                has_sorry = "sorry" in combined.lower()
+                success = result.returncode == 0 and not has_error
 
-            # 判定: returncode==0 且 stderr 中无 error/sorry
-            has_error = ("error" in stderr.lower()
-                         or "sorry" in stderr.lower()
-                         or "unsolved goals" in stderr.lower())
-            success = result.returncode == 0 and not has_error
-
-            return FullVerifyResult(
-                success=success,
-                stderr=stderr,
-                has_sorry="sorry" in stderr.lower(),
-            )
+                return FullVerifyResult(
+                    success=success,
+                    stderr=stderr,
+                    has_sorry=has_sorry,
+                )
         except subprocess.TimeoutExpired:
             logger.warning(f"L2: lean compile timed out after {timeout}s")
             return FullVerifyResult(
@@ -513,9 +522,17 @@ class VerificationScheduler:
     def stats(self) -> dict:
         s = self._stats
         total = max(1, s["total"])
-        return {
+        result = {
             **s,
             "l0_filter_rate": round(s["l0_rejected"] / total, 3),
             "l1_pass_rate": round(s["l1_passed"] / total, 3),
             "pool_stats": self.pool.stats() if self.pool else {},
         }
+        # 附加 observability metrics (如果有)
+        try:
+            metrics_snapshot = self._metrics.snapshot()
+            if metrics_snapshot:
+                result["metrics"] = metrics_snapshot
+        except Exception:
+            pass
+        return result

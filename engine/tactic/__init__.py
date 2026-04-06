@@ -1,3 +1,5 @@
+# DEPRECATED: Legacy APE v1 module. Not called by any active code path.
+# See engine/LEGACY.md for details. Do NOT add new dependencies.
 """Pure tactics: ProofState -> TacticResult. No mutation, no side effects."""
 from engine.tactic.engine import (
     TacticResult, TacticError, execute_tactic,

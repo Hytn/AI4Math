@@ -30,32 +30,9 @@ from prover.models import BenchmarkProblem, ProofAttempt, AttemptStatus
 logger = logging.getLogger(__name__)
 
 
-def _role_from_string(role_str: str) -> AgentRole:
-    """将配置文件中的字符串角色名映射到 AgentRole 枚举"""
-    mapping = {
-        "proof_generator": AgentRole.PROOF_GENERATOR,
-        "proof_planner": AgentRole.PROOF_PLANNER,
-        "critic": AgentRole.CRITIC,
-        "repair_agent": AgentRole.REPAIR_AGENT,
-    }
-    result = mapping.get(role_str.lower())
-    if result is None:
-        logger.warning(f"Unknown role '{role_str}', defaulting to PROOF_GENERATOR")
-        return AgentRole.PROOF_GENERATOR
-    return result
-
-
-@dataclass
-class ProofDirection:
-    """一个证明探索方向的完整规格"""
-    name: str
-    role: AgentRole
-    model: str = "claude-sonnet-4-20250514"
-    temperature: float = 0.7
-    strategic_hint: str = ""
-    selected_premises: list[str] = field(default_factory=list)
-    few_shot_override: str = ""
-    allowed_tools: list[str] = field(default_factory=list)
+# ProofDirection 定义已移至 agent.strategy.direction_planner
+# 此处 re-export 以保持向后兼容
+from agent.strategy.direction_planner import ProofDirection, build_direction_prompt
 
 
 class HeterogeneousEngine:
@@ -76,19 +53,26 @@ class HeterogeneousEngine:
                  hook_manager: HookManager = None, retriever=None,
                  broadcast: 'BroadcastBus' = None,
                  verification_scheduler: 'VerificationScheduler' = None,
-                 config: dict = None):
+                 direction_planner: 'DirectionPlanner' = None):
         self.pool = pool
         self.plugins = plugin_loader or PluginLoader()
         self.hooks = hook_manager or HookManager()
         self.retriever = retriever
         self.fuser = ResultFuser()
-        self.config = config or {}
 
         # ── APE v2 集成 ──
         from engine.broadcast import BroadcastBus
         from engine.verification_scheduler import VerificationScheduler
         self.broadcast = broadcast or BroadcastBus()
         self.scheduler = verification_scheduler
+
+        # ── 方向规划器 (v3: 独立可替换) ──
+        if direction_planner:
+            self.planner = direction_planner
+        else:
+            from agent.strategy.direction_planner import DirectionPlanner
+            self.planner = DirectionPlanner(
+                retriever=retriever, plugin_loader=plugin_loader)
 
     def run_round(self, problem: BenchmarkProblem,
                   classification: dict = None,
@@ -113,131 +97,148 @@ class HeterogeneousEngine:
         classification = classification or {}
         attempt_history = attempt_history or []
 
-        # 1. 规划探索方向
-        directions = self._plan_directions(
+        # 1. 规划探索方向 (委托给 DirectionPlanner)
+        directions = self.planner.plan(
             problem, classification, attempt_history)
 
         # 2. 为每个方向注册广播订阅
+        #    P1-8: 新订阅者注入历史消息, 确保跨轮次知识传递
         subscriptions = {}
         for d in directions:
-            subscriptions[d.name] = self.broadcast.subscribe(d.name)
+            sub = self.broadcast.subscribe(d.name)
+            subscriptions[d.name] = sub
+            # 将之前轮次的历史消息补充到新订阅的队列中
+            recent = self.broadcast.get_recent(n=15)
+            for msg in recent:
+                sub.push(msg)
 
         # 3. 构建 (spec, task) 对 — 注入广播消息
         specs_and_tasks = []
-        for d in directions:
-            spec = AgentSpec(
-                name=d.name,
-                role=d.role,
-                model=d.model,
-                temperature=d.temperature,
-                few_shot_override=d.few_shot_override,
-                tools=d.allowed_tools,
-            )
+        try:
+            for d in directions:
+                spec = AgentSpec(
+                    name=d.name,
+                    role=d.role,
+                    model=d.model,
+                    temperature=d.temperature,
+                    few_shot_override=d.few_shot_override,
+                    tools=d.allowed_tools,
+                )
 
-            context_items = [
-                ContextItem("theorem", problem.theorem_statement, 1.0,
-                            "theorem_statement"),
-            ]
-            if d.strategic_hint:
-                context_items.append(
-                    ContextItem("strategy", d.strategic_hint, 0.9,
-                                "tactic_hint"))
-            if d.selected_premises:
-                premises_text = "\n".join(
-                    f"- {p}" for p in d.selected_premises[:15])
-                context_items.append(
-                    ContextItem("premises", premises_text, 0.7, "premise"))
-
-            # 注入 hook 产生的上下文 (如 ℕ 减法警告)
-            domain_hints = classification.get("domain_hints", {})
-            for hk, hv in domain_hints.items():
-                context_items.append(
-                    ContextItem(hk, str(hv), 0.85, "premise"))
-
-            # ── v2: 注入来自广播总线的跨方向知识 ──
-            broadcast_context = self.broadcast.render_for_prompt(
-                d.name, max_messages=8, max_chars=1500)
-            if broadcast_context:
-                context_items.append(
-                    ContextItem("teammate_discoveries", broadcast_context,
-                                0.95, "premise"))
-
-            # ── v2: 注入错误智能层的积累知识 ──
-            if self.scheduler and self.scheduler.error_intel:
-                dead_ends = self.scheduler.error_intel.get_accumulated_knowledge(5)
-                if dead_ends:
+                context_items = [
+                    ContextItem("theorem", problem.theorem_statement, 1.0,
+                                "theorem_statement"),
+                ]
+                if d.strategic_hint:
                     context_items.append(
-                        ContextItem("known_dead_ends", dead_ends,
-                                    0.9, "premise"))
+                        ContextItem("strategy", d.strategic_hint, 0.9,
+                                    "tactic_hint"))
+                if d.selected_premises:
+                    premises_text = "\n".join(
+                        f"- {p}" for p in d.selected_premises[:15])
+                    context_items.append(
+                        ContextItem("premises", premises_text, 0.7, "premise"))
 
-            task = AgentTask(
-                description=self._build_direction_prompt(d, problem),
-                injected_context=context_items,
-                theorem_statement=problem.theorem_statement,
-                metadata={"direction": d.name},
-            )
-            specs_and_tasks.append((spec, task))
+                # 注入 hook 产生的上下文 (如 ℕ 减法警告)
+                domain_hints = classification.get("domain_hints", {})
+                for hk, hv in domain_hints.items():
+                    context_items.append(
+                        ContextItem(hk, str(hv), 0.85, "premise"))
 
-        # 4. 并行执行
-        results = self.pool.run_parallel(specs_and_tasks, budget)
+                # ── v2: 注入来自广播总线的跨方向知识 ──
+                broadcast_context = self.broadcast.render_for_prompt(
+                    d.name, max_messages=8, max_chars=1500)
+                if broadcast_context:
+                    context_items.append(
+                        ContextItem("teammate_discoveries", broadcast_context,
+                                    0.95, "premise"))
 
-        # 4.5 ── v2: 验证每个结果并更新置信度 ──
-        # 在广播和排序之前, 将每个证明候选通过 VerificationScheduler
-        # 进行 L0/L1 验证, 并用实际反馈更新 confidence。
-        # 这确保 ResultFuser 的排序基于验证结果, 而不仅是代码结构特征。
-        #
-        # 重要: 仅当真实 Lean4 REPL 可用时才执行此步骤。
-        # 在 fallback 模式下, 验证始终返回 success=False, 会错误地
-        # 降低所有候选的置信度。
-        pool_stats = self.scheduler.pool.stats() if (
-            self.scheduler and self.scheduler.pool) else {}
-        has_real_repl = self.scheduler and not pool_stats.get("all_fallback", True)
+                # ── v2: 注入错误智能层的积累知识 ──
+                if self.scheduler and self.scheduler.error_intel:
+                    dead_ends = self.scheduler.error_intel.get_accumulated_knowledge(5)
+                    if dead_ends:
+                        context_items.append(
+                            ContextItem("known_dead_ends", dead_ends,
+                                        0.9, "premise"))
 
-        if has_real_repl:
-            for i, (result, direction) in enumerate(zip(results, directions)):
-                if result.proof_code and result.proof_code.strip():
-                    try:
-                        vr = self.scheduler.verify_complete(
-                            theorem=problem.theorem_statement,
-                            proof=result.proof_code,
-                            direction=direction.name,
-                        )
-                        # 用验证结果更新置信度
-                        from agent.runtime.sub_agent import SubAgent
-                        result.confidence = SubAgent.refine_confidence(
-                            result,
-                            feedback=vr.feedback,
-                            l0_passed=vr.l0_passed,
-                            l1_passed=(vr.level_reached in ("L1", "L2") and vr.success),
-                            l2_passed=vr.l2_verified,
-                        )
-                        # 将验证反馈注入 metadata 供下游使用
-                        result.metadata["verification"] = {
-                            "success": vr.success,
-                            "level": vr.level_reached,
-                            "feedback_text": vr.feedback.to_prompt(max_chars=500),
-                        }
-                        if vr.success:
-                            result.success = True
-                    except Exception as e:
-                        logger.warning(
-                            f"Verification failed for {direction.name}: {e}")
+                task = AgentTask(
+                    description=self._build_direction_prompt(d, problem),
+                    injected_context=context_items,
+                    theorem_statement=problem.theorem_statement,
+                    metadata={"direction": d.name},
+                )
+                specs_and_tasks.append((spec, task))
 
-        # 5. ── v2: 分析结果并广播发现 ──
-        self._broadcast_results(results, directions)
+            # 4. 并行执行
+            results = self.pool.run_parallel(specs_and_tasks, budget)
 
-        # 6. 按 confidence 排序
-        results.sort(key=lambda r: -r.confidence)
+            # 4.5 ── v2: 验证每个结果并更新置信度 ──
+            pool_stats = self.scheduler.pool.stats() if (
+                self.scheduler and self.scheduler.pool) else {}
+            has_real_repl = self.scheduler and not pool_stats.get("all_fallback", True)
 
-        # 7. 尝试跨方向融合 — 如果最佳结果接近成功但缺引理
-        if results and not any(r.confidence > 0.9 for r in results):
-            fused = self._try_cross_fusion(results, problem, budget)
-            if fused:
-                results.insert(0, fused)
+            if has_real_repl:
+                for i, (result, direction) in enumerate(zip(results, directions)):
+                    if result.proof_code and result.proof_code.strip():
+                        try:
+                            vr = self.scheduler.verify_complete(
+                                theorem=problem.theorem_statement,
+                                proof=result.proof_code,
+                                direction=direction.name,
+                            )
+                            from agent.strategy.confidence_estimator import ConfidenceEstimator
+                            result.confidence = ConfidenceEstimator.refine_confidence(
+                                result,
+                                feedback=vr.feedback,
+                                l0_passed=vr.l0_passed,
+                                l1_passed=(vr.level_reached in ("L1", "L2") and vr.success),
+                                l2_passed=vr.l2_verified,
+                            )
+                            result.metadata["verification"] = {
+                                "success": vr.success,
+                                "level": vr.level_reached,
+                                "feedback_text": vr.feedback.to_prompt(max_chars=500),
+                                "env_id": vr.l1_env_id,
+                                "goals_remaining": vr.l1_goals_remaining,
+                            }
+                            if vr.success:
+                                result.success = True
+                        except Exception as e:
+                            logger.warning(
+                                f"Verification failed for {direction.name}: {e}")
+                            result.metadata["verification"] = {
+                                "success": False,
+                                "level": "error",
+                                "error": str(e),
+                            }
+            else:
+                for result in results:
+                    result.metadata["verification"] = {
+                        "success": False,
+                        "level": "none",
+                        "reason": "no_real_repl",
+                    }
+                    result.confidence = min(result.confidence, 0.4)
 
-        # 8. 清理订阅
-        for name in subscriptions:
-            self.broadcast.unsubscribe(name)
+            # 5. ── v2: 分析结果并广播发现 ──
+            self._broadcast_results(results, directions)
+
+            # 6. 按 confidence 排序
+            results.sort(key=lambda r: -r.confidence)
+
+            # 7. 尝试跨方向融合
+            if results and not any(r.confidence > 0.9 for r in results):
+                fused = self._try_cross_fusion(results, problem, budget)
+                if fused:
+                    results.insert(0, fused)
+
+        finally:
+            # 8. 清理订阅 (即使上面抛出异常也保证执行)
+            for name in subscriptions:
+                try:
+                    self.broadcast.unsubscribe(name)
+                except Exception:
+                    pass
 
         return results
 
@@ -258,12 +259,25 @@ class HeterogeneousEngine:
 
             name = direction.name
 
-            # 高置信度证明 → 广播部分证明
+            # 高置信度证明 → 广播部分证明 (含 env_id 供其他方向 fork)
             if result.proof_code and result.confidence > 0.5:
+                # 从验证结果中提取 env_id 和剩余 goals
+                vr = result.metadata.get("verification", {})
+                env_id = -1
+                remaining_goals = []
+                if vr.get("success"):
+                    # L1 验证成功时, feedback_text 中可能包含 env_id
+                    # 但更可靠的方式是从 VerificationResult 中获取
+                    pass
+                # 尝试从 metadata 中获取 L1 返回的 env_id
+                if isinstance(vr, dict):
+                    env_id = vr.get("env_id", -1)
+
                 self.broadcast.publish(BroadcastMessage.partial_proof(
                     source=name,
                     proof_so_far=result.proof_code[:800],
-                    remaining_goals=[],
+                    remaining_goals=remaining_goals,
+                    env_id=env_id,
                     goals_closed=1,
                 ))
 
@@ -294,33 +308,28 @@ class HeterogeneousEngine:
             recent_lemmas = self.broadcast.get_recent(
                 n=10, msg_type=MessageType.LEMMA_PROVEN)
             for msg in recent_lemmas:
-                lemma_code = msg.structured.get("lemma_proof", "")
+                lemma_name = msg.structured.get("lemma_name", "")
                 lemma_stmt = msg.structured.get("lemma_statement", "")
-                if lemma_code and lemma_stmt:
-                    full_lemma = f"{lemma_stmt} {lemma_code}"
-                    new_envs = self.scheduler.pool.share_lemma(full_lemma)
+                lemma_proof = msg.structured.get("lemma_proof", "")
+                if lemma_name and lemma_stmt and lemma_proof:
+                    new_envs = self.scheduler.pool.share_lemma(
+                        "", name=lemma_name,
+                        statement=lemma_stmt, proof=lemma_proof)
                     if new_envs:
                         logger.info(
-                            f"share_lemma: injected '{msg.structured.get('lemma_name', '?')}' "
+                            f"share_lemma: injected '{lemma_name}' "
+                            f"into {len(new_envs)} REPL sessions"
+                        )
+                elif lemma_stmt and lemma_proof:
+                    # Fallback: no name, send as raw code
+                    full_code = f"{lemma_stmt} {lemma_proof}".strip()
+                    new_envs = self.scheduler.pool.share_lemma(full_code)
+                    if new_envs:
+                        logger.info(
+                            f"share_lemma: injected unnamed lemma "
                             f"into {len(new_envs)} REPL sessions"
                         )
 
-        # ── 集成 fork_env(): 将部分证明的 env_id 广播给其他方向 ──
-        # fork_env() 在 lean4-repl 中是零成本的 (直接复用 env_id),
-        # 其他方向可以从这个 env_id 继续, 而不必从头开始。
-        if self.scheduler and self.scheduler.pool:
-            from engine.broadcast import MessageType
-            partial_proofs = self.broadcast.get_recent(
-                n=5, msg_type=MessageType.PARTIAL_PROOF)
-            for msg in partial_proofs:
-                env_id = msg.structured.get("env_id", -1)
-                if env_id >= 0:
-                    # fork_env 在 lean4-repl 中是零成本的, 直接返回原 env_id
-                    forked = self.scheduler.pool.fork_env(env_id)
-                    logger.debug(
-                        f"fork_env: env_id={env_id} forked as {forked} "
-                        f"for continuation by other directions"
-                    )
 
     def _extract_lemma_mentions(self, content: str) -> list[str]:
         """从 LLM 输出中提取提到的 Mathlib 引理名"""
@@ -335,153 +344,10 @@ class HeterogeneousEngine:
                          attempt_history) -> list[ProofDirection]:
         """根据问题特征规划 2-4 个探索方向
 
-        优先从 self.config["directions"] 读取方向配置;
-        如果无配置则使用内置默认方向。
-        无论哪种来源, 都会根据问题特征动态增强策略提示。
+        .. deprecated:: v4
+            直接使用 self.planner.plan() 代替。
         """
-        config_directions = self.config.get("directions")
-        if config_directions:
-            directions = self._directions_from_config(
-                config_directions, problem, classification)
-        else:
-            directions = self._default_directions(
-                problem, classification)
-
-        # 动态增强: 根据问题特征为 "structured" 方向补充提示
-        self._enrich_structured_direction(
-            directions, problem, classification)
-
-        # 方向 D: 反思修复 (仅当有失败历史时)
-        repair_cfg = self.config.get("repair_direction", {})
-        min_failures = repair_cfg.get("min_failures", 2)
-        if len(attempt_history) >= min_failures:
-            recent_errors = []
-            for a in attempt_history[-3:]:
-                errs = a.get("errors", [])
-                for e in errs[:2]:
-                    msg = e.get("message", str(e)) if isinstance(e, dict) else str(e)
-                    recent_errors.append(msg[:100])
-
-            directions.append(ProofDirection(
-                name=repair_cfg.get("name", "repair_rethink"),
-                role=_role_from_string(repair_cfg.get("role", "critic")),
-                model=repair_cfg.get("model", "claude-sonnet-4-20250514"),
-                temperature=repair_cfg.get("temperature", 0.5),
-                strategic_hint=(
-                    f"Previous {len(attempt_history)} attempts all failed. "
-                    f"Recent errors:\n" +
-                    "\n".join(f"  - {e}" for e in recent_errors) +
-                    "\n\nAnalyze WHY these approaches fail at a fundamental level. "
-                    "Then propose a completely different proof strategy."
-                ),
-            ))
-
-        return directions
-
-    def _directions_from_config(self, config_list: list,
-                                 problem, classification) -> list[ProofDirection]:
-        """从 YAML 配置构建方向列表"""
-        directions = []
-        for d_cfg in config_list:
-            directions.append(ProofDirection(
-                name=d_cfg.get("name", f"direction_{len(directions)}"),
-                role=_role_from_string(d_cfg.get("role", "proof_generator")),
-                model=d_cfg.get("model", "claude-sonnet-4-20250514"),
-                temperature=d_cfg.get("temperature", 0.7),
-                strategic_hint=d_cfg.get("strategic_hint", ""),
-            ))
-        return directions
-
-    def _default_directions(self, problem, classification) -> list[ProofDirection]:
-        """内置默认方向 (无配置时使用)"""
-        directions = []
-
-        # 方向 A: 自动化探测 (快速排除简单题)
-        directions.append(ProofDirection(
-            name="automation",
-            role=AgentRole.PROOF_GENERATOR,
-            model="claude-sonnet-4-20250514",
-            temperature=0.2,
-            strategic_hint=(
-                "Try to solve this with simple automation ONLY. "
-                "Attempt these tactics in order: decide, norm_num, simp, "
-                "omega, ring, aesop. If a single tactic doesn't work, "
-                "try 'simp; ring' or 'simp; omega'. "
-                "Do NOT attempt induction or complex proof structures."
-            ),
-        ))
-
-        # 方向 B: 结构化证明 (主力方向)
-        directions.append(ProofDirection(
-            name="structured",
-            role=AgentRole.PROOF_GENERATOR,
-            temperature=0.7,
-            strategic_hint=(
-                "Plan the proof structure carefully. "
-                "Use `have` statements with explicit types for "
-                "intermediate steps."
-            ),
-        ))
-
-        # 方向 C: 替代路径
-        directions.append(ProofDirection(
-            name="alternative",
-            role=AgentRole.PROOF_PLANNER,
-            temperature=0.9,
-            strategic_hint=(
-                "Try a fundamentally DIFFERENT approach from standard methods. "
-                "Consider: casting to ℤ if working with ℕ, "
-                "using `conv` to restructure goals, "
-                "or finding a non-obvious Mathlib lemma that solves it directly."
-            ),
-        ))
-
-        return directions
-
-    def _enrich_structured_direction(self, directions, problem, classification):
-        """根据问题特征动态增强 'structured' 方向的策略提示和前提"""
-        structured = None
-        for d in directions:
-            if d.name == "structured":
-                structured = d
-                break
-        if not structured:
-            return
-
-        techniques = classification.get("techniques", [])
-        has_nat_sub = classification.get("has_nat_sub", False)
-
-        if "induction" in techniques:
-            structured.strategic_hint += (
-                "\n\nThis problem likely requires induction on n. "
-                "Structure: `induction n with | zero => ... | succ n ih => ...`"
-            )
-        if has_nat_sub:
-            structured.strategic_hint += (
-                "\n\nCRITICAL: This involves natural number subtraction. "
-                "In Lean4, ℕ subtraction truncates to 0. "
-                "You MUST prove minuend ≥ subtrahend before subtracting. "
-                "Use `Nat.sub_add_cancel` or `tsub_add_cancel_of_le`."
-            )
-
-        # 检查领域插件
-        matched_plugins = self.plugins.match(
-            problem.theorem_statement, classification)
-        if matched_plugins:
-            plugin = matched_plugins[0]
-            if plugin.strategic_hint:
-                structured.strategic_hint += (
-                    f"\n\nDomain expert hint: {plugin.strategic_hint}")
-
-        premises = self._get_premises(problem.theorem_statement)
-        if matched_plugins and matched_plugins[0].extra_premises:
-            for p in matched_plugins[0].extra_premises[:10]:
-                premises.append(p.get("statement", str(p)))
-        structured.selected_premises = premises[:15]
-
-        if matched_plugins:
-            structured.few_shot_override = (
-                matched_plugins[0].few_shot_examples or "")
+        return self.planner.plan(problem, classification, attempt_history)
 
     def _try_cross_fusion(self, results, problem, budget):
         """尝试将一个方向的发现注入另一个方向
@@ -554,22 +420,10 @@ class HeterogeneousEngine:
             return []
 
     def _build_direction_prompt(self, direction, problem) -> str:
-        """为每个方向构建定制化的 prompt"""
-        parts = [
-            f"Prove the following Lean 4 theorem:\n"
-            f"```lean\n{problem.theorem_statement}\n```",
-        ]
+        """为每个方向构建定制化的 prompt
 
-        if direction.strategic_hint:
-            parts.append(f"\n## Strategy guidance\n{direction.strategic_hint}")
-
-        if problem.natural_language:
-            parts.append(f"\n## Natural language description\n{problem.natural_language}")
-
-        parts.append(
-            "\nGenerate a complete proof. Output ONLY the proof body "
-            "(starting with `:= by`) inside a single ```lean block. "
-            "Do NOT use `sorry`."
-        )
-
-        return "\n".join(parts)
+        .. deprecated:: v4
+            直接使用 agent.strategy.direction_planner.build_direction_prompt()。
+        """
+        from agent.strategy.direction_planner import build_direction_prompt
+        return build_direction_prompt(direction, problem)

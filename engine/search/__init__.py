@@ -49,10 +49,7 @@ class SearchConfig:
     completion_bonus: float = 10.0        # 证明完成的额外奖励
     depth_penalty: float = 0.05           # 每层深度的惩罚
     speed_bonus_weight: float = 0.1       # tactic 执行速度奖励权重
-    speed_bonus_threshold_us: float = 500000.0  # 参考阈值: 500ms (REPL 模式典型上限)
-    # 使用对数衰减: bonus = weight * max(0, 1 - log2(elapsed / threshold + 1))
-    # 这使得 1μs → ~0.1, 50ms → ~0.04, 500ms → 0.0 的梯度在
-    # 本地模式和 REPL 模式下都有区分度
+    speed_bonus_threshold_us: float = 100.0  # 速度奖励的参考阈值 (微秒)
 
 
 @dataclass
@@ -103,15 +100,11 @@ class SearchCoordinator:
         self._virtual_losses: dict[int, float] = {}
 
         # ── REPL 池集成 ──
-        # 当 lean_pool 可用时, try_tactic 通过 Lean4 REPL 执行 tactic,
-        # 获得精确的类型检查结果; 否则回退到本地简化 tactic 引擎。
         self._lean_pool = lean_pool
         # 节点 ID → REPL env_id 映射 (REPL 模式下使用)
         self._node_env_map: dict[int, int] = {}
-        if lean_pool and lean_pool._sessions:
-            # 根节点绑定到 REPL 池的基础 env_id
-            base_env = lean_pool._sessions[0].base_env_id if lean_pool._sessions else 0
-            self._node_env_map[0] = base_env
+        if lean_pool:
+            self._node_env_map[0] = lean_pool.base_env_id
 
     # ── Public API ──
 
@@ -300,7 +293,8 @@ class SearchCoordinator:
         score -= depth * cfg.depth_penalty
 
         if elapsed_us > 0:
-            score += self._speed_bonus(elapsed_us)
+            speed_bonus = min(1.0, cfg.speed_bonus_threshold_us / elapsed_us)
+            score += speed_bonus * cfg.speed_bonus_weight
 
         return score
 
@@ -553,13 +547,30 @@ class SearchCoordinator:
 
         Thread-safe: acquires self._lock to prevent concurrent update loss
         when multiple workers call _backpropagate simultaneously.
-
-        Uses SearchTree.backpropagate() which returns a new immutable tree
-        rather than mutating _nodes in place — preserving PMap semantics.
         """
         with self._lock:
-            self._tree = self._tree.backpropagate(
-                NodeId(node_id), success)
+            current_id = NodeId(node_id)
+            updated_nodes = self._tree._nodes
+            while current_id is not None:
+                node = updated_nodes.get(current_id)
+                if node is None:
+                    break
+
+                new_visits = node.visit_count + 1
+                new_success = node.success_count + (1 if success else 0)
+                new_status = NodeStatus.SOLVED if success else node.status
+
+                from engine.state.search_tree import SearchNode
+                updated = SearchNode(
+                    node.id, node.state, node.parent, node.tactic,
+                    node.children, new_status,
+                    new_visits, new_success, node.depth)
+                updated_nodes = updated_nodes.set(current_id, updated)
+
+                current_id = node.parent
+
+            # Replace the tree's nodes map atomically
+            self._tree._nodes = updated_nodes
 
     # ── Scoring ──
 
@@ -582,33 +593,10 @@ class SearchCoordinator:
         score -= depth * cfg.depth_penalty
 
         if result.elapsed_us > 0:
-            score += self._speed_bonus(result.elapsed_us)
+            speed_bonus = min(1.0, cfg.speed_bonus_threshold_us / result.elapsed_us)
+            score += speed_bonus * cfg.speed_bonus_weight
 
         return score
-
-    @staticmethod
-    def _speed_bonus_fn(elapsed_us: float, threshold_us: float,
-                        weight: float) -> float:
-        """Log-based speed bonus that works across local (~1μs) and REPL (~50ms) scales.
-
-        Returns weight * max(0, 1 - log2(elapsed/threshold + 1)).
-        Examples (threshold=500000μs=500ms):
-          1μs    → ~0.10  (fast local tactic)
-          100μs  → ~0.10  (slow local tactic)
-          50ms   → ~0.04  (fast REPL tactic)
-          200ms  → ~0.02  (medium REPL tactic)
-          500ms  → 0.00   (slow REPL tactic, at threshold)
-        """
-        if threshold_us <= 0 or elapsed_us <= 0:
-            return 0.0
-        ratio = elapsed_us / threshold_us
-        bonus = max(0.0, 1.0 - math.log2(ratio + 1))
-        return bonus * weight
-
-    def _speed_bonus(self, elapsed_us: float) -> float:
-        cfg = self._config
-        return self._speed_bonus_fn(
-            elapsed_us, cfg.speed_bonus_threshold_us, cfg.speed_bonus_weight)
 
     # ── Path extraction ──
 

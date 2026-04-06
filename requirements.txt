@@ -1,13 +1,14 @@
 # ── Core dependencies (always required) ──
 pyrsistent>=0.20.0       # immutable data structures for proof state
+pyyaml>=6.0              # configuration loading
 
 # ── LLM provider (at least one required for real proving) ──
-anthropic>=0.40.0        # Claude API client
+anthropic>=0.40.0        # Claude API client (sync + async)
 
 # ── Development & testing ──
-# pip install -r requirements.txt -r requirements-dev.txt
-# pytest>=8.0
-# tqdm>=4.60
+pytest>=8.0
+pytest-asyncio>=0.23     # async test support
+tqdm>=4.60
 
 # ── Optional: CAS integration ──
 # SageMath must be installed separately (https://www.sagemath.org/)

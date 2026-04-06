@@ -17,6 +17,7 @@ agent:
     default: "adaptive"
     max_light_rounds: 2
     max_medium_rounds: 4
+    reflection_interval: 3
 
 prover:
   pipeline:
@@ -25,43 +26,6 @@ prover:
     max_workers: 4
     temperature: 0.9
     max_samples: 128
-    # 异构并行方向配置
-    # 每个方向定义独立的模型、温度、角色和策略提示
-    # 可通过实验 YAML 覆盖 (如 config/experiments/xxx.yaml)
-    directions:
-      - name: "automation"
-        role: "proof_generator"
-        model: "claude-sonnet-4-20250514"
-        temperature: 0.2
-        strategic_hint: >
-          Try to solve this with simple automation ONLY.
-          Attempt these tactics in order: decide, norm_num, simp,
-          omega, ring, aesop. If a single tactic doesn't work,
-          try 'simp; ring' or 'simp; omega'.
-          Do NOT attempt induction or complex proof structures.
-      - name: "structured"
-        role: "proof_generator"
-        model: "claude-sonnet-4-20250514"
-        temperature: 0.7
-        strategic_hint: >
-          Plan the proof structure carefully.
-          Use `have` statements with explicit types for intermediate steps.
-      - name: "alternative"
-        role: "proof_planner"
-        model: "claude-sonnet-4-20250514"
-        temperature: 0.9
-        strategic_hint: >
-          Try a fundamentally DIFFERENT approach from standard methods.
-          Consider: casting to ℤ if working with ℕ,
-          using `conv` to restructure goals,
-          or finding a non-obvious Mathlib lemma that solves it directly.
-    # 以下方向仅在有失败历史时自动启用
-    repair_direction:
-      name: "repair_rethink"
-      role: "critic"
-      model: "claude-sonnet-4-20250514"
-      temperature: 0.5
-      min_failures: 2
   sketch:
     enabled: true
     max_hypotheses: 3
@@ -103,3 +67,15 @@ output:
 server:
   host: "0.0.0.0"
   port: 8000
+
+engine:
+  lean_pool_size: 4
+  max_wall_seconds: 3600
+  pipeline_queue_size: 16
+  num_verifiers: 4
+  pool_scaler:
+    min_sessions: 1
+    max_sessions: 16
+    scale_up_threshold: 0.8
+    scale_down_threshold: 0.3
+    cooldown_seconds: 10.0
