@@ -383,7 +383,7 @@ class Orchestrator:
                     problem.theorem_statement, proof)
                 return status == AttemptStatus.SUCCESS
         except Exception as e:
-            logger.warning(f"Verification error: {e}")
+            logger.exception(f"Verification error for {problem.problem_id}: {e}")
             return False
 
     def _agent_result_to_attempt(self, r: AgentResult, memory) -> ProofAttempt:

@@ -1,32 +1,36 @@
-# AI4Math Demo — Lean 4 + Mathlib 编译环境
+# AI4Math — Lean 4 + Mathlib + REPL Environment
 #
-# 构建：docker build -t ai4math-lean .
-# 用法：docker run --rm -v ./check.lean:/workspace/lean-project/Check.lean ai4math-lean lake env lean /workspace/lean-project/Check.lean
+# Build:  docker build -t ai4math-lean -f docker/Dockerfile.lean docker/
+# Test:   docker run --rm ai4math-lean echo '{"cmd": "#check Nat", "env": 0}' | .lake/build/bin/repl
 #
-# 重要：
-#   1. 锁定 Lean 版本和 Mathlib commit，确保可复现性
-#   2. 预编译 mathlib oleans cache，避免每次从源码编译
+# Key features:
+#   1. Locked Lean version + Mathlib commit for reproducibility
+#   2. Pre-compiled mathlib oleans cache (avoids 30min build per run)
+#   3. Built lean4-repl binary for interactive tactic-level proving
+#   4. lean_daemon.py for socket-based multi-client access
 
 FROM ubuntu:24.04
 
-# 避免交互式安装
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 基础工具
+# ── Base tools ──
 RUN apt-get update && apt-get install -y \
-    curl git cmake python3 \
+    curl git cmake python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# ── 安装 elan (Lean 版本管理器) ─────────────────────
-RUN curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+# ── Install elan (Lean version manager) ──
+RUN curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+    | sh -s -- -y --default-toolchain none
 ENV PATH="/root/.elan/bin:${PATH}"
 
-# ── 创建 Lean 项目 ─────────────────────────────────
+# ── Create Lean project ──
 WORKDIR /workspace/lean-project
 
-# lakefile — 锁定 mathlib 版本
-# !! 修改 MATHLIB_COMMIT 以锁定到你需要的版本 !!
-RUN cat > lakefile.toml <<'EOF'
+# Lean toolchain — MUST match the mathlib commit below
+RUN echo 'leanprover/lean4:v4.17.0' > lean-toolchain
+
+# lakefile.toml — locked mathlib + lean4-repl
+RUN cat > lakefile.toml <<'LAKEFILE'
 [package]
 name = "AI4MathCheck"
 leanOptions = [["autoImplicit", false]]
@@ -36,26 +40,35 @@ name = "mathlib"
 scope = "leanprover-community"
 type = "git"
 source = "https://github.com/leanprover-community/mathlib4.git"
-# 锁定到稳定的 mathlib commit — 确保评测结果可复现
-# 更新方式: 运行 `lake update` 后将 lake-manifest.json 中的 rev 值复制到此处
-# 此 commit 对应 2025-03 的 mathlib4 稳定版本
+# Locked to 2025-03 stable
 revision = "13042290464e1e615b8cd1e0d5aba0ef16472bd1"
-EOF
 
-# lean-toolchain — 锁定 Lean 版本
-# !! 确保这个版本与上述 mathlib commit 兼容 !!
-# 查看对应 toolchain: https://github.com/leanprover-community/mathlib4/blob/<commit>/lean-toolchain
-RUN cat > lean-toolchain <<'EOF'
-leanprover/lean4:v4.17.0
-EOF
+[[require]]
+name = "repl"
+type = "git"
+source = "https://github.com/leanprover-community/repl.git"
+# Use a version compatible with v4.17.0
+revision = "main"
+LAKEFILE
 
-# ── 拉取依赖并预编译 mathlib ────────────────────────
-# 这一步耗时较长 (30-60 min)，但只在构建镜像时执行一次
+# ── Fetch dependencies and build ──
+# This is the expensive step (~30-60 min), cached by Docker layers
 RUN lake update
 RUN lake exe cache get || true
 RUN lake build
+# Build the REPL binary specifically
+RUN lake build repl
 
-# ── 工作目录 ────────────────────────────────────────
+# Verify REPL binary exists
+RUN test -f .lake/build/bin/repl && echo "REPL binary OK" || \
+    (echo "REPL binary not found!" && exit 1)
+
+# ── Install lean_daemon ──
+COPY lean_daemon.py /workspace/lean_daemon.py
+
+# ── Health check ──
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD echo '{"cmd": "#check Nat", "env": 0}' | timeout 10 /workspace/lean-project/.lake/build/bin/repl || exit 1
+
 WORKDIR /workspace/lean-project
-
-CMD ["bash"]
+CMD ["python3", "/workspace/lean_daemon.py"]

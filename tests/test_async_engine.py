@@ -337,15 +337,15 @@ class TestAsyncEngineFactory:
     @pytest.mark.asyncio
     async def test_factory_build(self):
         from engine.async_factory import AsyncEngineFactory
-        from agent.brain.async_llm_provider import AsyncMockProvider
 
         factory = AsyncEngineFactory({"lean_pool_size": 1})
-        components = await factory.build(async_llm=AsyncMockProvider())
+        components = await factory.build()
 
         assert components.lean_pool is not None
         assert components.scheduler is not None
         assert components.broadcast is not None
-        assert components.agent_pool is not None
+        # agent_pool is no longer built by engine factory (Phase B: layer decoupling)
+        # It should be injected by the prover layer via overrides
 
         await components.close()
 
@@ -371,12 +371,18 @@ class TestAsyncProveRound:
     @pytest.mark.asyncio
     async def test_e2e_prove_round(self):
         """端到端: 异步构建 → 异步证明 → 结果排序"""
-        from engine.async_factory import AsyncEngineFactory, async_prove_round
+        from engine.async_factory import AsyncEngineFactory
+        from prover.pipeline.async_prove import async_prove_round
         from agent.brain.async_llm_provider import AsyncMockProvider
+        from agent.runtime.async_agent_pool import AsyncAgentPool
         from prover.models import BenchmarkProblem
 
+        # Phase B: agent_pool 由 prover 层构建, 通过 overrides 注入
+        mock_llm = AsyncMockProvider()
+        agent_pool = AsyncAgentPool(llm=mock_llm, max_workers=2)
         factory = AsyncEngineFactory({"lean_pool_size": 1})
-        components = await factory.build(async_llm=AsyncMockProvider())
+        components = await factory.build(
+            overrides={"agent_pool": agent_pool})
 
         problem = BenchmarkProblem(
             problem_id="test_1",
@@ -396,16 +402,17 @@ class TestAsyncProveRound:
     @pytest.mark.asyncio
     async def test_sync_entry_point(self):
         """run_async_prove_round 同步入口"""
-        from engine.async_factory import (
-            AsyncEngineFactory, async_prove_round as _apr,
-            AsyncEngineComponents)
+        from engine.async_factory import AsyncEngineFactory, AsyncEngineComponents
+        from prover.pipeline.async_prove import async_prove_round as _apr
         from agent.brain.async_llm_provider import AsyncMockProvider
+        from agent.runtime.async_agent_pool import AsyncAgentPool
         from prover.models import BenchmarkProblem
 
-        # 需要在事件循环外调用, 但 pytest-asyncio 已经有事件循环
-        # 所以这里直接测试 async 版本
+        mock_llm = AsyncMockProvider()
+        agent_pool = AsyncAgentPool(llm=mock_llm, max_workers=2)
         factory = AsyncEngineFactory({"lean_pool_size": 1})
-        components = await factory.build(async_llm=AsyncMockProvider())
+        components = await factory.build(
+            overrides={"agent_pool": agent_pool})
 
         problem = BenchmarkProblem(
             problem_id="t2", name="t2",

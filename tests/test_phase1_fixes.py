@@ -8,6 +8,7 @@
 """
 import sys
 import os
+import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import pytest
@@ -125,35 +126,31 @@ class TestPartialProofEnvId:
 class TestOverflowSessionId:
     """Overflow sessions should get monotonically increasing IDs."""
 
-    def test_sync_pool_monotonic_ids(self):
-        from engine.lean_pool import LeanPool
-        pool = LeanPool(pool_size=2)
-        pool.start()
+    @pytest.mark.asyncio
+    async def test_sync_pool_monotonic_ids(self):
+        from engine.async_lean_pool import AsyncLeanPool
+        pool = AsyncLeanPool(pool_size=2, timeout_seconds=1)
+        await pool.start()
         try:
-            # Initial sessions: 0, 1
             assert pool._next_session_id == 2
 
-            # Acquire all sessions to force overflow
-            s1 = pool._acquire_session()
-            s2 = pool._acquire_session()
-            # Next acquire will create overflow with id=2
-            pool.timeout = 0.01  # fast timeout
-            s3 = pool._acquire_session()
+            s1 = await pool._acquire_session()
+            s2 = await pool._acquire_session()
+            pool.timeout = 0.01
+            s3 = await pool._acquire_session()
             assert s3.session_id == 2
             assert pool._next_session_id == 3
 
-            # Release and acquire another overflow
-            pool._release_session(s3)  # removes overflow session
+            await pool._release_session(s3)
             pool.timeout = 0.01
-            s4 = pool._acquire_session()
-            # Should be 3, NOT 2 (monotonic)
+            s4 = await pool._acquire_session()
             assert s4.session_id == 3
 
-            pool._release_session(s1)
-            pool._release_session(s2)
-            pool._release_session(s4)
+            await pool._release_session(s1)
+            await pool._release_session(s2)
+            await pool._release_session(s4)
         finally:
-            pool.shutdown()
+            await pool.shutdown()
 
 
 # ═══════════════════════════════════════════════════════════════

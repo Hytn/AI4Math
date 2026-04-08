@@ -33,6 +33,7 @@ from engine.prefilter import PreFilter, FilterResult
 from engine.lean_pool import LeanPool, TacticFeedback, FullVerifyResult
 from engine.error_intelligence import ErrorIntelligence, AgentFeedback
 from engine.broadcast import BroadcastBus, BroadcastMessage, MessageType
+from engine.observability import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -238,9 +239,11 @@ class VerificationScheduler:
         l0_start = time.perf_counter_ns()
         l0_result = self.prefilter.check(proof, theorem)
         l0_us = int((time.perf_counter_ns() - l0_start) / 1000)
+        metrics.record_time("verify.l0_prefilter", l0_us / 1000)  # convert to ms
 
         if not l0_result.passed:
             self._stats["l0_rejected"] += 1
+            metrics.increment("verify.l0_rejected")
             total_ms = int((time.time() - t0) * 1000)
             self._broadcast_negative(direction, proof[:50],
                                      l0_result.rule_name, l0_result.reason)
@@ -256,11 +259,13 @@ class VerificationScheduler:
 
         # ── L1: REPL 验证 ──
         if self.pool:
-            l1_result = self.pool.verify_complete(theorem, proof)
+            with metrics.timer("verify.l1_repl"):
+                l1_result = self.pool.verify_complete(theorem, proof)
             l1_ms = l1_result.elapsed_ms
 
             if l1_result.success:
                 self._stats["l1_passed"] += 1
+                metrics.increment("verify.l1_passed")
 
                 if not require_l2:
                     total_ms = int((time.time() - t0) * 1000)
@@ -278,6 +283,7 @@ class VerificationScheduler:
                 # 继续到 L2
             else:
                 self._stats["l1_failed"] += 1
+                metrics.increment("verify.l1_failed")
                 total_ms = int((time.time() - t0) * 1000)
                 feedback = AgentFeedback.from_failure(
                     proof[:50],

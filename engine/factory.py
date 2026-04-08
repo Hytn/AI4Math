@@ -173,7 +173,7 @@ class EngineFactory:
 
         内部委托给 SystemAssembler 完成 agent/prover 层构建。
         """
-        from prover.assembly import SystemAssembler
+        from prover.assembly import SystemAssembler  # noqa: layer-compat
         assembler = SystemAssembler(self.config)
         return assembler.build(
             llm_provider=llm_provider, retriever=retriever,

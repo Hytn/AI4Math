@@ -13,6 +13,7 @@
 """
 import sys
 import os
+import asyncio
 import threading
 import time
 
@@ -148,85 +149,92 @@ class TestLeanCheckerUnifiedBackend:
 # ═══════════════════════════════════════════════════════════════
 
 class TestAcquireSessionConcurrency:
-    """P0-3: Condition-based 会话获取, 消除竞态条件"""
+    """P0-3: Condition-based 会话获取, 消除竞态条件
 
-    def test_acquire_marks_busy(self):
+    Phase A: 测试改为直接验证 AsyncLeanPool (唯一实现)。
+    """
+
+    @pytest.mark.asyncio
+    async def test_acquire_marks_busy(self):
         """获取到的会话必须被标记为 busy"""
-        from engine.lean_pool import LeanPool, LeanSession
-        pool = LeanPool(pool_size=2, project_dir="/tmp")
-        # 手动添加 session (不实际启动 REPL)
+        from engine.async_lean_pool import AsyncLeanPool, AsyncLeanSession
+        from engine.transport import MockTransport
+
+        pool = AsyncLeanPool(pool_size=2, project_dir="/tmp")
+        # 手动添加 session (用 MockTransport, 不启动真实 REPL)
         for i in range(2):
-            s = LeanSession(session_id=i, project_dir="/tmp")
-            s._state.alive = True
-            s._state.fallback_mode = True
+            s = AsyncLeanSession(session_id=i, project_dir="/tmp",
+                                 transport=MockTransport([{"env": 1}]))
+            await s.start()
             pool._sessions.append(s)
         pool._started = True
 
-        s1 = pool._acquire_session()
+        s1 = await pool._acquire_session()
         assert s1.is_busy, "Acquired session must be marked busy"
-        s2 = pool._acquire_session()
+        s2 = await pool._acquire_session()
         assert s2.is_busy
         assert s1.session_id != s2.session_id, "Must acquire different sessions"
 
-        pool._release_session(s1)
-        pool._release_session(s2)
+        await pool._release_session(s1)
+        await pool._release_session(s2)
 
-    def test_release_notifies_waiters(self):
-        """释放会话应通知等待线程"""
-        from engine.lean_pool import LeanPool, LeanSession
-        pool = LeanPool(pool_size=1, project_dir="/tmp")
-        s = LeanSession(session_id=0, project_dir="/tmp")
-        s._state.alive = True
-        s._state.fallback_mode = True
+    @pytest.mark.asyncio
+    async def test_release_notifies_waiters(self):
+        """释放会话应通知等待协程"""
+        from engine.async_lean_pool import AsyncLeanPool, AsyncLeanSession
+        from engine.transport import MockTransport
+
+        pool = AsyncLeanPool(pool_size=1, project_dir="/tmp")
+        s = AsyncLeanSession(session_id=0, project_dir="/tmp",
+                             transport=MockTransport([{"env": 1}]))
+        await s.start()
         pool._sessions.append(s)
         pool._started = True
 
-        # 先获取唯一的会话
-        acquired = pool._acquire_session()
+        acquired = await pool._acquire_session()
         assert acquired.is_busy
 
-        # 另一个线程尝试获取, 应该等待
         result = [None]
-        acquired_event = threading.Event()
 
-        def waiter():
-            r = pool._acquire_session()
+        async def waiter():
+            r = await pool._acquire_session()
             result[0] = r
-            acquired_event.set()
 
-        t = threading.Thread(target=waiter, daemon=True)
-        t.start()
-
-        time.sleep(0.1)
+        task = asyncio.create_task(waiter())
+        await asyncio.sleep(0.1)
         assert result[0] is None, "Should be waiting"
 
-        # 释放 → waiter 应被唤醒
-        pool._release_session(acquired)
-        acquired_event.wait(timeout=2)
+        await pool._release_session(acquired)
+        await asyncio.sleep(0.1)
         assert result[0] is not None, "Waiter should have acquired session"
         assert result[0].is_busy
 
-        pool._release_session(result[0])
+        await pool._release_session(result[0])
+        await task
 
-    def test_overflow_on_timeout(self):
+    @pytest.mark.asyncio
+    async def test_overflow_on_timeout(self):
         """所有会话忙且超时时, 应创建 overflow 会话"""
-        from engine.lean_pool import LeanPool, LeanSession
-        pool = LeanPool(pool_size=1, project_dir="/tmp", timeout_seconds=1)
-        s = LeanSession(session_id=0, project_dir="/tmp")
-        s._state.alive = True
-        s._state.fallback_mode = True
-        s._state.busy = True  # 预设为忙
+        from engine.async_lean_pool import AsyncLeanPool, AsyncLeanSession
+        from engine.transport import MockTransport
+
+        pool = AsyncLeanPool(pool_size=1, project_dir="/tmp",
+                             timeout_seconds=1)
+        s = AsyncLeanSession(session_id=0, project_dir="/tmp",
+                             transport=MockTransport([{"env": 1}]))
+        await s.start()
+        s._busy = True  # 预设为忙
         pool._sessions.append(s)
         pool._started = True
 
         t0 = time.time()
-        overflow = pool._acquire_session()
+        overflow = await pool._acquire_session()
         elapsed = time.time() - t0
         assert overflow is not None
         assert overflow.is_busy
         assert overflow.session_id >= 1  # overflow session
         assert elapsed >= 0.9  # waited ~1 second
-        pool._release_session(overflow)
+        await pool._release_session(overflow)
 
 
 # ═══════════════════════════════════════════════════════════════

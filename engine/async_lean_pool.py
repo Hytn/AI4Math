@@ -35,6 +35,7 @@ from engine._core import (
     which as _which,
     make_cache_key,
 )
+from engine.observability import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -328,8 +329,12 @@ class AsyncLeanPool:
         """在空闲会话上尝试一条 tactic"""
         session = await self._acquire_session()
         try:
-            result = await session.try_tactic(env_id, tactic)
+            with metrics.timer("repl.try_tactic"):
+                result = await session.try_tactic(env_id, tactic)
             self._record_latency(result.elapsed_ms)
+            metrics.increment("repl.try_tactic.total")
+            if result.success:
+                metrics.increment("repl.try_tactic.success")
             return result
         finally:
             await self._release_session(session)
@@ -377,11 +382,17 @@ class AsyncLeanPool:
             env_fingerprint=f"v{self._env_version}")
         cached = self._compile_cache.get(cache_key)
         if cached is not None:
+            metrics.increment("repl.verify.cache_hit")
             return cached
 
+        metrics.increment("repl.verify.cache_miss")
         session = await self._acquire_session()
         try:
-            result = await session.verify_complete(theorem, proof, preamble)
+            with metrics.timer("repl.verify_complete"):
+                result = await session.verify_complete(theorem, proof, preamble)
+            metrics.increment("repl.verify.total")
+            if result.success:
+                metrics.increment("repl.verify.success")
             if result.success or "timeout" not in result.stderr.lower():
                 import copy
                 cacheable = copy.copy(result)
@@ -525,7 +536,16 @@ class AsyncLeanPool:
             "total_requests": self._total_requests,
             "avg_latency_ms": round(avg_latency, 1),
             "compile_cache": self._compile_cache.stats(),
+            "env_cache_size": len(self._env_cache),
         }
+
+    @property
+    def base_env_id(self) -> int:
+        """Base env_id after preamble loading (for SearchCoordinator)."""
+        for s in self._sessions:
+            if s.is_alive:
+                return s._base_env_id
+        return 0
 
     # ── 会话调度 ──
 
@@ -592,11 +612,179 @@ class AsyncLeanPool:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 同步接口: 直接复用 LeanPool (消除 sync/async 代码重复)
+# SyncLeanPool: 同步包装器 — AsyncLeanPool 的唯一同步入口
 # ═══════════════════════════════════════════════════════════════
 
-# SyncLeanPool 现在是 LeanPool 的直接别名。
-# 之前 SyncLeanPool 通过 asyncio 事件循环包装 AsyncLeanPool,
-# 导致 ~100 行重复代码和 Phase 1 修复只应用于一个版本的问题。
-# 现在两个名字指向同一个实现, bug 修复只需改一处。
-from engine.lean_pool import LeanPool as SyncLeanPool  # noqa: F401
+import threading
+
+
+class SyncLeanPool:
+    """AsyncLeanPool 的同步包装器
+
+    内部维护一个独立线程运行 asyncio 事件循环, 所有同步方法
+    通过 ``run_coroutine_threadsafe`` 委托给 AsyncLeanPool。
+
+    与旧的同步 LeanPool 接口完全兼容 (drop-in 替代)。
+
+    Usage::
+
+        pool = SyncLeanPool(pool_size=4, project_dir="/path")
+        pool.start()
+        result = pool.verify_complete("theorem t : True", ":= by trivial")
+        pool.shutdown()
+    """
+
+    def __init__(self, pool_size: int = 4, project_dir: str = ".",
+                 preamble: str = "import Mathlib",
+                 timeout_seconds: int = 30):
+        self._async_pool = AsyncLeanPool(
+            pool_size=pool_size, project_dir=project_dir,
+            preamble=preamble, timeout_seconds=timeout_seconds)
+
+        # 独立事件循环线程 — 生命周期与 Pool 绑定
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(
+            target=self._run_loop, daemon=True, name="SyncLeanPool-EventLoop")
+        self._thread.start()
+
+        # 透传属性
+        self.pool_size = pool_size
+        self.project_dir = project_dir
+        self.preamble = preamble
+        self.timeout = timeout_seconds
+
+    def _run_loop(self):
+        """事件循环线程入口"""
+        asyncio.set_event_loop(self._loop)
+        self._loop.run_forever()
+
+    def _run(self, coro):
+        """在事件循环线程中执行协程并同步等待结果"""
+        if self._loop.is_closed():
+            raise RuntimeError("SyncLeanPool event loop is closed")
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        return future.result(timeout=self.timeout + 60)
+
+    # ── 公共接口 (与旧 LeanPool 签名完全一致) ──
+
+    def start(self) -> bool:
+        return self._run(self._async_pool.start())
+
+    def try_tactic(self, env_id: int, tactic: str) -> 'TacticFeedback':
+        return self._run(self._async_pool.try_tactic(env_id, tactic))
+
+    def try_tactics_parallel(self, env_id: int,
+                             tactics: list[str]) -> list['TacticFeedback']:
+        return self._run(self._async_pool.try_tactics_parallel(env_id, tactics))
+
+    def verify_complete(self, theorem: str, proof: str,
+                        preamble: str = "") -> 'FullVerifyResult':
+        return self._run(self._async_pool.verify_complete(theorem, proof, preamble))
+
+    def share_lemma(self, lemma_code: str, *,
+                    name: str = "", statement: str = "",
+                    proof: str = "") -> list[int]:
+        return self._run(self._async_pool.share_lemma(
+            lemma_code, name=name, statement=statement, proof=proof))
+
+    def shutdown(self):
+        try:
+            self._run(self._async_pool.shutdown())
+        except Exception as e:
+            logger.warning(f"SyncLeanPool shutdown error: {e}")
+        finally:
+            self._loop.call_soon_threadsafe(self._loop.stop)
+            self._thread.join(timeout=5)
+            self._loop.close()
+
+    def stats(self) -> dict:
+        return self._async_pool.stats()
+
+    @property
+    def base_env_id(self) -> int:
+        return self._async_pool.base_env_id
+
+    def get_cached_env_id(self, preamble_str: str):
+        """P1-5: 查询环境缓存, 避免重复 import 预加载"""
+        key = hashlib.sha256(preamble_str.encode()).hexdigest()[:16]
+        return self._async_pool._env_cache.get(key)
+
+    # ── PoolScaler 接口 ──
+
+    def add_session(self) -> bool:
+        return self._run(self._async_pool.add_session())
+
+    def remove_idle_session(self) -> bool:
+        return self._run(self._async_pool.remove_idle_session())
+
+    # ── 内部属性透传 (向后兼容: 测试中访问的内部状态) ──
+
+    @property
+    def _compile_cache(self):
+        return self._async_pool._compile_cache
+
+    @property
+    def _sessions(self):
+        return self._async_pool._sessions
+
+    @_sessions.setter
+    def _sessions(self, value):
+        self._async_pool._sessions = value
+
+    @property
+    def _started(self):
+        return self._async_pool._started
+
+    @_started.setter
+    def _started(self, value):
+        self._async_pool._started = value
+
+    @property
+    def _env_cache(self):
+        return self._async_pool._env_cache
+
+    @_env_cache.setter
+    def _env_cache(self, value):
+        self._async_pool._env_cache = value
+
+    @property
+    def _env_version(self):
+        return self._async_pool._env_version
+
+    @_env_version.setter
+    def _env_version(self, value):
+        self._async_pool._env_version = value
+
+    @property
+    def _next_session_id(self):
+        return self._async_pool._next_session_id
+
+    @_next_session_id.setter
+    def _next_session_id(self, value):
+        self._async_pool._next_session_id = value
+
+    @property
+    def _session_available(self):
+        return self._async_pool._session_available
+
+    @property
+    def _lock(self):
+        """Compat: 旧 LeanPool 用 threading.Lock, 新版用 asyncio.Condition"""
+        return threading.Lock()
+
+    # ── Context manager ──
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.shutdown()
+        return False
+
+    def __del__(self):
+        try:
+            if self._loop and not self._loop.is_closed():
+                self.shutdown()
+        except Exception:
+            pass

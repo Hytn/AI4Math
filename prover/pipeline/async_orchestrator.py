@@ -184,7 +184,7 @@ class AsyncOrchestrator:
     async def _producer(self, problem, memory, queue, solved_event,
                         direction_idx: int):
         """持续生成证明候选, 推入队列"""
-        from engine.async_factory import _default_directions, _build_prompt
+        from prover.pipeline.async_prove import _default_directions, _build_prompt
         from agent.runtime.sub_agent import AgentSpec, AgentTask, ContextItem
         from agent.brain.roles import AgentRole
 
