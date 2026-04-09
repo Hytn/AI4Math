@@ -215,14 +215,26 @@ AI4Math 范式:
        ├── RecoveryRegistry       ← 自动恢复配方 (recovery.py)
        │   REPL_CRASH → restart   API_ERROR → backoff   TIMEOUT → larger_timeout
        │
+       ├── ErrorClassifier        ← Lean 错误分类 (error_classifier.py, Phase 1)
+       │   20+ regex 模式: type_mismatch · tactic_failed · sorry · timeout ...
+       │
        ├── ProofEventBus          ← 类型化事件 (event_bus.py)
        │   task.created · task.generating · task.failure.* · task.succeeded
        │
        ├── GreenContract          ← 验证分级合约 (green_contract.py, Phase 2)
        │   NONE < SYNTAX_CLEAN < TACTIC_VALID < GOALS_CLOSED < SORRY_FREE
        │
-       └── SummaryCompression     ← 状态压缩 (summary_compression.py, Phase 2)
-           one_liner · for_prompt(200 tok) · to_dict()
+       ├── SummaryCompressor      ← 上下文压缩 (summary_compressor.py, Phase 2)
+       │   compress_lean_errors() · compress_feedback() · compress_broadcast()
+       │   去重 + 分类摘要 + 预算控制 (default 1200 chars)
+       │
+       ├── SummaryCompression     ← 状态压缩 (summary_compression.py, Phase 2)
+       │   one_liner · for_prompt(200 tok) · to_dict()
+       │
+       └── ProofSessionStore      ← 会话持久化 (proof_session_store.py, Phase 3)
+           checkpoint(snapshot) — 每轮自动保存
+           load(problem_id)    — 断点续证
+           cleanup_completed() — 终态自动清理
 ```
 
 ### 4.2 验证操作系统 (`engine/`)
@@ -306,7 +318,7 @@ bash eval.sh --real
 | 模块 | 行数 | 一句话定位 |
 |------|------|--------------|
 | `engine/` | ~12,000 | 验证 OS：REPL 池、三级验证、弹性伸缩、广播总线 |
-| `engine/lane/` | ~2,500 | **Lane 运行时：状态机、策略引擎、恢复、Green Contract、状态压缩** |
+| `engine/lane/` | ~3,500 | **Lane 运行时：状态机、策略引擎、恢复、错误分类、上下文压缩、会话持久化** |
 | `knowledge/` | ~2,200 | 活知识系统：四层金字塔、读写管道、衰减遗忘 |
 | `prover/` | ~7,600 | 证明编排：异步管线、修复、分解、代码生成、引理银行 |
 | `agent/` | ~3,700 | 智能体层：11 种角色、策略控制(→PolicyEngine)、钩子、插件 |
@@ -324,8 +336,11 @@ bash eval.sh --real
 | `run_eval.py` | 批量评测入口 |
 | `eval.sh` | 一键评测脚本 |
 | `engine/lane/integration.py` | **LaneProofRunner — Lane 证明循环主入口** |
-| `agent/strategy/meta_controller.py` | MetaController → PolicyEngine 委托 |
-| `prover/assembly.py` | 全系统组装器 |
+| `prover/pipeline/proof_pipeline.py` | **ProofPipeline — 状态机驱动证明管线 (支持 `resume=True` 断点续证)** |
+| `prover/assembly.py` | 全系统组装器 (含 Lane + SessionStore 自动构建) |
+| `engine/lane/error_classifier.py` | Lean 错误 → ProofFailureClass 分类器 (20+ regex 模式) |
+| `engine/lane/summary_compressor.py` | 错误/反馈/广播上下文压缩器 (Phase 2) |
+| `engine/lane/proof_session_store.py` | 会话持久化：checkpoint / resume / cleanup (Phase 3) |
 
 ---
 
@@ -372,7 +387,7 @@ docker compose run --rm agent bash eval.sh --real --lean
 它们是"更强的证明生成器"，AI4Math 是"让证明生成器在其中运行的操作系统"。
 
 **Q: `run_single_lane.py` vs `run_single.py`？**
-`run_single_lane.py` 使用新的 Lane 运行时 (Phase 1+2), 有完整的状态机、策略引擎、Green Contract 和状态压缩。`run_single.py` 是传统流程, 不经过 Lane 层。
+`run_single_lane.py` 使用新的 Lane 运行时 (Phase 1+2+3), 有完整的状态机、策略引擎、Green Contract、上下文压缩和会话持久化。`run_single.py` 是传统流程, 不经过 Lane 层。两者均通过 `ProofPipeline` 执行证明, 但 `run_single.py` 不启用 Lane 的状态机驱动和 checkpoint 功能。
 
 **Q: 能支持 Coq / Isabelle 吗？**
 REPL 交互通过 `Transport(ABC)` 抽象, 知识系统和智能体层不含 Lean4 特定代码。
@@ -382,6 +397,12 @@ REPL 交互通过 `Transport(ABC)` 抽象, 知识系统和智能体层不含 Lea
 
 **Q: Summary Compression 有什么用？**
 将冗长的事件流压缩为: 当前阶段 + 上次成功检查点 + 当前阻塞 + 建议下一步。可注入 LLM context (< 200 token) 让模型了解当前进展, 也可用于监控和日志。
+
+**Q: Summary Compressor 和 Summary Compression 有什么区别？**
+`summary_compression.py` 负责将证明状态压缩为 one-liner 或 dashboard 格式 (给监控/日志看)。`summary_compressor.py` 负责将 Lean 编译错误、验证反馈、广播消息压缩后注入 LLM prompt (给模型看), 包含去重、分类摘要和预算控制。
+
+**Q: 断点续证 (Checkpoint/Resume) 怎么用？**
+`ProofPipeline` 在每轮结束后自动保存 checkpoint 到 `.proof_sessions/` 目录。如果进程中断, 下次运行时传入 `resume=True` 即可从上次 checkpoint 恢复, 保留已积累的 banked lemmas、错误模式、策略状态等。证明成功或放弃后自动清理 checkpoint 文件。
 
 ---
 

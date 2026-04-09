@@ -86,6 +86,19 @@ class SystemAssembler:
         components.knowledge_broadcaster = knowledge_components.get('broadcaster')
         components.knowledge_evolver = knowledge_components.get('evolver')
 
+        # ── Step 6: 构建 Lane 系统 (claw-code-inspired lifecycle) ──
+        components.event_bus = (
+            overrides.get('event_bus') or self._build_event_bus())
+        components.dashboard = (
+            overrides.get('dashboard') or self._build_dashboard())
+        components.recovery_registry = (
+            overrides.get('recovery_registry') or self._build_recovery_registry())
+        components.policy_engine = (
+            overrides.get('policy_engine') or self._build_policy_engine(
+                components.recovery_registry))
+        components.session_store = (
+            overrides.get('session_store') or self._build_session_store())
+
         return components
 
     # ── Agent 层构建方法 ──
@@ -200,3 +213,35 @@ class SystemAssembler:
         except Exception as e:
             logger.warning(f"Knowledge system build skipped: {e}")
             return {}
+
+    # ── Lane 系统构建方法 (claw-code-inspired) ──
+
+    def _build_event_bus(self):
+        from engine.lane.event_bus import ProofEventBus
+        return ProofEventBus()
+
+    def _build_dashboard(self):
+        from engine.lane.dashboard import ProofDashboard
+        return ProofDashboard()
+
+    def _build_recovery_registry(self):
+        from engine.lane.recovery import RecoveryRegistry
+        return RecoveryRegistry()
+
+    def _build_policy_engine(self, recovery_registry=None):
+        from engine.lane.policy import (
+            PolicyEngine, InfraRecoveryRule, ConsecutiveSameErrorRule,
+            BudgetEscalationRule, BankedLemmaDecomposeRule, ReflectionRule,
+        )
+        engine = PolicyEngine()
+        engine.add_rule(InfraRecoveryRule(recovery_registry=recovery_registry))
+        engine.add_rule(ConsecutiveSameErrorRule())
+        engine.add_rule(BudgetEscalationRule())
+        engine.add_rule(BankedLemmaDecomposeRule())
+        engine.add_rule(ReflectionRule())
+        return engine
+
+    def _build_session_store(self):
+        from engine.lane.proof_session_store import ProofSessionStore
+        session_dir = self.config.get("session_dir", ".proof_sessions")
+        return ProofSessionStore(directory=session_dir)

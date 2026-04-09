@@ -50,6 +50,13 @@ class EngineComponents:
     # 异构引擎
     hetero_engine: Optional['HeterogeneousEngine'] = None
 
+    # Lane system (claw-code-inspired lifecycle management)
+    event_bus: Optional['ProofEventBus'] = None
+    dashboard: Optional['ProofDashboard'] = None
+    policy_engine: Optional['PolicyEngine'] = None
+    recovery_registry: Optional['RecoveryRegistry'] = None
+    session_store: Optional['ProofSessionStore'] = None
+
     # 知识系统 (由 SystemAssembler 构建)
     knowledge_store: Optional[object] = None       # UnifiedKnowledgeStore
     knowledge_writer: Optional[object] = None      # KnowledgeWriter

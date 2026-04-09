@@ -146,20 +146,26 @@ class HeterogeneousEngine:
                         ContextItem(hk, str(hv), 0.85, "premise"))
 
                 # ── v2: 注入来自广播总线的跨方向知识 ──
+                # Phase 2: 压缩后再注入, 避免浪费 token
                 broadcast_context = self.broadcast.render_for_prompt(
                     d.name, max_messages=8, max_chars=1500,
                     current_goal=problem.theorem_statement)
                 if broadcast_context:
+                    from engine.lane.summary_compressor import compress_broadcast
+                    compressed_bc = compress_broadcast(broadcast_context, budget=1500)
                     context_items.append(
-                        ContextItem("teammate_discoveries", broadcast_context,
+                        ContextItem("teammate_discoveries", compressed_bc,
                                     0.95, "premise"))
 
                 # ── v2: 注入错误智能层的积累知识 ──
+                # Phase 2: 压缩后再注入
                 if self.scheduler and self.scheduler.error_intel:
                     dead_ends = self.scheduler.error_intel.get_accumulated_knowledge(5)
                     if dead_ends:
+                        from engine.lane.summary_compressor import compress_lean_errors
+                        compressed_de = compress_lean_errors(dead_ends, budget=800)
                         context_items.append(
-                            ContextItem("known_dead_ends", dead_ends,
+                            ContextItem("known_dead_ends", compressed_de,
                                         0.9, "premise"))
 
                 task = AgentTask(
@@ -247,12 +253,14 @@ class HeterogeneousEngine:
                            directions: list[ProofDirection]):
         """分析结果并通过广播总线共享发现
 
-        这是跨方向知识共享的核心机制:
-        - 方向 A 生成了高置信度的证明 → 广播 PARTIAL_PROOF
-        - 方向 D 的内容中提到了有用引理 → 广播 POSITIVE_DISCOVERY
-        - 方向 C 完全失败且明确了原因 → 广播 NEGATIVE_KNOWLEDGE
+        v2: 同时通过 lane EventBus 发布类型化事件。
         """
         from engine.broadcast import BroadcastMessage
+        from engine.lane.event_bus import get_event_bus
+        from engine.lane.task_state import TaskEvent, TaskStatus
+        from engine.lane.error_classifier import classify_lean_error
+
+        event_bus = get_event_bus()
 
         for result, direction in zip(results, directions):
             if not result:
@@ -300,6 +308,25 @@ class HeterogeneousEngine:
                     error_category="strategy_failed",
                     reason=result.error[:200],
                 ))
+
+            # ── Lane event: emit typed event per direction result ──
+            vr = result.metadata.get("verification", {})
+            v_success = vr.get("success", False) if isinstance(vr, dict) else False
+            v_level = vr.get("level", "none") if isinstance(vr, dict) else "none"
+            event = TaskEvent(
+                seq=0,  # will be ignored by bus
+                event_name=f"direction.{'succeeded' if v_success else 'failed'}",
+                prev_status=TaskStatus.VERIFYING,
+                new_status=TaskStatus.SUCCEEDED if v_success else TaskStatus.VERIFYING,
+                detail=f"{name}: level={v_level}, confidence={result.confidence:.2f}",
+                metadata={
+                    "direction": name,
+                    "confidence": result.confidence,
+                    "verification_level": v_level,
+                    "verification_success": v_success,
+                },
+            )
+            event_bus.publish(event)
 
         # ── 集成 share_lemma(): 将已验证引理注入所有 REPL 环境 ──
         # 当广播总线中出现 LEMMA_PROVEN 消息时, 将引理代码注入 REPL 池,
