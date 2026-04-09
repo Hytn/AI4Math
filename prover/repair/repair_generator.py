@@ -3,8 +3,8 @@
 基于错误诊断和修复策略生成修正后的证明。
 """
 from __future__ import annotations
-from agent.brain.roles import AgentRole, ROLE_PROMPTS
-from agent.brain.response_parser import extract_lean_code
+from common.roles import AgentRole, ROLE_PROMPTS
+from common.response_parser import extract_lean_code
 from prover.models import LeanError
 from prover.repair.repair_strategies import select_strategies, build_repair_prompt
 

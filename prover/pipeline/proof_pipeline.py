@@ -26,9 +26,9 @@ from dataclasses import dataclass, field
 from typing import Optional, Callable
 
 from prover.models import BenchmarkProblem, ProofTrace, ProofAttempt, AttemptStatus
-from agent.strategy.strategy_switcher import StrategySwitcher
-from agent.memory.working_memory import WorkingMemory
-from agent.hooks.hook_types import HookEvent, HookContext, HookAction
+from prover.pipeline._agent_deps import StrategySwitcher
+from common.working_memory import WorkingMemory
+from common.hook_types import HookEvent, HookContext, HookAction
 
 logger = logging.getLogger(__name__)
 
@@ -334,7 +334,7 @@ class ProofPipeline:
                 proof=proof))
         if pre.action == HookAction.SKIP:
             if agent_result:
-                from agent.strategy.confidence_estimator import ConfidenceEstimator
+                from prover.pipeline._agent_deps import ConfidenceEstimator
                 agent_result.confidence = ConfidenceEstimator.refine_confidence(
                     agent_result, l0_passed=False)
             return False
@@ -350,7 +350,7 @@ class ProofPipeline:
                     ctx.memory.last_feedback_text = result.feedback.to_prompt(1500)
 
                 if agent_result:
-                    from agent.strategy.confidence_estimator import ConfidenceEstimator
+                    from prover.pipeline._agent_deps import ConfidenceEstimator
                     agent_result.confidence = ConfidenceEstimator.refine_confidence(
                         agent_result,
                         feedback=result.feedback,

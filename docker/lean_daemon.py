@@ -136,18 +136,84 @@ class REPLSession:
 
 
 class REPLPool:
+<<<<<<< HEAD
     """Pool of REPL sessions, one per client connection."""
+=======
+    """Pool of REPL sessions with preamble prewarming.
+
+    Warm cache: sessions are pre-loaded with 'import Mathlib' so the
+    first tactic request pays ~0ms import cost instead of ~10-30s.
+    """
+
+    PREAMBLE = os.environ.get("LEAN_PREAMBLE", "import Mathlib")
+>>>>>>> 7a01a9c (infra complete)
 
     def __init__(self, binary: str, project_dir: str, max_sessions: int):
         self._binary = binary
         self._project_dir = project_dir
         self._max_sessions = max_sessions
         self._sessions: dict[int, REPLSession] = {}
+<<<<<<< HEAD
         self._next_id = 0
         self._semaphore = asyncio.Semaphore(max_sessions)
 
     async def acquire(self) -> REPLSession:
         """Get or create a REPL session."""
+=======
+        self._warm_queue: asyncio.Queue = asyncio.Queue()
+        self._next_id = 0
+        self._semaphore = asyncio.Semaphore(max_sessions)
+        self._prewarm_task = None
+        self._warm_env_ids: dict[int, int] = {}  # session_id → prewarmed env_id
+
+    async def prewarm(self, count: int = 0):
+        """Pre-create and warm sessions with preamble import.
+
+        Args:
+            count: Number of sessions to prewarm (0 = max_sessions)
+        """
+        count = count or self._max_sessions
+        count = min(count, self._max_sessions)
+        logger.info(f"REPLPool: prewarming {count} sessions...")
+        tasks = [self._create_warm_session() for _ in range(count)]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        ok = sum(1 for r in results if r is True)
+        logger.info(f"REPLPool: prewarmed {ok}/{count} sessions")
+
+    async def _create_warm_session(self) -> bool:
+        """Create a session and prewarm it with the preamble."""
+        await self._semaphore.acquire()
+        sid = self._next_id
+        self._next_id += 1
+        session = REPLSession(sid, self._binary, self._project_dir)
+        ok = await session.start()
+        if not ok:
+            self._semaphore.release()
+            return False
+
+        # Send preamble
+        if self.PREAMBLE:
+            resp = await session.send({"cmd": self.PREAMBLE, "env": 0})
+            env_id = resp.get("env", 0) if resp else 0
+            self._warm_env_ids[sid] = env_id
+            logger.info(
+                f"REPLPool: session {sid} prewarmed (env_id={env_id})")
+
+        self._sessions[sid] = session
+        await self._warm_queue.put(session)
+        return True
+
+    async def acquire(self) -> REPLSession:
+        """Get a prewarmed session, or create one on demand."""
+        try:
+            session = self._warm_queue.get_nowait()
+            if session.is_alive:
+                return session
+        except asyncio.QueueEmpty:
+            pass
+
+        # Fallback: create on demand
+>>>>>>> 7a01a9c (infra complete)
         await self._semaphore.acquire()
         sid = self._next_id
         self._next_id += 1
@@ -164,18 +230,36 @@ class REPLPool:
         """Return a session to the pool (close it)."""
         await session.close()
         self._sessions.pop(session.session_id, None)
+<<<<<<< HEAD
+=======
+        self._warm_env_ids.pop(session.session_id, None)
+>>>>>>> 7a01a9c (infra complete)
         self._semaphore.release()
 
     async def shutdown(self):
         for s in list(self._sessions.values()):
             await s.close()
         self._sessions.clear()
+<<<<<<< HEAD
+=======
+        self._warm_env_ids.clear()
+
+    def get_warm_env_id(self, session: REPLSession) -> int:
+        """Get the prewarmed env_id for a session (post-preamble)."""
+        return self._warm_env_ids.get(session.session_id, 0)
+>>>>>>> 7a01a9c (infra complete)
 
     def stats(self) -> dict:
         return {
             "active_sessions": len(self._sessions),
             "max_sessions": self._max_sessions,
+<<<<<<< HEAD
             "total_created": self._next_id,
+=======
+            "warm_available": self._warm_queue.qsize(),
+            "total_created": self._next_id,
+            "prewarmed_envs": len(self._warm_env_ids),
+>>>>>>> 7a01a9c (infra complete)
         }
 
 
@@ -334,6 +418,14 @@ async def main():
     if use_repl:
         pool = REPLPool(repl_binary, PROJECT_DIR, MAX_CONCURRENT)
         logger.info(f"Mode: REPL (binary={repl_binary})")
+<<<<<<< HEAD
+=======
+
+        # Prewarm sessions with preamble (import Mathlib)
+        prewarm_count = int(os.environ.get("LEAN_PREWARM", "2"))
+        if prewarm_count > 0:
+            await pool.prewarm(prewarm_count)
+>>>>>>> 7a01a9c (infra complete)
     else:
         logger.info("Mode: compile (lean4-repl not found, using lake env lean)")
 

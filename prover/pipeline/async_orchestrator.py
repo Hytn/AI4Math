@@ -43,12 +43,12 @@ from typing import Optional
 from prover.models import (
     BenchmarkProblem, ProofTrace, ProofAttempt, AttemptStatus,
 )
-from agent.strategy.meta_controller import MetaController
-from agent.strategy.confidence_estimator import ConfidenceEstimator
-from agent.strategy.budget_allocator import Budget
-from agent.memory.working_memory import WorkingMemory
-from agent.hooks.hook_manager import HookManager
-from agent.hooks.hook_types import HookEvent, HookContext, HookAction
+from prover.pipeline._agent_deps import MetaController
+from prover.pipeline._agent_deps import ConfidenceEstimator
+from common.budget import Budget
+from common.working_memory import WorkingMemory
+from prover.pipeline._agent_deps import HookManager
+from common.hook_types import HookEvent, HookContext, HookAction
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +186,7 @@ class AsyncOrchestrator:
         """持续生成证明候选, 推入队列"""
         from prover.pipeline.async_prove import _default_directions, _build_prompt
         from agent.runtime.sub_agent import AgentSpec, AgentTask, ContextItem
-        from agent.brain.roles import AgentRole
+        from common.roles import AgentRole
 
         round_num = 0
         while not solved_event.is_set() and not self.budget.is_exhausted():
@@ -201,6 +201,18 @@ class AsyncOrchestrator:
             if self.comp.broadcast:
                 broadcast_text = self.comp.broadcast.render_for_prompt(
                     d.name, max_messages=8)
+
+            # ── Knowledge injection (Gap 0 fix) ──
+            # Retrieve accumulated knowledge from the unified store
+            knowledge_text = ""
+            if self.comp.knowledge_reader:
+                try:
+                    knowledge_text = await self.comp.knowledge_reader.render_for_prompt(
+                        goal=problem.theorem_statement,
+                        theorem=problem.theorem_statement,
+                        max_chars=1200)
+                except Exception as e:
+                    logger.debug(f"Knowledge retrieval skipped: {e}")
 
             spec = AgentSpec(
                 name=f"{d.name}_r{round_num}",
@@ -217,6 +229,10 @@ class AsyncOrchestrator:
                 context_items.append(
                     ContextItem("strategy", d.strategic_hint, 0.9,
                                 "tactic_hint"))
+            if knowledge_text:
+                context_items.append(
+                    ContextItem("proof_knowledge", knowledge_text,
+                                0.92, "premise"))
             if broadcast_text:
                 context_items.append(
                     ContextItem("teammate_discoveries", broadcast_text,
@@ -291,8 +307,34 @@ class AsyncOrchestrator:
                 proof=candidate.proof_code,
                 direction=candidate.direction)
 
-            # Broadcast discoveries
-            if self.comp.broadcast:
+            # ── Knowledge ingestion (Gap 0 fix) ──
+            # Use KnowledgeBroadcaster if available (handles both
+            # knowledge store writing AND broadcast publishing)
+            if self.comp.knowledge_broadcaster:
+                from engine.proof_context_store import StepDetail
+                step = StepDetail(
+                    step_index=0,
+                    tactic=candidate.proof_code[:200],
+                    env_id_before=0,
+                    env_id_after=1 if result.success else -1,
+                    goals_before=[problem.theorem_statement],
+                    goals_after=[] if result.success else [problem.theorem_statement],
+                    error_message=result.feedback.error_message if result.feedback else "",
+                    error_category=result.feedback.error_category if result.feedback else "",
+                    elapsed_ms=float(result.total_ms),
+                    is_proof_complete=result.success,
+                )
+                try:
+                    await self.comp.knowledge_broadcaster.on_tactic_result(
+                        step,
+                        direction=candidate.direction,
+                        theorem=problem.theorem_statement)
+                except Exception as e:
+                    logger.debug(f"Knowledge ingestion skipped: {e}")
+
+            # Broadcast discoveries (fallback for when knowledge_broadcaster
+            # is not configured — preserves backward compatibility)
+            elif self.comp.broadcast:
                 from engine.broadcast import BroadcastMessage
                 if result.success:
                     self.comp.broadcast.publish(

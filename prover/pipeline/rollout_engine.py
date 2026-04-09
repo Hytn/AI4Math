@@ -4,9 +4,9 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from prover.models import BenchmarkProblem, ProofAttempt, AttemptStatus
 from prover.pipeline.proof_loop import ProofLoop
-from agent.memory.working_memory import WorkingMemory
-from agent.strategy.budget_allocator import Budget
-from agent.context.error_summarizer import summarize_round_errors
+from common.working_memory import WorkingMemory
+from common.budget import Budget
+from prover.pipeline._agent_deps import summarize_round_errors
 
 logger = logging.getLogger(__name__)
 

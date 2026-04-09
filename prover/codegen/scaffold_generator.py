@@ -6,8 +6,8 @@ Generates proof skeletons with `sorry` placeholders:
 3. Integrates with tactic_suggester for initial tactic hints
 """
 from __future__ import annotations
-from agent.brain.roles import AgentRole, ROLE_PROMPTS
-from agent.brain.response_parser import extract_lean_code
+from common.roles import AgentRole, ROLE_PROMPTS
+from common.response_parser import extract_lean_code
 from prover.sketch.templates import find_templates, fill_template
 from prover.premise.tactic_suggester import classify_goal
 

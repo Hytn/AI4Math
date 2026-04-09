@@ -10,9 +10,9 @@ from __future__ import annotations
 import logging
 import time
 from prover.models import ProofAttempt, AttemptStatus
-from agent.brain.prompt_builder import build_prompt
-from agent.brain.response_parser import extract_lean_code
-from agent.brain.roles import AgentRole, ROLE_PROMPTS
+from common.prompt_builder import build_prompt
+from common.response_parser import extract_lean_code
+from common.roles import AgentRole, ROLE_PROMPTS
 
 logger = logging.getLogger(__name__)
 

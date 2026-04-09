@@ -6,8 +6,8 @@
 from __future__ import annotations
 import re
 from prover.premise.tactic_suggester import suggest_tactics, classify_goal
-from agent.brain.roles import AgentRole, ROLE_PROMPTS
-from agent.brain.response_parser import extract_lean_code
+from common.roles import AgentRole, ROLE_PROMPTS
+from common.response_parser import extract_lean_code
 
 
 class TacticGenerator:

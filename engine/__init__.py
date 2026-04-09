@@ -45,3 +45,12 @@ from engine.resource_scheduler import ResourceScheduler, ResourceBudget, Priorit
 from engine.remote_session import (
     RemoteSession, LocalTransport, TCPTransport, ElasticPool,
 )
+from engine.api.protocols import AsyncPoolProtocol
+
+# APE v4 persistent proof context
+from engine.proof_context_store import (
+    ProofContextStore, StepDetail, RichProofTrajectory,
+)
+
+# APE v4 async search
+from engine.async_search import AsyncSearchCoordinator

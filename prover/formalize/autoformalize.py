@@ -3,8 +3,8 @@
 将自然语言数学命题转换为 Lean4 形式化声明。
 """
 from __future__ import annotations
-from agent.brain.roles import AgentRole, ROLE_PROMPTS
-from agent.brain.response_parser import extract_lean_code
+from common.roles import AgentRole, ROLE_PROMPTS
+from common.response_parser import extract_lean_code
 from prover.formalize.statement_verifier import StatementVerifier
 
 

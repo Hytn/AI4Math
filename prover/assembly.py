@@ -76,13 +76,23 @@ class SystemAssembler:
                 components.agent_pool, components.plugins, components.hooks,
                 retriever, components.broadcast, components.scheduler))
 
+        # ── Step 5: 构建知识系统 ──
+        knowledge_components = (
+            overrides.get('knowledge') or self._build_knowledge(
+                components.broadcast, components.lean_pool))
+        components.knowledge_store = knowledge_components.get('store')
+        components.knowledge_writer = knowledge_components.get('writer')
+        components.knowledge_reader = knowledge_components.get('reader')
+        components.knowledge_broadcaster = knowledge_components.get('broadcaster')
+        components.knowledge_evolver = knowledge_components.get('evolver')
+
         return components
 
     # ── Agent 层构建方法 ──
 
     def _build_hooks(self):
         from agent.hooks.hook_manager import HookManager
-        from agent.hooks.hook_types import HookEvent
+        from common.hook_types import HookEvent
         from agent.hooks.builtin_hooks import (
             DomainClassifierHook, RepetitionDetectorHook,
             NatSubSafetyHook, ReflectionCloserHook,
@@ -130,7 +140,7 @@ class SystemAssembler:
         return ConfidenceEstimator()
 
     def _build_budget(self):
-        from agent.strategy.budget_allocator import Budget
+        from common.budget import Budget
         return Budget(
             max_samples=self.config.get("max_samples", 128),
             max_wall_seconds=self.config.get("max_wall_seconds", 3600))
@@ -146,3 +156,47 @@ class SystemAssembler:
             pool=agent_pool, plugin_loader=plugins, hook_manager=hooks,
             retriever=retriever, broadcast=broadcast,
             verification_scheduler=scheduler)
+
+    # ── 知识系统构建方法 ──
+
+    def _build_knowledge(self, broadcast=None, pool=None) -> dict:
+        """构建统一知识系统的全部组件
+
+        Returns:
+            dict with keys: store, writer, reader, broadcaster, evolver
+        """
+        try:
+            from knowledge.store import UnifiedKnowledgeStore
+            from knowledge.writer import KnowledgeWriter
+            from knowledge.reader import KnowledgeReader
+            from knowledge.broadcaster import KnowledgeBroadcaster
+            from knowledge.evolver import KnowledgeEvolver
+
+            db_path = self.config.get("knowledge", {}).get(
+                "db_path", ":memory:")
+
+            store = UnifiedKnowledgeStore(db_path)
+            writer = KnowledgeWriter(store)
+            reader = KnowledgeReader(store)
+            broadcaster = KnowledgeBroadcaster(
+                store, broadcast, pool, writer=writer)
+            evolver = KnowledgeEvolver(
+                store,
+                decay_rate=self.config.get("knowledge", {}).get(
+                    "decay_rate", 0.95),
+                stale_threshold=self.config.get("knowledge", {}).get(
+                    "stale_threshold", 0.1),
+            )
+
+            logger.info(
+                f"Knowledge system built (db={db_path})")
+            return {
+                'store': store,
+                'writer': writer,
+                'reader': reader,
+                'broadcaster': broadcaster,
+                'evolver': evolver,
+            }
+        except Exception as e:
+            logger.warning(f"Knowledge system build skipped: {e}")
+            return {}

@@ -50,6 +50,13 @@ class EngineComponents:
     # 异构引擎
     hetero_engine: Optional['HeterogeneousEngine'] = None
 
+    # 知识系统 (由 SystemAssembler 构建)
+    knowledge_store: Optional[object] = None       # UnifiedKnowledgeStore
+    knowledge_writer: Optional[object] = None      # KnowledgeWriter
+    knowledge_reader: Optional[object] = None      # KnowledgeReader
+    knowledge_broadcaster: Optional[object] = None # KnowledgeBroadcaster
+    knowledge_evolver: Optional[object] = None     # KnowledgeEvolver
+
     # 资源管理 (PoolScaler 等后台任务)
     _pool_scaler: Optional['PoolScaler'] = None
 

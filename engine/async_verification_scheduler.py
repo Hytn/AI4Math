@@ -30,10 +30,13 @@ class AsyncVerificationScheduler:
       - verify_tactics_parallel: L0 同步过滤 + L1 asyncio.gather
       - verify_complete: L1 async REPL, L2 async subprocess
       - 多个证明候选可真正并行验证, 不阻塞 LLM 调用
+
+    lean_pool 可以是 AsyncLeanPool 或 ElasticPool (鸭子类型, 需满足
+    try_tactic / try_tactics_parallel / verify_complete / stats 接口)。
     """
 
     def __init__(self, prefilter: PreFilter = None,
-                 lean_pool: AsyncLeanPool = None,
+                 lean_pool=None,
                  error_intel: ErrorIntelligence = None,
                  broadcast: BroadcastBus = None,
                  project_dir: str = "."):

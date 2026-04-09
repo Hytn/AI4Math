@@ -1,7 +1,7 @@
 """prover/sketch/sketch_generator.py — 证明草图生成"""
 from __future__ import annotations
 from dataclasses import dataclass, field
-from agent.brain.roles import AgentRole, ROLE_PROMPTS
+from common.roles import AgentRole, ROLE_PROMPTS
 
 @dataclass
 class ProofSketch:

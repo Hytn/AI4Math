@@ -2,7 +2,7 @@
 from __future__ import annotations
 import re
 from dataclasses import dataclass
-from agent.brain.roles import AgentRole, ROLE_PROMPTS
+from common.roles import AgentRole, ROLE_PROMPTS
 
 @dataclass
 class SubGoal:

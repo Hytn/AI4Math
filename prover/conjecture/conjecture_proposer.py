@@ -4,7 +4,7 @@
 """
 from __future__ import annotations
 import re
-from agent.brain.roles import AgentRole, ROLE_PROMPTS
+from common.roles import AgentRole, ROLE_PROMPTS
 from prover.conjecture.conjecture_verifier import ConjectureVerifier
 
 

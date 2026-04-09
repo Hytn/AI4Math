@@ -494,6 +494,123 @@ class ElasticPool:
             "active_sessions": sum(1 for s in self._sessions if s.is_alive),
         }
 
+    @property
+    def base_env_id(self) -> int:
+        """Return base env_id from first available session.
+
+        Required by PoolProtocol. All sessions share the same preamble
+        so they share the same base env_id semantics.
+        """
+        for s in self._sessions:
+            if s.is_alive:
+                return s.base_env_id
+        return 0
+
+    async def share_lemma(self, lemma_code: str, *,
+                          inject_all: bool = True) -> int:
+        """Inject a proven lemma into REPL sessions.
+
+        Broadcasts the lemma to all (or one) sessions so subsequent
+        tactic executions can reference it.
+
+        Args:
+            lemma_code: Full Lean4 lemma/theorem/def code.
+            inject_all: If True, inject into all sessions. If False,
+                        inject into one available session.
+
+        Returns:
+            Number of sessions successfully injected.
+        """
+        targets = self._sessions if inject_all else self._sessions[:1]
+        injected = 0
+
+        async def _inject(session: RemoteSession) -> bool:
+            if not session.is_alive or session.is_fallback:
+                return False
+            env_id = session.base_env_id
+            resp = await session.transport.send(
+                {"cmd": lemma_code, "env": env_id})
+            if resp and "env" in resp:
+                messages = resp.get("messages", [])
+                errors = [m for m in messages
+                          if m.get("severity") == "error"]
+                if not errors:
+                    return True
+            return False
+
+        results = await asyncio.gather(
+            *(_inject(s) for s in targets),
+            return_exceptions=True)
+        injected = sum(1 for r in results if r is True)
+
+        if injected > 0:
+            logger.info(
+                f"ElasticPool: shared lemma to {injected}/{len(targets)} "
+                f"sessions")
+        return injected
+
+    async def add_session(self, remote_addr: str = "") -> bool:
+        """Add a session dynamically (for PoolScaler compatibility).
+
+        Args:
+            remote_addr: If empty, adds a local session. If "host:port",
+                         adds a remote session to the specified worker.
+        """
+        if remote_addr:
+            parts = remote_addr.split(":")
+            host = parts[0]
+            port = int(parts[1]) if len(parts) > 1 else 9100
+            transport = TCPTransport(
+                host=host, port=port,
+                timeout_seconds=self.timeout)
+        else:
+            transport = LocalTransport(
+                project_dir=self.project_dir,
+                timeout_seconds=self.timeout)
+
+        session = RemoteSession(
+            transport, session_id=len(self._sessions))
+        session._is_overflow = True
+        ok = await session.start(self.preamble)
+        if ok:
+            async with self._session_available:
+                self._sessions.append(session)
+                self._session_available.notify()
+            kind = f"remote({remote_addr})" if remote_addr else "local"
+            logger.info(
+                f"ElasticPool: added overflow {kind} session "
+                f"(total={len(self._sessions)})")
+        return ok
+
+    async def remove_idle_session(self) -> bool:
+        """Remove one idle overflow session (for PoolScaler compatibility).
+
+        Only removes dynamically-added sessions, never the initial pool.
+        Prefers removing remote overflow sessions first (higher latency).
+        """
+        async with self._session_available:
+            # First pass: prefer remote overflow
+            for i, s in enumerate(self._sessions):
+                if (not s.is_busy
+                        and getattr(s, '_is_overflow', False)
+                        and isinstance(s.transport, TCPTransport)):
+                    self._sessions.pop(i)
+                    await s.close()
+                    logger.info(
+                        f"ElasticPool: removed idle remote overflow "
+                        f"(total={len(self._sessions)})")
+                    return True
+            # Second pass: any overflow
+            for i, s in enumerate(self._sessions):
+                if (not s.is_busy and getattr(s, '_is_overflow', False)):
+                    self._sessions.pop(i)
+                    await s.close()
+                    logger.info(
+                        f"ElasticPool: removed idle overflow session "
+                        f"(total={len(self._sessions)})")
+                    return True
+        return False
+
     async def _acquire(self) -> RemoteSession:
         async with self._session_available:
             deadline = time.time() + self.timeout

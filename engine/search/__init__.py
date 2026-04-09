@@ -15,6 +15,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 from engine.core import Expr, Name, MetaId
+from engine.core.local_ctx import LocalContext
 from engine.state import ProofState, SearchTree, NodeId, NodeStatus, GoalView
 from engine.tactic import execute_tactic, TacticResult
 

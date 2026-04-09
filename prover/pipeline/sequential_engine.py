@@ -2,8 +2,8 @@
 from __future__ import annotations
 from prover.models import BenchmarkProblem, ProofAttempt, AttemptStatus
 from prover.pipeline.proof_loop import ProofLoop
-from agent.memory.working_memory import WorkingMemory
-from agent.strategy.budget_allocator import Budget
+from common.working_memory import WorkingMemory
+from common.budget import Budget
 
 class SequentialEngine:
     def __init__(self, lean_env, llm, retriever=None, config=None):

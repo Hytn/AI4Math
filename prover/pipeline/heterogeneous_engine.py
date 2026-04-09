@@ -17,14 +17,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from agent.runtime.sub_agent import AgentSpec, AgentTask, AgentResult, ContextItem
-from agent.runtime.agent_pool import AgentPool
-from agent.runtime.result_fuser import ResultFuser
-from agent.brain.roles import AgentRole
-from agent.hooks.hook_types import HookEvent, HookContext
-from agent.hooks.hook_manager import HookManager
-from agent.plugins.loader import PluginLoader
-from agent.strategy.budget_allocator import Budget
+from prover.pipeline._agent_deps import AgentSpec, AgentTask, AgentResult, ContextItem
+from prover.pipeline._agent_deps import AgentPool
+from prover.pipeline._agent_deps import ResultFuser
+from common.roles import AgentRole
+from common.hook_types import HookEvent, HookContext
+from prover.pipeline._agent_deps import HookManager
+from prover.pipeline._agent_deps import PluginLoader
+from common.budget import Budget
 from prover.models import BenchmarkProblem, ProofAttempt, AttemptStatus
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 # ProofDirection 定义已移至 agent.strategy.direction_planner
 # 此处 re-export 以保持向后兼容
-from agent.strategy.direction_planner import ProofDirection, build_direction_prompt
+from prover.pipeline._agent_deps import ProofDirection, build_direction_prompt
 
 
 class HeterogeneousEngine:
@@ -186,7 +186,7 @@ class HeterogeneousEngine:
                                 proof=result.proof_code,
                                 direction=direction.name,
                             )
-                            from agent.strategy.confidence_estimator import ConfidenceEstimator
+                            from prover.pipeline._agent_deps import ConfidenceEstimator
                             result.confidence = ConfidenceEstimator.refine_confidence(
                                 result,
                                 feedback=vr.feedback,

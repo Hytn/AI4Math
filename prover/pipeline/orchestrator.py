@@ -15,15 +15,15 @@ from prover.models import BenchmarkProblem, ProofTrace, AttemptStatus, ProofAtte
 from prover.pipeline.rollout_engine import RolloutEngine
 from prover.pipeline.sequential_engine import SequentialEngine
 from prover.pipeline.heterogeneous_engine import HeterogeneousEngine
-from agent.runtime.agent_pool import AgentPool
-from agent.runtime.sub_agent import AgentResult
-from agent.hooks.hook_manager import HookManager
-from agent.hooks.hook_types import HookEvent, HookContext, HookAction
-from agent.plugins.loader import PluginLoader
-from agent.strategy.strategy_switcher import StrategySwitcher
-from agent.strategy.budget_allocator import Budget
-from agent.memory.working_memory import WorkingMemory
-from agent.context.context_window import ContextWindow
+from prover.pipeline._agent_deps import AgentPool
+from prover.pipeline._agent_deps import AgentResult
+from prover.pipeline._agent_deps import HookManager
+from common.hook_types import HookEvent, HookContext, HookAction
+from prover.pipeline._agent_deps import PluginLoader
+from prover.pipeline._agent_deps import StrategySwitcher
+from common.budget import Budget
+from common.working_memory import WorkingMemory
+from prover.pipeline._agent_deps import ContextWindow
 
 logger = logging.getLogger(__name__)
 
@@ -320,7 +320,7 @@ class Orchestrator:
         if pre.action == HookAction.SKIP:
             logger.info("PRE_VERIFICATION hook: SKIP (proof rejected by pre-filter)")
             if agent_result:
-                from agent.strategy.confidence_estimator import ConfidenceEstimator
+                from prover.pipeline._agent_deps import ConfidenceEstimator
                 agent_result.confidence = ConfidenceEstimator.refine_confidence(
                     agent_result, l0_passed=False)
             return False
@@ -344,7 +344,7 @@ class Orchestrator:
 
                 # ── 用验证反馈精化置信度 ──
                 if agent_result:
-                    from agent.strategy.confidence_estimator import ConfidenceEstimator
+                    from prover.pipeline._agent_deps import ConfidenceEstimator
                     agent_result.confidence = ConfidenceEstimator.refine_confidence(
                         agent_result,
                         feedback=result.feedback,

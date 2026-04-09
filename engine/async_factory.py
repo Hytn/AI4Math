@@ -31,6 +31,15 @@ class AsyncEngineComponents:
     scheduler: Optional['AsyncVerificationScheduler'] = None
     broadcast: Optional['BroadcastBus'] = None
     agent_pool: Optional[object] = None  # 由 prover 层注入
+<<<<<<< HEAD
+=======
+
+    # ── Knowledge system (由 prover 层注入, engine 层不依赖 knowledge/) ──
+    knowledge_store: Optional[object] = None   # UnifiedKnowledgeStore
+    knowledge_writer: Optional[object] = None  # KnowledgeWriter
+    knowledge_reader: Optional[object] = None  # KnowledgeReader
+    knowledge_broadcaster: Optional[object] = None  # KnowledgeBroadcaster
+>>>>>>> 7a01a9c (infra complete)
 
     async def close(self):
         if self.lean_pool:
@@ -73,17 +82,35 @@ class AsyncEngineFactory:
             from engine.broadcast import BroadcastBus
             comp.broadcast = overrides.get('broadcast') or BroadcastBus()
 
-            # 2. AsyncLeanPool
+            # 2. AsyncLeanPool or ElasticPool
             if 'lean_pool' in overrides:
                 comp.lean_pool = overrides['lean_pool']
             else:
-                from engine.async_lean_pool import AsyncLeanPool
                 pool_size = self.config.get("lean_pool_size", 4)
                 project_dir = self.config.get("lean_project_dir", ".")
-                comp.lean_pool = AsyncLeanPool(
-                    pool_size=pool_size, project_dir=project_dir)
-                await comp.lean_pool.start()
+                remote_workers = self.config.get("remote_workers", [])
 
+<<<<<<< HEAD
+=======
+                if remote_workers:
+                    # Use ElasticPool for mixed local+remote topology
+                    from engine.remote_session import ElasticPool
+                    pool = ElasticPool(
+                        timeout_seconds=self.config.get("timeout", 30))
+                    local_count = self.config.get("local_pool_size", pool_size)
+                    if local_count > 0:
+                        await pool.add_local(local_count,
+                                             project_dir=project_dir)
+                    if remote_workers:
+                        await pool.add_remote(remote_workers)
+                    comp.lean_pool = pool
+                else:
+                    from engine.async_lean_pool import AsyncLeanPool
+                    comp.lean_pool = AsyncLeanPool(
+                        pool_size=pool_size, project_dir=project_dir)
+                    await comp.lean_pool.start()
+
+>>>>>>> 7a01a9c (infra complete)
             # 3. PreFilter
             from engine.prefilter import PreFilter
             comp.prefilter = overrides.get('prefilter') or PreFilter()

@@ -26,7 +26,7 @@ from engine._core import TacticFeedback, FullVerifyResult
 class PoolProtocol(Protocol):
     """Lean4 REPL 连接池的最小接口
 
-    同步和异步 Pool 都应满足此协议 (通过 SyncLeanPool 包装)。
+    AsyncLeanPool, SyncLeanPool, ElasticPool 都应满足此协议。
     """
 
     def try_tactic(self, env_id: int, tactic: str) -> TacticFeedback: ...
@@ -37,10 +37,41 @@ class PoolProtocol(Protocol):
     def verify_complete(self, theorem: str, proof: str,
                         preamble: str = "") -> FullVerifyResult: ...
 
+    def share_lemma(self, lemma_code: str, **kwargs) -> int: ...
 
     def stats(self) -> dict: ...
 
     def shutdown(self): ...
+
+    @property
+    def base_env_id(self) -> int: ...
+
+
+@runtime_checkable
+class AsyncPoolProtocol(Protocol):
+    """异步连接池协议 — AsyncLeanPool 和 ElasticPool 共同满足
+
+    AsyncVerificationScheduler, IncrementalVerifier 等异步组件
+    应通过此协议引用池, 而非具体类。
+    """
+
+    async def try_tactic(self, env_id: int, tactic: str) -> TacticFeedback: ...
+
+    async def try_tactics_parallel(self, env_id: int,
+                                   tactics: list[str]) -> list[TacticFeedback]: ...
+
+    async def verify_complete(self, theorem: str, proof: str,
+                              preamble: str = "") -> FullVerifyResult: ...
+
+    async def share_lemma(self, lemma_code: str, **kwargs) -> int: ...
+
+    async def add_session(self, **kwargs) -> bool: ...
+
+    async def remove_idle_session(self) -> bool: ...
+
+    async def shutdown(self): ...
+
+    def stats(self) -> dict: ...
 
     @property
     def base_env_id(self) -> int: ...

@@ -1,8 +1,8 @@
 """prover/codegen/sorry_closer.py — 逐个关闭 sorry 的子目标求解器"""
 from __future__ import annotations
 import logging
-from agent.brain.roles import AgentRole, ROLE_PROMPTS
-from agent.brain.response_parser import extract_lean_code
+from common.roles import AgentRole, ROLE_PROMPTS
+from common.response_parser import extract_lean_code
 
 logger = logging.getLogger(__name__)
 

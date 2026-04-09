@@ -198,11 +198,13 @@ class ResourceScheduler:
             self._admission_sem.release()
             self._total_completed += 1
 
-    async def _acquire_for_task(self, handle: TaskHandle) -> 'AsyncLeanSession':
+    async def _acquire_for_task(self, handle: TaskHandle):
         """为特定任务获取会话 (内部方法, 由 TaskHandle 调用)
 
         优先级实现: 通过在 pool._acquire_session 之前
         检查是否有更高优先级的任务在等待。
+
+        Compatible with both AsyncLeanPool and ElasticPool.
         """
         # 检查预算
         if handle.budget.is_exhausted:
@@ -214,14 +216,26 @@ class ResourceScheduler:
             raise BudgetExhaustedError(
                 f"Task {handle.task_id} wall time exceeded")
 
-        session = await self._pool._acquire_session()
+        # Duck-type: AsyncLeanPool uses _acquire_session, ElasticPool uses _acquire
+        if hasattr(self._pool, '_acquire_session'):
+            session = await self._pool._acquire_session()
+        elif hasattr(self._pool, '_acquire'):
+            session = await self._pool._acquire()
+        else:
+            raise TypeError(
+                f"Pool {type(self._pool)} has no acquire method")
         handle.budget.consume_verification()
         return session
 
-    async def _release_for_task(self, handle: TaskHandle,
-                                session: 'AsyncLeanSession'):
+    async def _release_for_task(self, handle: TaskHandle, session):
         """为特定任务释放会话"""
-        await self._pool._release_session(session)
+        if hasattr(self._pool, '_release_session'):
+            await self._pool._release_session(session)
+        elif hasattr(self._pool, '_release'):
+            await self._pool._release(session)
+        else:
+            raise TypeError(
+                f"Pool {type(self._pool)} has no release method")
 
     def get_task(self, task_id: str) -> Optional[TaskHandle]:
         return self._active_tasks.get(task_id)

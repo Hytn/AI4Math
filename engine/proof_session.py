@@ -291,9 +291,11 @@ class ProofSessionManager:
       - 并行证明调度
     """
 
-    def __init__(self, pool: 'AsyncLeanPool'):
+    def __init__(self, pool: 'AsyncLeanPool', store=None):
         self._pool = pool
         self._sessions: dict[str, ProofSession] = {}
+        self._context_ids: dict[str, int] = {}  # session_id → store context_id
+        self._store = store  # Optional[ProofContextStore]
         self._base_env_id: int = -1   # import 后的基础环境
 
     async def begin_proof(self, theorem: str,
@@ -356,6 +358,40 @@ class ProofSessionManager:
 
     def remove_session(self, session_id: str):
         self._sessions.pop(session_id, None)
+        self._context_ids.pop(session_id, None)
+
+    async def save_session(self, session_id: str) -> Optional[int]:
+        """Persist a proof session to the store. Returns context_id."""
+        if not self._store:
+            return None
+        session = self._sessions.get(session_id)
+        if not session:
+            return None
+        ctx_id = self._context_ids.get(session_id)
+        ctx_id = await self._store.save(session._state, context_id=ctx_id)
+        self._context_ids[session_id] = ctx_id
+        return ctx_id
+
+    async def load_session(self, context_id: int,
+                           session_id: str = "") -> Optional[ProofSession]:
+        """Resume a proof session from the store.
+
+        Note: env_ids from the stored state are stale (they belonged to a
+        previous REPL process). The loaded session preserves the proof tree
+        structure and tactic history for analysis, but live REPL interaction
+        requires replaying tactics from the root.
+        """
+        if not self._store:
+            return None
+        state = await self._store.load(context_id)
+        if not state:
+            return None
+        if not session_id:
+            session_id = f"resumed_{context_id}_{time.time():.0f}"
+        session = ProofSession(state, self._pool)
+        self._sessions[session_id] = session
+        self._context_ids[session_id] = context_id
+        return session
 
     async def __aenter__(self):
         return self
