@@ -15,7 +15,7 @@ def t1():
     from prover.models import ProofTrace, ProofAttempt, AttemptStatus
     from prover.pipeline.orchestrator import Orchestrator
     from agent.brain.claude_provider import create_provider, MockProvider
-    from agent.memory.working_memory import WorkingMemory
+    from common.working_memory import WorkingMemory
     from agent.strategy.meta_controller import MetaController
     from benchmarks.loader import load_benchmark
 check("all imports", t1)
@@ -47,7 +47,7 @@ check("builtin benchmark", t4)
 print("[5] Strategy")
 def t5():
     from agent.strategy.meta_controller import MetaController
-    from agent.memory.working_memory import WorkingMemory
+    from common.working_memory import WorkingMemory
     mc = MetaController({"max_light_rounds": 2})
     mem = WorkingMemory(current_strategy="light", rounds_completed=3)
     assert mc.should_escalate(mem) == "medium"

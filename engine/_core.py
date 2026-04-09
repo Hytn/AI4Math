@@ -59,6 +59,62 @@ class CompileCache:
         }
 
 
+class AsyncCompileCache:
+    """Asyncio-safe LRU cache for compilation results (Fix #7).
+
+    Drop-in replacement for CompileCache in async contexts.
+    Uses asyncio.Lock instead of threading.Lock to avoid blocking
+    the event loop under high concurrency.
+
+    Usage::
+
+        cache = AsyncCompileCache(maxsize=512)
+        result = await cache.get(key)
+        if result is None:
+            result = await do_verify(...)
+            await cache.put(key, result)
+    """
+
+    def __init__(self, maxsize: int = 512):
+        self._cache: OrderedDict[str, 'FullVerifyResult'] = OrderedDict()
+        self._maxsize = maxsize
+        self._lock = None  # lazy init (needs running event loop)
+        self.hits = 0
+        self.misses = 0
+
+    def _ensure_lock(self):
+        if self._lock is None:
+            import asyncio
+            self._lock = asyncio.Lock()
+
+    async def get(self, key: str) -> Optional['FullVerifyResult']:
+        self._ensure_lock()
+        async with self._lock:
+            if key in self._cache:
+                self.hits += 1
+                self._cache.move_to_end(key)
+                return self._cache[key]
+            self.misses += 1
+            return None
+
+    async def put(self, key: str, result: 'FullVerifyResult'):
+        self._ensure_lock()
+        async with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            self._cache[key] = result
+            while len(self._cache) > self._maxsize:
+                self._cache.popitem(last=False)
+
+    def stats(self) -> dict:
+        total = self.hits + self.misses
+        return {
+            "hits": self.hits, "misses": self.misses,
+            "hit_rate": round(self.hits / total, 3) if total else 0,
+            "size": len(self._cache),
+        }
+
+
 # ═══════════════════════════════════════════════════════════════
 # Shared data types
 # ═══════════════════════════════════════════════════════════════

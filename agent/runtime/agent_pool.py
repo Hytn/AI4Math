@@ -17,7 +17,7 @@ from agent.runtime.sub_agent import (
 )
 from agent.runtime.result_fuser import ResultFuser
 from agent.brain.llm_provider import LLMProvider
-from agent.strategy.budget_allocator import Budget
+from common.budget import Budget
 
 logger = logging.getLogger(__name__)
 

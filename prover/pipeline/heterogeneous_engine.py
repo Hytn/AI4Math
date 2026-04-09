@@ -147,7 +147,8 @@ class HeterogeneousEngine:
 
                 # ── v2: 注入来自广播总线的跨方向知识 ──
                 broadcast_context = self.broadcast.render_for_prompt(
-                    d.name, max_messages=8, max_chars=1500)
+                    d.name, max_messages=8, max_chars=1500,
+                    current_goal=problem.theorem_statement)
                 if broadcast_context:
                     context_items.append(
                         ContextItem("teammate_discoveries", broadcast_context,

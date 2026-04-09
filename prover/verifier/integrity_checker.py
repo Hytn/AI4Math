@@ -191,9 +191,68 @@ def check_integrity(code: str, original_statement: str = "") -> IntegrityReport:
 
 
 def _strip_comments(code: str) -> str:
-    """Remove single-line (--) and block (/- -/) comments."""
-    # Remove block comments (non-greedy, handles nesting approximately)
-    result = re.sub(r'/-.*?-/', '', code, flags=re.DOTALL)
-    # Remove single-line comments
-    result = re.sub(r'--.*$', '', result, flags=re.MULTILINE)
-    return result
+    """Remove single-line (--) and block (/- -/) comments.
+
+    Fix #6: Uses stack-based parsing to correctly handle nested block
+    comments like /- /- inner -/ outer -/ which Lean4 supports.
+    The previous regex r'/-.*?-/' failed on nested comments, allowing
+    malicious proofs to hide `sorry` inside nested comment constructs.
+    """
+    result = []
+    i = 0
+    n = len(code)
+    depth = 0  # nesting depth for /- -/ block comments
+    in_line_comment = False
+
+    while i < n:
+        # Inside a block comment
+        if depth > 0:
+            if i + 1 < n and code[i] == '/' and code[i + 1] == '-':
+                depth += 1
+                i += 2
+            elif i + 1 < n and code[i] == '-' and code[i + 1] == '/':
+                depth -= 1
+                i += 2
+            else:
+                i += 1
+            continue
+
+        # Inside a line comment
+        if in_line_comment:
+            if code[i] == '\n':
+                in_line_comment = False
+                result.append('\n')  # preserve line structure
+            i += 1
+            continue
+
+        # Check for start of block comment
+        if i + 1 < n and code[i] == '/' and code[i + 1] == '-':
+            depth = 1
+            i += 2
+            continue
+
+        # Check for start of line comment (--)
+        if i + 1 < n and code[i] == '-' and code[i + 1] == '-':
+            in_line_comment = True
+            i += 2
+            continue
+
+        # Check for string literals (don't strip comments inside strings)
+        if code[i] == '"':
+            result.append(code[i])
+            i += 1
+            while i < n and code[i] != '"':
+                if code[i] == '\\' and i + 1 < n:
+                    result.append(code[i])
+                    i += 1
+                result.append(code[i])
+                i += 1
+            if i < n:
+                result.append(code[i])
+                i += 1
+            continue
+
+        result.append(code[i])
+        i += 1
+
+    return ''.join(result)

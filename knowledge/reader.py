@@ -139,7 +139,27 @@ class KnowledgeReader:
             self, goal: str = "", theorem: str = "",
             domain: str = "",
             top_k: int = 5) -> list[LemmaMatch]:
-        """检索相关引理 (来自 Layer 1)"""
+        """检索相关引理 (来自 Layer 1)
+
+        使用 TF-IDF + BM25 融合检索替代纯关键词重叠。
+        当 TF-IDF 检索器可用时优先使用，否则降级到关键词匹配。
+        """
+        # 尝试 TF-IDF 增强检索
+        try:
+            from knowledge.tfidf_retriever import enhance_knowledge_store_search
+            scored = enhance_knowledge_store_search(
+                self.store, query_goal=goal, query_theorem=theorem,
+                domain=domain, top_k=top_k)
+            if scored:
+                return [LemmaMatch(
+                    name=s.name, statement=s.statement,
+                    proof=s.proof, relevance_score=s.score,
+                    times_cited=0,
+                ) for s in scored]
+        except Exception as e:
+            logger.debug(f"TF-IDF retrieval unavailable, falling back to keywords: {e}")
+
+        # 降级到关键词匹配
         keywords = extract_keywords(f"{theorem} {goal}")
         goal_pattern = normalize_goal_for_key(goal) if goal else ""
 

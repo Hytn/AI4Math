@@ -110,8 +110,53 @@ class ProofPipeline:
             strategy_name=strategy_name)
 
     def pre_round(self, ctx: RoundContext):
-        """阶段 1: 检查升级条件, 触发反思, 注入上下文"""
-        # 策略升级
+        """阶段 1: 检查升级条件, 触发反思, 注入上下文
+
+        使用 PolicyEngine (模式6) 进行策略决策,
+        保留 MetaController 作为 fallback。
+        """
+        # ── 模式 6: 优先使用 PolicyEngine ──
+        try:
+            from engine.lane.policy import PolicyEngine, PolicyAction
+            from engine.lane.task_state import (
+                TaskContext, ProofTaskStateMachine, TaskStatus,
+            )
+            # 构建临时状态机用于策略评估
+            task_ctx = TaskContext(
+                theorem_name=ctx.problem.name,
+                formal_statement=ctx.problem.theorem_statement,
+                rounds_completed=ctx.round_number,
+                total_samples=ctx.memory.total_samples,
+                banked_lemmas=[l.name for l in ctx.memory.banked_lemmas]
+                    if hasattr(ctx.memory, 'banked_lemmas') and ctx.memory.banked_lemmas else [],
+            )
+            task_ctx.__dict__["_max_samples"] = (
+                self.comp.budget.max_samples
+                if hasattr(self.comp, 'budget') else 128)
+            task_ctx.__dict__["_current_strategy"] = ctx.strategy_name
+
+            sm = ProofTaskStateMachine(
+                task_id=f"policy_{ctx.problem.problem_id}", context=task_ctx)
+            sm.transition_to(TaskStatus.GENERATING)
+
+            policy = PolicyEngine.default()
+            decision = policy.evaluate(sm)
+
+            if decision.action == PolicyAction.ESCALATE_STRATEGY:
+                new_strategy = decision.metadata.get("to", "medium")
+                ctx.strategy_name = new_strategy
+                ctx.memory.current_strategy = new_strategy
+                ctx.trace.strategy_path.append(new_strategy)
+                reflection = self._run_reflection(ctx)
+                self._fire_strategy_switch(ctx, reflection)
+                return
+            elif decision.action == PolicyAction.INJECT_REFLECTION:
+                self._run_reflection(ctx)
+                return
+        except Exception:
+            pass  # PolicyEngine 不可用时 fallback 到 MetaController
+
+        # ── Fallback: 原 MetaController 逻辑 ──
         escalation = self.comp.meta_controller.should_escalate(ctx.memory)
         if escalation:
             ctx.strategy_name = StrategySwitcher.switch(

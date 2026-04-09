@@ -20,15 +20,15 @@ from typing import Optional
 
 from agent.brain.async_llm_provider import AsyncLLMProvider
 from agent.brain.llm_provider import LLMResponse
-from agent.brain.roles import AgentRole, ROLE_PROMPTS
-from agent.brain.response_parser import extract_lean_code
+from common.roles import AgentRole, ROLE_PROMPTS
+from common.response_parser import extract_lean_code
 from agent.context.context_window import ContextWindow
-from agent.memory.working_memory import WorkingMemory
+from common.working_memory import WorkingMemory
 from agent.runtime.sub_agent import (
     AgentSpec, AgentTask, AgentResult, ContextItem,
 )
 from agent.runtime.result_fuser import ResultFuser
-from agent.strategy.budget_allocator import Budget
+from common.budget import Budget
 
 logger = logging.getLogger(__name__)
 

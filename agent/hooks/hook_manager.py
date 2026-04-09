@@ -19,7 +19,7 @@ import logging
 import re
 from collections import defaultdict
 
-from agent.hooks.hook_types import (
+from common.hook_types import (
     Hook, HookEvent, HookAction, HookContext, HookResult
 )
 

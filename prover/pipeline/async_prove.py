@@ -70,7 +70,9 @@ async def async_prove_round(
             context_items.append(
                 ContextItem("strategy", d.strategic_hint, 0.9, "tactic_hint"))
 
-        broadcast_text = bus.render_for_prompt(d.name, max_messages=8)
+        broadcast_text = bus.render_for_prompt(
+            d.name, max_messages=8,
+            current_goal=problem.theorem_statement)
         if broadcast_text:
             context_items.append(
                 ContextItem("teammate_discoveries", broadcast_text,

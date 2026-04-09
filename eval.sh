@@ -29,6 +29,7 @@ header(){ echo -e "\n${W}══════════════════�
 
 MODE="mock"; BENCHMARK="all"; LIMIT=0; SPLIT="test"; LEAN_MODE="skip"
 MAX_SAMPLES="${MAX_SAMPLES:-8}"; MODEL="${MODEL:-claude-sonnet-4-20250514}"
+MULTI_ROLE=""; EARLY_STOP=""; NO_KNOWLEDGE=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -41,6 +42,9 @@ while [[ $# -gt 0 ]]; do
         --samples)    MAX_SAMPLES="$2"; shift 2 ;;
         --split)      SPLIT="$2"; shift 2 ;;
         --lean)       LEAN_MODE="real"; shift ;;
+        --multi-role) MULTI_ROLE="--multi-role"; shift ;;
+        --early-stop) EARLY_STOP="--early-stop"; shift ;;
+        --no-knowledge) NO_KNOWLEDGE="--no-knowledge"; shift ;;
         --help|-h)
             echo "Usage: bash eval.sh [OPTIONS]"
             echo "  --real               使用真实 Claude API (需 ANTHROPIC_API_KEY)"
@@ -51,6 +55,9 @@ while [[ $# -gt 0 ]]; do
             echo "  --model NAME         模型 (默认 claude-sonnet-4-20250514)"
             echo "  --samples N          每题最大尝试次数 (默认 8)"
             echo "  --lean               启用 Lean4 真实验证 (需安装)"
+            echo "  --multi-role         启用多角色: Generator + Repair Agent 交替"
+            echo "  --early-stop         在 3 次成功后提前退出 (pass@k 有偏)"
+            echo "  --no-knowledge       禁用知识系统"
             echo "Examples:"
             echo "  bash eval.sh                                 # Mock 冒烟测试"
             echo "  bash eval.sh --real --quick                  # 快速真实评测"
@@ -127,7 +134,7 @@ LIMIT_ARG=""; [ "${LIMIT:-0}" -gt 0 ] 2>/dev/null && LIMIT_ARG="--limit $LIMIT"
 for bench in $BL; do
     echo -e "\n${C}──── 评测: $bench ────${N}"
     python3 run_eval.py --benchmark "$bench" --provider "$MODE" --model "$MODEL" \
-        --max-samples "$MAX_SAMPLES" --lean-mode "$LEAN_MODE" --split "$SPLIT" $LIMIT_ARG 2>&1 \
+        --max-samples "$MAX_SAMPLES" --lean-mode "$LEAN_MODE" --split "$SPLIT" $LIMIT_ARG $MULTI_ROLE $EARLY_STOP $NO_KNOWLEDGE 2>&1 \
         || warn "$bench 出现错误"
 done
 

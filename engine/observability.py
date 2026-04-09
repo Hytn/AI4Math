@@ -270,3 +270,148 @@ def configure(enabled: bool = True, max_samples: int = 10000):
     """重新配置全局指标收集器"""
     global metrics
     metrics = MetricsCollector(enabled=enabled, max_samples=max_samples)
+
+
+# ═══════════════════════════════════════════════════════════════
+# 导出: JSON file + Prometheus text + HTTP server
+# ═══════════════════════════════════════════════════════════════
+
+class MetricsExporter:
+    """指标导出器 — 支持 JSON 文件、Prometheus 文本格式、HTTP 端点。
+
+    Usage::
+
+        exporter = MetricsExporter(metrics)
+
+        # 一次性导出 JSON
+        exporter.export_json("metrics.json")
+
+        # 周期性后台导出
+        exporter.start_periodic_export("metrics.json", interval_seconds=30)
+
+        # 启动 HTTP 端点 (GET /metrics 返回 Prometheus 格式)
+        exporter.start_http_server(port=9090)
+    """
+
+    def __init__(self, collector: MetricsCollector = None):
+        self._collector = collector or metrics
+        self._export_thread = None
+        self._http_thread = None
+        self._stop_event = threading.Event()
+
+    def export_json(self, path: str):
+        """导出当前指标快照为 JSON 文件。"""
+        import json
+        snapshot = self._collector.snapshot()
+        snapshot["_exported_at"] = time.time()
+        snapshot["_exported_at_iso"] = time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        with open(path, 'w') as f:
+            json.dump(snapshot, f, indent=2)
+
+    def export_prometheus(self) -> str:
+        """生成 Prometheus text exposition 格式。"""
+        lines = []
+        snapshot = self._collector.snapshot()
+        for key, data in sorted(snapshot.items()):
+            safe_name = key.replace('.', '_').replace('{', '_').replace('}', '_').replace(',', '_').replace('=', '_')
+            mtype = data.get("type", "unknown")
+
+            if mtype == "timer":
+                lines.append(f"# TYPE {safe_name} summary")
+                lines.append(f"{safe_name}_count {data['count']}")
+                lines.append(f"{safe_name}_mean {data['mean']}")
+                lines.append(f'{safe_name}{{quantile="0.5"}} {data["p50"]}')
+                lines.append(f'{safe_name}{{quantile="0.9"}} {data["p90"]}')
+                lines.append(f'{safe_name}{{quantile="0.99"}} {data["p99"]}')
+            elif mtype == "counter":
+                lines.append(f"# TYPE {safe_name} counter")
+                lines.append(f"{safe_name} {data['value']}")
+            elif mtype == "gauge":
+                lines.append(f"# TYPE {safe_name} gauge")
+                lines.append(f"{safe_name} {data['value']}")
+
+        return "\n".join(lines) + "\n"
+
+    def start_periodic_export(self, path: str, interval_seconds: float = 30.0):
+        """在后台线程中周期性导出指标到 JSON 文件。"""
+        def _export_loop():
+            while not self._stop_event.wait(interval_seconds):
+                try:
+                    self.export_json(path)
+                except Exception as e:
+                    logger.warning(f"Periodic metrics export failed: {e}")
+
+        self._export_thread = threading.Thread(
+            target=_export_loop, daemon=True, name="metrics-exporter")
+        self._export_thread.start()
+        logger.info(f"Periodic metrics export started: {path} every {interval_seconds}s")
+
+    def start_http_server(self, port: int = 9090, host: str = "0.0.0.0"):
+        """启动简单 HTTP 服务器，暴露 /metrics 端点。
+
+        GET /metrics   → Prometheus text format
+        GET /health    → JSON health check
+        GET /snapshot  → Full JSON snapshot
+        """
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+        import json
+
+        exporter = self
+
+        class MetricsHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path == "/metrics":
+                    body = exporter.export_prometheus().encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type",
+                                     "text/plain; version=0.0.4; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                elif self.path == "/snapshot":
+                    snapshot = exporter._collector.snapshot()
+                    snapshot["_ts"] = time.time()
+                    body = json.dumps(snapshot, indent=2).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                elif self.path == "/health":
+                    body = json.dumps({"status": "ok",
+                                        "uptime": time.time()}).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(body)
+                else:
+                    self.send_error(404)
+
+            def log_message(self, format, *args):
+                pass  # suppress access logs
+
+        def _serve():
+            server = HTTPServer((host, port), MetricsHandler)
+            server.serve_forever()
+
+        self._http_thread = threading.Thread(
+            target=_serve, daemon=True, name="metrics-http")
+        self._http_thread.start()
+        logger.info(f"Metrics HTTP server started on {host}:{port}")
+
+    def stop(self):
+        """停止后台导出。"""
+        self._stop_event.set()
+        if self._export_thread:
+            self._export_thread.join(timeout=5)
+
+
+# 全局导出器 (懒初始化)
+_exporter: MetricsExporter | None = None
+
+def get_exporter() -> MetricsExporter:
+    global _exporter
+    if _exporter is None:
+        _exporter = MetricsExporter(metrics)
+    return _exporter

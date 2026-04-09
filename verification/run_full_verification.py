@@ -576,9 +576,9 @@ def section_5():
     
     from agent.brain.llm_provider import CachedProvider, LLMResponse
     from agent.brain.claude_provider import MockProvider, create_provider
-    from agent.brain.prompt_builder import build_prompt, FEW_SHOT_EXAMPLES
-    from agent.brain.response_parser import extract_lean_code, extract_json
-    from agent.brain.roles import AgentRole, ROLE_PROMPTS
+    from common.prompt_builder import build_prompt, FEW_SHOT_EXAMPLES
+    from common.response_parser import extract_lean_code, extract_json
+    from common.roles import AgentRole, ROLE_PROMPTS
     
     def test_mock_provider():
         p = MockProvider()
@@ -647,7 +647,7 @@ def section_5():
 def section_6():
     report.begin_section("6", "Agent Memory — Working + Episodic")
     
-    from agent.memory.working_memory import WorkingMemory
+    from common.working_memory import WorkingMemory
     from agent.memory.episodic_memory import EpisodicMemory, Episode
     
     def test_working_memory():
@@ -701,11 +701,11 @@ def section_7():
     report.begin_section("7", "Agent Strategy — Controller, Budget, Confidence, Switcher")
     
     from agent.strategy.meta_controller import MetaController
-    from agent.strategy.budget_allocator import Budget
+    from common.budget import Budget
     from agent.strategy.confidence_estimator import ConfidenceEstimator
     from agent.strategy.strategy_switcher import StrategySwitcher, STRATEGIES
     from agent.strategy.refinement_modes import LightConfig, MediumConfig, HeavyConfig
-    from agent.memory.working_memory import WorkingMemory
+    from common.working_memory import WorkingMemory
     
     def test_meta_controller():
         mc = MetaController({"max_light_rounds": 2})
@@ -1143,7 +1143,7 @@ def section_20():
     from prover.models import BenchmarkProblem, AttemptStatus
     from prover.pipeline.proof_loop import ProofLoop
     from prover.pipeline.orchestrator import Orchestrator
-    from agent.memory.working_memory import WorkingMemory
+    from common.working_memory import WorkingMemory
     from agent.brain.claude_provider import MockProvider
     from agent.brain.llm_provider import LLMResponse
     
@@ -1266,7 +1266,7 @@ def section_22():
     
     from prover.verifier.lean_checker import _global_check_cache
     from prover.lemma_bank.bank import LemmaBank, ProvedLemma
-    from agent.strategy.budget_allocator import Budget
+    from common.budget import Budget
     
     def test_check_cache_threadsafe():
         errors = []

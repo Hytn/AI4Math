@@ -200,7 +200,8 @@ class AsyncOrchestrator:
             broadcast_text = ""
             if self.comp.broadcast:
                 broadcast_text = self.comp.broadcast.render_for_prompt(
-                    d.name, max_messages=8)
+                    d.name, max_messages=8,
+                    current_goal=problem.theorem_statement)
 
             # ── Knowledge injection (Gap 0 fix) ──
             # Retrieve accumulated knowledge from the unified store

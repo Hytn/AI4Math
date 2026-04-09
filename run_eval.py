@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""run_eval.py — 真实基准评测入口 (v2)
+"""run_eval.py — 真实基准评测入口 (v3)
+
+v3 改进 (在 v2 基础上):
+  6. 知识闭环: 每次尝试结果写入知识库, 下轮 prompt 注入积累知识
+  7. 修复链路: 失败后的下一轮 prompt 包含错误诊断和修复建议
+  8. 多角色模式: --multi-role 启用 Generator → Repair → Decomposer 链
+  9. pass@k 修复: 默认跑满全部 samples, --early-stop 才提前退出
+  10. 验证标注: lean_mode=skip 时结果明确标注 [unverified]
 
 v2 改进:
   1. 增量保存: 每道题完成后立即写入磁盘, 中途崩溃不丢失
@@ -12,8 +19,10 @@ Usage:
     python run_eval.py --benchmark minif2f --provider mock
     python run_eval.py --benchmark minif2f --provider anthropic --resume
     python run_eval.py --benchmark all --provider anthropic --limit 10
+    python run_eval.py --benchmark minif2f --provider anthropic --multi-role
 """
 import argparse
+import asyncio
 import json
 import logging
 import os
@@ -28,12 +37,17 @@ from prover.models import (
     BenchmarkProblem, ProofTrace, ProofAttempt, AttemptStatus,
 )
 from agent.brain.claude_provider import create_provider
-from agent.brain.prompt_builder import build_prompt
-from agent.brain.response_parser import extract_lean_code
-from agent.brain.roles import AgentRole, ROLE_PROMPTS
+from common.prompt_builder import build_prompt
+from common.response_parser import extract_lean_code
+from common.roles import AgentRole, ROLE_PROMPTS
 from prover.verifier.sorry_detector import detect_sorry
 from prover.codegen.code_formatter import format_lean_code
 from prover.premise.selector import PremiseSelector
+from prover.repair.repair_generator import RepairGenerator
+from knowledge.store import UnifiedKnowledgeStore
+from knowledge.reader import KnowledgeReader
+from knowledge.writer import KnowledgeWriter
+from engine.proof_context_store import StepDetail
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -44,15 +58,23 @@ def prove_single(problem: BenchmarkProblem, llm, premise_selector,
                  max_samples: int = 8, lean_env=None,
                  lean_mode: str = "skip",
                  temperature: float = 0.8,
-                 temp_mode: str = "fixed") -> ProofTrace:
+                 temp_mode: str = "fixed",
+                 knowledge_reader: KnowledgeReader = None,
+                 knowledge_writer: KnowledgeWriter = None,
+                 multi_role: bool = False,
+                 early_stop: bool = False) -> ProofTrace:
     """对单道题进行证明尝试。
 
-    v2 fix: 不在首次成功时中断, 而是跑完所有 max_samples 次,
-    以正确统计 correct_count (pass@k 所需)。
+    v3 改进:
+      - 知识闭环: 每次尝试后写入知识库, 下轮注入积累知识 (Fix #1)
+      - 错误反馈: 失败后将错误诊断注入下轮 prompt (Fix #9)
+      - 多角色: Generator → Repair → Generator 交替 (Fix #3)
+      - pass@k: 默认跑满全部 samples, 仅 early_stop=True 时提前退出 (Fix #4)
+      - 验证标注: lean_mode=skip 时 stderr 明确标注 [unverified] (Fix #5)
 
-    v3 fix: 温度调度模式可选:
-      - "fixed": 所有样本使用相同温度 (默认 0.8), 满足 pass@k 独立同分布假设
-      - "escalating": 逐步提高温度 (0.3 → 1.0) 增加多样性, 但 pass@k 公式不再严格适用
+    温度调度模式:
+      - "fixed": 所有样本使用相同温度 (默认 0.8), 满足 pass@k i.i.d. 假设
+      - "escalating": 逐步提高温度 (0.3 → 1.0) 增加多样性
     """
     trace = ProofTrace(
         problem_id=problem.problem_id,
@@ -65,36 +87,98 @@ def prove_single(problem: BenchmarkProblem, llm, premise_selector,
     premises = premise_selector.retrieve(problem.theorem_statement, top_k=10)
     premise_strs = [f"{r['name']}: {r['statement']}" for r in premises]
 
+    # Fix #1: 从知识库注入积累知识
+    knowledge_context = ""
+    if knowledge_reader:
+        try:
+            knowledge_context = asyncio.get_event_loop().run_until_complete(
+                knowledge_reader.render_for_prompt(
+                    goal=problem.theorem_statement,
+                    theorem=problem.theorem_statement,
+                    max_chars=1200))
+        except RuntimeError:
+            # No event loop running, create one
+            knowledge_context = asyncio.run(
+                knowledge_reader.render_for_prompt(
+                    goal=problem.theorem_statement,
+                    theorem=problem.theorem_statement,
+                    max_chars=1200))
+        except Exception as e:
+            logger.debug(f"  知识注入跳过: {e}")
+
+    # Fix #9: 跟踪上一次失败的错误信息, 用于修复链路
+    last_failed_proof = ""
+    last_error_analysis = ""
+    error_history_parts = []  # 积累所有历史错误摘要
+
+    # Fix #3: 多角色修复器
+    repair_gen = RepairGenerator(llm) if multi_role else None
+
     for attempt_idx in range(max_samples):
         attempt = ProofAttempt(attempt_number=attempt_idx + 1)
         t0 = time.time()
 
         try:
-            prompt = build_prompt(
-                theorem_statement=problem.theorem_statement,
-                premises=premise_strs[:10],
-            )
+            # Fix #3: 多角色 — 偶数轮用 Generator, 失败后奇数轮用 Repair
+            use_repair = (multi_role and last_failed_proof
+                          and attempt_idx % 2 == 1)
 
-            # 温度调度
-            if temp_mode == "escalating":
-                temp = 0.3 + (attempt_idx * 0.1)
-                temp = min(temp, 1.0)
+            if use_repair:
+                # Repair Agent 接力
+                repairs = repair_gen.generate_repair(
+                    theorem=problem.theorem_statement,
+                    failed_proof=last_failed_proof,
+                    error_analysis=last_error_analysis,
+                    max_repairs=1,
+                    temperature=0.4)
+                proof = repairs[0] if repairs else ""
+                proof = format_lean_code(proof) if proof.strip() else ""
+                attempt.llm_model = llm.model_name
+                attempt.repair_rounds = 1
+                attempt.prompt_summary = "repair_agent"
             else:
-                # "fixed" 模式: 所有采样使用相同温度, 满足 pass@k i.i.d. 假设
-                temp = temperature
-            resp = llm.generate(
-                system=ROLE_PROMPTS[AgentRole.PROOF_GENERATOR],
-                user=prompt,
-                temperature=min(temp, 1.0),
-            )
-            proof = extract_lean_code(resp.content)
-            proof = format_lean_code(proof) if proof.strip() else ""
+                # Fix #9: 如有上轮错误, 构建包含错误诊断的 retry prompt
+                error_history_str = ""
+                if error_history_parts:
+                    # 只保留最近 3 条历史
+                    recent = error_history_parts[-3:]
+                    error_history_str = "\n".join(recent)
 
-            attempt.generated_proof = proof
-            attempt.llm_model = resp.model
-            attempt.llm_tokens_in = resp.tokens_in
-            attempt.llm_tokens_out = resp.tokens_out
-            attempt.llm_latency_ms = resp.latency_ms
+                # Fix #1: 将知识库知识附加到 premises 中
+                effective_premises = list(premise_strs[:10])
+                if knowledge_context:
+                    effective_premises.append(
+                        f"[Knowledge from past proofs]\n{knowledge_context}")
+
+                prompt = build_prompt(
+                    theorem_statement=problem.theorem_statement,
+                    premises=effective_premises,
+                    error_analysis=last_error_analysis if last_failed_proof else "",
+                    error_history=error_history_str,
+                    failed_proof=last_failed_proof,
+                    attempt_number=attempt_idx + 1,
+                )
+
+                # 温度调度
+                if temp_mode == "escalating":
+                    temp = 0.3 + (attempt_idx * 0.1)
+                    temp = min(temp, 1.0)
+                else:
+                    temp = temperature
+
+                resp = llm.generate(
+                    system=ROLE_PROMPTS[AgentRole.PROOF_GENERATOR],
+                    user=prompt,
+                    temperature=min(temp, 1.0),
+                )
+                proof = extract_lean_code(resp.content)
+                proof = format_lean_code(proof) if proof.strip() else ""
+
+                attempt.generated_proof = proof
+                attempt.llm_model = resp.model
+                attempt.llm_tokens_in = resp.tokens_in
+                attempt.llm_tokens_out = resp.tokens_out
+                attempt.llm_latency_ms = resp.latency_ms
 
         except Exception as e:
             attempt.lean_result = AttemptStatus.LLM_ERROR
@@ -115,6 +199,13 @@ def prove_single(problem: BenchmarkProblem, llm, premise_selector,
             attempt.lean_stderr = (
                 f"Proof contains sorry ({len(sorry_report.locations)} locations)")
             attempt.lean_check_ms = int((time.time() - t0) * 1000)
+            # Fix #9: 记录错误用于下轮修复
+            last_failed_proof = proof
+            last_error_analysis = (
+                "Proof contains `sorry` — it is incomplete. "
+                "Replace all sorry placeholders with actual proof terms.")
+            error_history_parts.append(
+                f"Attempt #{attempt_idx+1}: sorry detected")
             trace.add_attempt(attempt)
             continue
 
@@ -133,17 +224,61 @@ def prove_single(problem: BenchmarkProblem, llm, premise_selector,
                 attempt.lean_result = AttemptStatus.LEAN_ERROR
                 attempt.lean_stderr = str(e)
         else:
+            # Fix #5: 明确标注未验证状态
             attempt.lean_result = AttemptStatus.LEAN_ERROR
-            attempt.lean_stderr = "Lean verification skipped (--lean-mode=skip)"
+            attempt.lean_stderr = (
+                "[unverified] Lean verification skipped (--lean-mode=skip). "
+                "This result has NOT been verified by Lean4.")
             attempt.lean_check_ms = 0
 
         trace.add_attempt(attempt)
 
-        # v2: 不在首次成功时 break!
-        # 继续跑后续 samples 以获取 correct_count 供 pass@k 使用。
-        # 但如果已经成功且不需要精确 pass@k, 可以提前退出节约 API 调用:
-        # 当已有 3 次成功时提前退出 (足够估计 pass@k)
-        if trace.correct_count >= 3:
+        # Fix #9: 记录错误反馈用于下一轮
+        if attempt.lean_result != AttemptStatus.SUCCESS:
+            last_failed_proof = proof
+            # 构建错误分析文本
+            error_parts = []
+            if attempt.lean_stderr and "[unverified]" not in attempt.lean_stderr:
+                error_parts.append(f"Lean error: {attempt.lean_stderr[:300]}")
+            for e in attempt.lean_errors[:3]:
+                error_parts.append(
+                    f"- [{e.category.value}] {e.message[:150]}")
+                if e.expected_type:
+                    error_parts.append(f"  expected: {e.expected_type}")
+                if e.actual_type:
+                    error_parts.append(f"  actual: {e.actual_type}")
+            last_error_analysis = "\n".join(error_parts) if error_parts else ""
+            if last_error_analysis:
+                error_history_parts.append(
+                    f"Attempt #{attempt_idx+1}: {attempt.lean_errors[0].category.value if attempt.lean_errors else 'error'}")
+        else:
+            # 成功时清空错误状态
+            last_failed_proof = ""
+            last_error_analysis = ""
+
+        # Fix #1: 将结果写入知识库 (无论成功或失败)
+        if knowledge_writer:
+            try:
+                step = StepDetail(
+                    step_index=attempt_idx,
+                    tactic=proof[:200],
+                    env_id_before=0,
+                    env_id_after=0 if attempt.lean_result == AttemptStatus.SUCCESS else -1,
+                    goals_before=[problem.theorem_statement],
+                    goals_after=[] if attempt.lean_result == AttemptStatus.SUCCESS else [problem.theorem_statement],
+                    error_message=attempt.lean_stderr if attempt.lean_result != AttemptStatus.SUCCESS else "",
+                    error_category=attempt.lean_errors[0].category.value if attempt.lean_errors else "",
+                    elapsed_ms=attempt.lean_check_ms,
+                )
+                asyncio.get_event_loop().run_until_complete(
+                    knowledge_writer.ingest_step(
+                        step, theorem=problem.theorem_statement))
+            except Exception as e:
+                logger.debug(f"  知识写入跳过: {e}")
+
+        # Fix #4: 默认跑满全部 samples, 仅 early_stop=True 时提前退出
+        # 这保证 pass@k 的无偏估计 (公式需要精确的 n 和 c)
+        if early_stop and trace.correct_count >= 3:
             break
 
     return trace
@@ -170,7 +305,7 @@ def load_existing_traces(trace_dir: Path) -> dict[str, dict]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AI4Math 真实基准评测 (v2)")
+    parser = argparse.ArgumentParser(description="AI4Math 真实基准评测 (v3)")
     parser.add_argument("--benchmark", default="builtin",
                         help="数据集名: builtin/minif2f/putnambench/proofnet/all")
     parser.add_argument("--split", default="test")
@@ -183,9 +318,22 @@ def main():
     parser.add_argument("--output-dir", default="results")
     parser.add_argument("--resume", action="store_true",
                         help="断点续跑: 跳过已有 trace 的题目")
+    # Fix #4: 反转默认行为 — 默认跑满, 需显式 --early-stop 才提前退出
+    parser.add_argument("--early-stop", action="store_true",
+                        help="在 3 次成功后提前退出 (节省 API 调用, 但 pass@k 估计有偏)")
+    # Fix #3: 多角色模式
+    parser.add_argument("--multi-role", action="store_true",
+                        help="启用多角色: Generator + Repair Agent 交替")
+    # Fix #1: 知识系统开关
+    parser.add_argument("--no-knowledge", action="store_true",
+                        help="禁用知识系统 (不沉淀/不注入)")
+    # 向后兼容旧参数
     parser.add_argument("--no-early-stop", action="store_true",
-                        help="跑完全部 samples, 不在 3 次成功后提前退出")
+                        help="(已废弃, 现在默认不提前退出)")
     args = parser.parse_args()
+
+    if args.no_early_stop:
+        logger.info("  注意: --no-early-stop 已废弃, v3 默认跑满全部 samples")
 
     # 初始化 LLM
     llm = create_provider({
@@ -194,6 +342,21 @@ def main():
         "api_key": os.environ.get("ANTHROPIC_API_KEY", ""),
     })
     premise_selector = PremiseSelector({"mode": "hybrid"})
+
+    # Fix #1: 初始化知识系统
+    knowledge_reader = None
+    knowledge_writer = None
+    if not args.no_knowledge:
+        try:
+            knowledge_dir = Path(args.output_dir) / "knowledge"
+            knowledge_dir.mkdir(parents=True, exist_ok=True)
+            db_path = str(knowledge_dir / "knowledge.db")
+            knowledge_store = UnifiedKnowledgeStore(db_path)
+            knowledge_reader = KnowledgeReader(knowledge_store)
+            knowledge_writer = KnowledgeWriter(knowledge_store)
+            logger.info(f"  知识系统已启用: {db_path}")
+        except Exception as e:
+            logger.warning(f"  知识系统初始化失败: {e}, 继续不带知识系统")
 
     # 初始化 Lean 环境
     lean_env = None
@@ -204,6 +367,11 @@ def main():
         except Exception as e:
             logger.warning(f"无法初始化 Lean 环境: {e}, 回退到 skip 模式")
             args.lean_mode = "skip"
+
+    # Fix #5: 未验证模式警告
+    if args.lean_mode == "skip":
+        logger.info("  ⚠ Lean 验证已跳过 (--lean-mode=skip): "
+                     "所有 pass@k 指标标记为 [unverified]")
 
     # 确定 benchmarks
     if args.benchmark == "all":
@@ -255,9 +423,11 @@ def main():
                 problem, llm, premise_selector,
                 max_samples=args.max_samples,
                 lean_env=lean_env, lean_mode=args.lean_mode,
+                knowledge_reader=knowledge_reader,
+                knowledge_writer=knowledge_writer,
+                multi_role=args.multi_role,
+                early_stop=args.early_stop,
             )
-
-            # 如果 --no-early-stop 未设置, prove_single 会在 3 次成功后提前退出
 
             status = ("✓ 通过" if trace.solved
                       else f"✗ ({trace.total_attempts} 次)")
@@ -276,9 +446,20 @@ def main():
         if args.max_samples >= 32:
             k_values.append(32)
         metrics = compute_metrics(trace_dicts, k_values=k_values)
+
+        # Fix #5: 标注验证状态
+        if args.lean_mode == "skip":
+            metrics["verification"] = "unverified"
+        else:
+            metrics["verification"] = "lean4"
+
         summary = MetricsSummary(bench_name, metrics)
 
+        # Fix #5: 在报告中标注验证模式
+        unverified_tag = " [unverified]" if args.lean_mode == "skip" else ""
         logger.info(f"\n{summary.to_table()}")
+        if unverified_tag:
+            logger.info(f"  ⚠ 以上指标未经 Lean4 验证, 仅表示 LLM 生成了非空无 sorry 的代码")
         if skipped:
             logger.info(f"  (其中 {skipped} 道题使用了断点续跑缓存)")
         logger.info(f"  本轮耗时: {elapsed:.1f}s")
@@ -295,6 +476,9 @@ def main():
                 "model": llm.model_name,
                 "max_samples": args.max_samples,
                 "lean_mode": args.lean_mode,
+                "verification": "lean4" if args.lean_mode == "real" else "unverified",
+                "multi_role": args.multi_role,
+                "knowledge_enabled": not args.no_knowledge,
                 "resumed_count": skipped,
                 "elapsed_s": round(elapsed, 1),
                 "metrics": metrics,
@@ -308,10 +492,11 @@ def main():
         logger.info(f"\n{'='*60}")
         logger.info(f"  全局汇总")
         logger.info(f"{'='*60}\n")
+        unv = " [unverified]" if args.lean_mode == "skip" else ""
         header = f"  {'基准':<15} {'题数':>6} {'通过':>6} {'通过率':>8}"
         for k in [1, 5, 10]:
             header += f" {'pass@'+str(k):>8}"
-        logger.info(header)
+        logger.info(header + unv)
         logger.info(f"  {'─'*65}")
         for name, m in all_results.items():
             line = (f"  {name:<15} {m['total']:>6} {m['solved']:>6} "

@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 import time
+import re
 import threading
 import logging
 from enum import Enum
@@ -323,11 +324,15 @@ class BroadcastBus:
 
     def render_for_prompt(self, subscriber_id: str,
                           max_messages: int = 10,
-                          max_chars: int = 2000) -> str:
+                          max_chars: int = 2000,
+                          current_goal: str = "") -> str:
         """将未读消息渲染为可直接注入 LLM prompt 的文本
 
         这是广播系统与 Agent 层的核心接口:
         将结构化的广播消息转化为 LLM 可消费的自然语言上下文。
+
+        当提供 current_goal 时，按与当前目标的相关性排序；
+        否则按消息类型优先级排序。
         """
         sub = self._subscribers.get(subscriber_id)
         if not sub:
@@ -337,16 +342,37 @@ class BroadcastBus:
         if not messages:
             return ""
 
-        # 按优先级排序: 已证引理 > 部分证明 > 正面发现 > 负面知识
-        priority = {
-            MessageType.LEMMA_PROVEN: 0,
-            MessageType.PARTIAL_PROOF: 1,
-            MessageType.POSITIVE_DISCOVERY: 2,
-            MessageType.NEGATIVE_KNOWLEDGE: 3,
-            MessageType.GOAL_CLOSED: 1,
-            MessageType.STRATEGY_INSIGHT: 2,
-        }
-        messages.sort(key=lambda m: priority.get(m.msg_type, 5))
+        if current_goal:
+            # ── 按 goal 相关性排序 ──
+            goal_tokens = set(re.findall(r'\w+', current_goal.lower()))
+            scored = []
+            for msg in messages:
+                content_tokens = set(re.findall(r'\w+', msg.content.lower()))
+                # Jaccard-like overlap
+                overlap = len(goal_tokens & content_tokens)
+                # Type priority bonus
+                type_bonus = {
+                    MessageType.LEMMA_PROVEN: 5,
+                    MessageType.PARTIAL_PROOF: 4,
+                    MessageType.GOAL_CLOSED: 4,
+                    MessageType.POSITIVE_DISCOVERY: 3,
+                    MessageType.STRATEGY_INSIGHT: 2,
+                    MessageType.NEGATIVE_KNOWLEDGE: 1,
+                }.get(msg.msg_type, 0)
+                scored.append((overlap + type_bonus, msg))
+            scored.sort(key=lambda x: -x[0])
+            messages = [msg for _, msg in scored]
+        else:
+            # ── 按消息类型优先级排序 ──
+            priority = {
+                MessageType.LEMMA_PROVEN: 0,
+                MessageType.PARTIAL_PROOF: 1,
+                MessageType.POSITIVE_DISCOVERY: 2,
+                MessageType.NEGATIVE_KNOWLEDGE: 3,
+                MessageType.GOAL_CLOSED: 1,
+                MessageType.STRATEGY_INSIGHT: 2,
+            }
+            messages.sort(key=lambda m: priority.get(m.msg_type, 5))
 
         parts = ["## Teammate discoveries (use these)\n"]
         total_chars = 0

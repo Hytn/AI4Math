@@ -1,7 +1,7 @@
 """agent/strategy/reflection.py — 自我反思: 分析失败模式"""
 from __future__ import annotations
 from agent.brain.llm_provider import LLMProvider
-from agent.brain.roles import AgentRole, ROLE_PROMPTS
+from common.roles import AgentRole, ROLE_PROMPTS
 
 class Reflector:
     def __init__(self, llm: LLMProvider):

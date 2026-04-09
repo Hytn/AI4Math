@@ -7,7 +7,7 @@
   4. 将 banked_lemmas 和 partial progress 视为正面信号
 """
 from __future__ import annotations
-from agent.memory.working_memory import WorkingMemory
+from common.working_memory import WorkingMemory
 
 class ConfidenceEstimator:
 

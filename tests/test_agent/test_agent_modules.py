@@ -9,7 +9,7 @@ from agent.strategy.meta_controller import MetaController
 from agent.strategy.confidence_estimator import ConfidenceEstimator
 from agent.executor.resource_limiter import ResourceLimiter, ResourceLimits
 from agent.executor.sandbox import Sandbox, SandboxResult
-from agent.memory.working_memory import WorkingMemory
+from common.working_memory import WorkingMemory
 from agent.memory.episodic_memory import EpisodicMemory, Episode
 
 

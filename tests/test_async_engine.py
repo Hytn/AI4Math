@@ -236,7 +236,7 @@ class TestAsyncAgentPool:
         from agent.brain.async_llm_provider import AsyncMockProvider
         from agent.runtime.async_agent_pool import AsyncAgentPool
         from agent.runtime.sub_agent import AgentSpec, AgentTask
-        from agent.brain.roles import AgentRole
+        from common.roles import AgentRole
 
         pool = AsyncAgentPool(llm=AsyncMockProvider())
         spec = AgentSpec(name="test", role=AgentRole.PROOF_GENERATOR)
@@ -250,7 +250,7 @@ class TestAsyncAgentPool:
         from agent.brain.async_llm_provider import AsyncMockProvider
         from agent.runtime.async_agent_pool import AsyncAgentPool
         from agent.runtime.sub_agent import AgentSpec, AgentTask
-        from agent.brain.roles import AgentRole
+        from common.roles import AgentRole
 
         pool = AsyncAgentPool(llm=AsyncMockProvider(), max_workers=4)
         specs_and_tasks = [
@@ -274,7 +274,7 @@ class TestAsyncAgentPool:
         from agent.brain.async_llm_provider import AsyncMockProvider
         from agent.runtime.async_agent_pool import AsyncAgentPool
         from agent.runtime.sub_agent import AgentSpec, AgentTask
-        from agent.brain.roles import AgentRole
+        from common.roles import AgentRole
 
         pool = AsyncAgentPool(llm=AsyncMockProvider())
         specs_and_tasks = [
@@ -291,7 +291,7 @@ class TestAsyncAgentPool:
         from agent.brain.async_llm_provider import AsyncMockProvider
         from agent.runtime.async_agent_pool import AsyncAgentPool
         from agent.runtime.sub_agent import AgentSpec, AgentTask
-        from agent.brain.roles import AgentRole
+        from common.roles import AgentRole
 
         pool = AsyncAgentPool(llm=AsyncMockProvider())
         stages = [
@@ -310,7 +310,7 @@ class TestAsyncAgentPool:
         from agent.brain.llm_provider import LLMResponse
         from agent.runtime.async_agent_pool import AsyncAgentPool
         from agent.runtime.sub_agent import AgentSpec, AgentTask
-        from agent.brain.roles import AgentRole
+        from common.roles import AgentRole
 
         class FailingProvider(AsyncLLMProvider):
             @property

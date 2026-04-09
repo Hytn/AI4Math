@@ -9,7 +9,7 @@ ReflectionCloserHook:   ON_STRATEGY_SWITCH — 将反思结论结构化注入
 """
 from __future__ import annotations
 import re
-from agent.hooks.hook_types import (
+from common.hook_types import (
     Hook, HookContext, HookResult, HookAction
 )
 

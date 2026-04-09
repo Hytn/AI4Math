@@ -195,7 +195,7 @@ class TestModifyHookAction:
     def test_nat_sub_safety_hook_returns_modify(self):
         """NatSubSafetyHook should return MODIFY for proofs with ℕ subtraction."""
         from agent.hooks.builtin_hooks import NatSubSafetyHook
-        from agent.hooks.hook_types import HookContext, HookEvent, HookAction
+        from common.hook_types import HookContext, HookEvent, HookAction
 
         hook = NatSubSafetyHook()
         ctx = HookContext(
@@ -215,7 +215,7 @@ class TestModifyHookAction:
     def test_nat_sub_no_guard_returns_modify(self):
         """Proof with ℕ subtraction but no guard → MODIFY."""
         from agent.hooks.builtin_hooks import NatSubSafetyHook
-        from agent.hooks.hook_types import HookContext, HookEvent, HookAction
+        from common.hook_types import HookContext, HookEvent, HookAction
 
         hook = NatSubSafetyHook()
         ctx = HookContext(
@@ -231,7 +231,7 @@ class TestModifyHookAction:
     def test_nat_sub_with_guard_returns_continue(self):
         """Proof with ℕ subtraction AND omega guard → CONTINUE."""
         from agent.hooks.builtin_hooks import NatSubSafetyHook
-        from agent.hooks.hook_types import HookContext, HookEvent, HookAction
+        from common.hook_types import HookContext, HookEvent, HookAction
 
         hook = NatSubSafetyHook()
         ctx = HookContext(
@@ -246,7 +246,7 @@ class TestModifyHookAction:
         """HookManager.fire should return MODIFY result."""
         from agent.hooks.hook_manager import HookManager
         from agent.hooks.builtin_hooks import NatSubSafetyHook
-        from agent.hooks.hook_types import HookEvent, HookContext, HookAction
+        from common.hook_types import HookEvent, HookContext, HookAction
 
         manager = HookManager()
         manager.register(HookEvent.PRE_VERIFICATION, NatSubSafetyHook())
@@ -406,7 +406,7 @@ class TestEvalSmoke:
         selector = PremiseSelector({"mode": "hybrid"})
 
         # Mock generates sorry, which gets caught
-        from agent.brain.response_parser import extract_lean_code
+        from common.response_parser import extract_lean_code
         resp = llm.generate(user="test")
         code = extract_lean_code(resp.content)
         assert "sorry" in code

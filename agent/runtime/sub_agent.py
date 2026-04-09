@@ -17,10 +17,10 @@ from dataclasses import dataclass, field
 from typing import Optional, Callable
 
 from agent.brain.llm_provider import LLMProvider, LLMResponse
-from agent.brain.roles import AgentRole, ROLE_PROMPTS
-from agent.brain.response_parser import extract_lean_code
+from common.roles import AgentRole, ROLE_PROMPTS
+from common.response_parser import extract_lean_code
 from agent.context.context_window import ContextWindow
-from agent.memory.working_memory import WorkingMemory
+from common.working_memory import WorkingMemory
 
 logger = logging.getLogger(__name__)
 

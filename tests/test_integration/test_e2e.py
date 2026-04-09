@@ -79,7 +79,7 @@ class TestProofLoopE2E:
     def test_successful_proof(self):
         from prover.pipeline.proof_loop import ProofLoop
         from prover.models import BenchmarkProblem, AttemptStatus
-        from agent.memory.working_memory import WorkingMemory
+        from common.working_memory import WorkingMemory
 
         lean_env = MockLeanEnv()
         llm = SequenceMockLLM([":= by exact trivial"])
@@ -96,7 +96,7 @@ class TestProofLoopE2E:
     def test_failed_proof_no_repair(self):
         from prover.pipeline.proof_loop import ProofLoop
         from prover.models import BenchmarkProblem, AttemptStatus
-        from agent.memory.working_memory import WorkingMemory
+        from common.working_memory import WorkingMemory
 
         lean_env = MockLeanEnv()
         llm = SequenceMockLLM([":= by sorry"])
@@ -118,7 +118,7 @@ class TestRepairLoopE2E:
         """LLM initially produces sorry, repair produces a valid proof."""
         from prover.pipeline.proof_loop import ProofLoop
         from prover.models import BenchmarkProblem, AttemptStatus
-        from agent.memory.working_memory import WorkingMemory
+        from common.working_memory import WorkingMemory
 
         lean_env = MockLeanEnv()
         # First call: proof generator produces sorry
@@ -351,7 +351,7 @@ class TestThreadSafety:
     def test_budget_concurrent_increment(self):
         """Budget.add_samples should be safe under concurrent access."""
         import threading
-        from agent.strategy.budget_allocator import Budget
+        from common.budget import Budget
 
         budget = Budget(max_samples=10000)
         barrier = threading.Barrier(10)
@@ -372,7 +372,7 @@ class TestThreadSafety:
     def test_memory_concurrent_record(self):
         """WorkingMemory.record_attempt should be safe under concurrent access."""
         import threading
-        from agent.memory.working_memory import WorkingMemory
+        from common.working_memory import WorkingMemory
 
         mem = WorkingMemory()
         barrier = threading.Barrier(10)

@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from agent.brain.roles import AgentRole
+from common.roles import AgentRole
 from prover.models import BenchmarkProblem
 
 logger = logging.getLogger(__name__)
@@ -201,6 +201,151 @@ class DirectionPlanner:
         except Exception as e:
             logger.warning(f"Premise retrieval failed: {e}")
             return []
+
+
+class FullSpectrumPlanner(DirectionPlanner):
+    """扩展规划器：按策略级别调度全部 11 种智能体角色。
+
+    Light  (2-4方向): PROOF_GENERATOR, PROOF_PLANNER
+    Medium (4-6方向): + CRITIC, REPAIR_AGENT, DECOMPOSER
+    Heavy  (6-8方向): + SORRY_CLOSER, CONJECTURE_PROPOSER, HYPOTHESIS_PROPOSER
+    Max    (8-11方向): + FORMALIZATION_EXPERT, PROOF_COMPOSER, PREMISE_RERANKER
+    """
+
+    def plan(self, problem: BenchmarkProblem,
+             classification: dict = None,
+             attempt_history: list = None,
+             strategy: str = "light",
+             has_sorry_skeleton: bool = False,
+             banked_lemmas: list = None) -> list[ProofDirection]:
+
+        classification = classification or {}
+        attempt_history = attempt_history or []
+        banked_lemmas = banked_lemmas or []
+        n_attempts = len(attempt_history)
+
+        # Always start with base directions
+        directions = super().plan(problem, classification, attempt_history)
+
+        if strategy in ("medium", "heavy", "max"):
+            # ── DECOMPOSER: 当问题复杂 (多 goal / 长 statement) ──
+            if (len(problem.theorem_statement) > 200
+                    or classification.get("difficulty", "") in ("hard", "competition")):
+                directions.append(ProofDirection(
+                    name="decomposer",
+                    role=AgentRole.DECOMPOSER,
+                    temperature=0.5,
+                    strategic_hint=(
+                        "Decompose this theorem into 2-4 independently provable sub-lemmas. "
+                        "Each sub-lemma should have a clear, well-typed Lean 4 statement. "
+                        "The sub-lemmas should compose to prove the main theorem."
+                    ),
+                ))
+
+            # ── REPAIR_AGENT: 当有失败历史 ──
+            if n_attempts >= 1:
+                best = attempt_history[-1] if attempt_history else {}
+                best_code = best.get("code", "")[:300]
+                best_errs = "; ".join(
+                    e.get("message", "")[:80]
+                    for e in best.get("errors", [])[:3])
+                directions.append(ProofDirection(
+                    name="repair_specialist",
+                    role=AgentRole.REPAIR_AGENT,
+                    temperature=0.4,
+                    strategic_hint=(
+                        f"The following proof attempt FAILED:\n```lean\n{best_code}\n```\n"
+                        f"Errors: {best_errs}\n\n"
+                        "Fix ALL errors and produce a complete correct proof."
+                    ),
+                ))
+
+        if strategy in ("heavy", "max"):
+            # ── SORRY_CLOSER: 当存在 sorry 骨架 ──
+            if has_sorry_skeleton:
+                directions.append(ProofDirection(
+                    name="sorry_closer",
+                    role=AgentRole.SORRY_CLOSER,
+                    model="claude-sonnet-4-20250514",
+                    temperature=0.3,
+                    strategic_hint=(
+                        "A proof skeleton exists with `sorry` placeholders. "
+                        "Close each sorry goal individually. Focus on the goal state "
+                        "and try simple tactics first: exact, assumption, simp, ring, omega."
+                    ),
+                ))
+
+            # ── CONJECTURE_PROPOSER: 主动猜想辅助引理 ──
+            if n_attempts >= 3:
+                directions.append(ProofDirection(
+                    name="conjecture_explorer",
+                    role=AgentRole.CONJECTURE_PROPOSER,
+                    temperature=0.9,
+                    strategic_hint=(
+                        f"After {n_attempts} failed attempts, we need auxiliary lemmas. "
+                        "Propose 3-5 useful intermediate conjectures that:\n"
+                        "  1. Are simpler than the target theorem\n"
+                        "  2. Would serve as stepping stones\n"
+                        "  3. Are plausibly true\n"
+                        "Output each as a Lean 4 `lemma` statement."
+                    ),
+                ))
+
+            # ── HYPOTHESIS_PROPOSER: 提出中间假设 ──
+            directions.append(ProofDirection(
+                name="hypothesis_bridge",
+                role=AgentRole.HYPOTHESIS_PROPOSER,
+                temperature=0.7,
+                strategic_hint=(
+                    "Propose key intermediate `have` steps that bridge the gap "
+                    "from hypotheses to the goal. Focus on type-correct statements "
+                    "that could be individually proved."
+                ),
+            ))
+
+        if strategy == "max":
+            # ── FORMALIZATION_EXPERT: 当有自然语言描述 ──
+            if problem.natural_language:
+                directions.append(ProofDirection(
+                    name="re_formalize",
+                    role=AgentRole.FORMALIZATION_EXPERT,
+                    temperature=0.5,
+                    strategic_hint=(
+                        "Re-examine the formalization. Is the Lean 4 statement "
+                        "the best way to express the mathematical content? "
+                        "Suggest alternative formalizations if helpful."
+                    ),
+                ))
+
+            # ── PROOF_COMPOSER: 当有 banked lemmas 需要组合 ──
+            if banked_lemmas:
+                lemma_text = "\n".join(banked_lemmas[:5])
+                directions.append(ProofDirection(
+                    name="proof_assembler",
+                    role=AgentRole.PROOF_COMPOSER,
+                    temperature=0.3,
+                    strategic_hint=(
+                        f"We have proved these auxiliary lemmas:\n{lemma_text}\n\n"
+                        "Assemble them into a complete proof of the main theorem. "
+                        "Use these lemmas by name in the final proof."
+                    ),
+                ))
+
+            # ── PREMISE_RERANKER: 精化前提检索 ──
+            premises = self._get_premises(problem.theorem_statement)
+            if len(premises) > 5:
+                directions.append(ProofDirection(
+                    name="premise_advisor",
+                    role=AgentRole.PREMISE_RERANKER,
+                    temperature=0.2,
+                    strategic_hint=(
+                        "Rank these Mathlib lemmas by relevance to the proof goal:\n" +
+                        "\n".join(f"  - {p}" for p in premises[:20]) +
+                        "\n\nOutput a JSON array of {name, relevance} objects."
+                    ),
+                ))
+
+        return directions
 
 
 def build_direction_prompt(direction: ProofDirection,

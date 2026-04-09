@@ -176,7 +176,7 @@ class TestSyncLeanPool:
 class TestRefineConfidence:
     def _make_result(self, confidence=0.5):
         from agent.runtime.sub_agent import AgentResult
-        from agent.brain.roles import AgentRole
+        from common.roles import AgentRole
         return AgentResult(
             agent_name="test", role=AgentRole.PROOF_GENERATOR,
             content="", confidence=confidence)
@@ -214,14 +214,14 @@ class TestRefineConfidence:
 class TestAgentResultIsError:
     def test_normal_result(self):
         from agent.runtime.sub_agent import AgentResult
-        from agent.brain.roles import AgentRole
+        from common.roles import AgentRole
         r = AgentResult(agent_name="t", role=AgentRole.PROOF_GENERATOR,
                         content="proof")
         assert not r.is_error
 
     def test_error_result(self):
         from agent.runtime.sub_agent import AgentResult
-        from agent.brain.roles import AgentRole
+        from common.roles import AgentRole
         r = AgentResult(agent_name="t", role=AgentRole.PROOF_GENERATOR,
                         content="", error="timeout")
         assert r.is_error
@@ -282,7 +282,7 @@ class TestDirectionPlanner:
     def test_build_direction_prompt(self):
         from agent.strategy.direction_planner import (
             DirectionPlanner, ProofDirection, build_direction_prompt)
-        from agent.brain.roles import AgentRole
+        from common.roles import AgentRole
         from prover.models import BenchmarkProblem
 
         d = ProofDirection(name="test", role=AgentRole.PROOF_GENERATOR,
