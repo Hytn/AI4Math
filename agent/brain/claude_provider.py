@@ -71,6 +71,50 @@ class ClaudeProvider(LLMProvider):
 
         raise last_error
 
+    async def async_generate(self, system: str = "", user: str = "", temperature: float = 0.7,
+                             tools: list = None, max_tokens: int = 4096) -> LLMResponse:
+        """Async variant of generate() — uses async client and asyncio.sleep for backoff."""
+        if not hasattr(self, '_async_client') or self._async_client is None:
+            import anthropic
+            self._async_client = anthropic.AsyncAnthropic(api_key=self._api_key)
+        client = self._async_client
+        kwargs = dict(model=self._model, max_tokens=max_tokens, temperature=temperature,
+                      system=system, messages=[{"role": "user", "content": user}])
+        if tools:
+            kwargs["tools"] = tools
+
+        import asyncio
+        last_error = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                start = time.time()
+                response = await client.messages.create(**kwargs)
+                latency = int((time.time() - start) * 1000)
+                content = ""
+                tool_calls = []
+                for block in response.content:
+                    if block.type == "text":
+                        content += block.text
+                    elif block.type == "tool_use":
+                        tool_calls.append({"name": block.name, "input": block.input, "id": block.id})
+                return LLMResponse(content=content, model=self._model,
+                                   tokens_in=response.usage.input_tokens,
+                                   tokens_out=response.usage.output_tokens,
+                                   latency_ms=latency, tool_calls=tool_calls)
+            except Exception as e:
+                last_error = e
+                if attempt < _MAX_RETRIES:
+                    backoff = min(_INITIAL_BACKOFF_S * (2 ** attempt), _MAX_BACKOFF_S)
+                    jitter = random.uniform(0, backoff * 0.3)
+                    wait = backoff + jitter
+                    logger.warning(
+                        f"Claude async API call failed (attempt {attempt + 1}/{_MAX_RETRIES + 1}): "
+                        f"{e}. Retrying in {wait:.1f}s...")
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error(f"Claude async API call failed after {_MAX_RETRIES + 1} attempts: {e}")
+        raise last_error
+
 
 class MockProvider(LLMProvider):
     @property

@@ -234,6 +234,9 @@ class PolicyEngine:
                 if decision is not None:
                     return decision
             except Exception:
+                logger.warning(
+                    f"Policy rule {rule.__class__.__name__} raised an exception",
+                    exc_info=True)
                 continue  # rule errors don't block evaluation
 
         return PolicyDecision(

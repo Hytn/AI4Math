@@ -52,7 +52,8 @@ from engine.lane.policy import PolicyEngine, PolicyAction
 from engine.lane.dashboard import ProofDashboard
 from engine.observability import metrics as obs_metrics, MetricsExporter
 
-logging.basicConfig(level=logging.INFO, format="%(message)s")
+from common.logging_config import setup_logging
+setup_logging(level="INFO")
 logger = logging.getLogger(__name__)
 
 

@@ -13,7 +13,20 @@ class CASBridge:
             return self._sage_eval(expression, timeout)
         return f"CAS backend '{self.backend}' not supported"
 
+    # Characters that should never appear in a mathematical expression
+    _DANGEROUS_PATTERNS = (
+        "__import__", "exec(", "eval(", "compile(", "open(",
+        "subprocess", "os.system", "os.popen", "shutil",
+        "import ", "from ",
+    )
+
     def _sage_eval(self, expr: str, timeout: int) -> str:
+        # Sanitize: reject expressions with dangerous patterns
+        expr_lower = expr.lower()
+        for pattern in self._DANGEROUS_PATTERNS:
+            if pattern in expr_lower:
+                logger.warning(f"CAS bridge: rejected dangerous expression: {expr[:100]}")
+                return f"Expression rejected: contains '{pattern}'"
         try:
             result = subprocess.run(
                 ["sage", "-c", f"print({expr})"],

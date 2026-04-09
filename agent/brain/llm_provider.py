@@ -2,6 +2,7 @@
 from __future__ import annotations
 import hashlib
 import logging
+import threading
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -54,7 +55,7 @@ class CachedProvider(LLMProvider):
         self._cache: OrderedDict[str, LLMResponse] = OrderedDict()
         self._maxsize = maxsize
         self._cache_all = cache_all
-        self._lock = __import__('threading').Lock()
+        self._lock = threading.Lock()
         self.hits = 0
         self.misses = 0
 

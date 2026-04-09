@@ -57,8 +57,10 @@ class SorryDetector(FilterRule):
     )
 
     def check(self, proof: str, theorem: str = "") -> FilterResult:
-        # 去掉注释行
-        lines = [l for l in proof.split("\n")
+        # 去掉块注释 /- ... -/ (可能嵌套，用非贪婪匹配近似处理)
+        clean = re.sub(r'/\-.*?\-/', '', proof, flags=re.DOTALL)
+        # 去掉行注释
+        lines = [l for l in clean.split("\n")
                  if not l.strip().startswith("--")]
         clean = "\n".join(lines)
 

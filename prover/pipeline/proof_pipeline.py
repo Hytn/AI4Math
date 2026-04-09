@@ -522,6 +522,17 @@ class ProofPipeline:
 
             elif action == RecoveryAction.RETRY_WITH_BACKOFF:
                 import time as _time
+                import asyncio as _asyncio
+                # Safety: warn if called from within a running event loop,
+                # as time.sleep would block it. Pipeline.run() is sync-only.
+                try:
+                    _asyncio.get_running_loop()
+                    logger.warning(
+                        "[Lane] RETRY_WITH_BACKOFF: time.sleep() called inside "
+                        "a running event loop — this blocks the loop. "
+                        "Use the async pipeline variant instead.")
+                except RuntimeError:
+                    pass  # No event loop — safe to sleep
                 _time.sleep(recipe.backoff_seconds)
                 if sm.status == TaskStatus.BLOCKED:
                     sm.transition_to(TaskStatus.GENERATING,

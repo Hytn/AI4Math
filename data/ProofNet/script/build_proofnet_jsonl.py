@@ -21,7 +21,8 @@ import json
 
 def parse_formal_file(file_path):
     """Parse a Lean file into header and a list of theorem blocks."""
-    lines = open(file_path, 'r', encoding='utf-8').read().splitlines()
+    with open(file_path, 'r', encoding='utf-8') as f:
+        lines = f.read().splitlines()
     # extract header before first theorem or instance
     idx = 0
     while idx < len(lines) and not re.match(r"^\s*(theorem|instance) ", lines[idx]):
@@ -99,7 +100,8 @@ def main():
         if fname.endswith('.tex'):
             key = os.path.splitext(fname)[0]
             path = os.path.join(informal_dir, fname)
-            informal_texts[key] = open(path, 'r', encoding='utf-8').read()
+            with open(path, 'r', encoding='utf-8') as f:
+                informal_texts[key] = f.read()
 
     # build entries and write jsonl
     with open(output_file, 'w', encoding='utf-8') as outp:

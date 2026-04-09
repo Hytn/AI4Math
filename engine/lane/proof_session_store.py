@@ -176,7 +176,8 @@ def build_snapshot(
                     "timestamp": msg.timestamp,
                 })
         except Exception:
-            pass
+            logger.debug("Failed to serialize broadcast messages for snapshot",
+                         exc_info=True)
 
     # Extract knowledge context
     last_feedback_text = getattr(memory, 'last_feedback_text', '')

@@ -319,16 +319,17 @@ class LeanREPL:
                     pass
             self._process = None
 
-    _env_version_cache: str = ""  # class-level cache
+    _env_version_cache: dict[str, str] = {}  # class-level cache keyed by project_dir
 
     def _get_env_version_tag(self) -> str:
         """获取 Lean4 + Mathlib 环境版本标识, 用于缓存键.
 
         读取 lean-toolchain 和 lake-manifest.json (如果存在) 生成版本标签。
-        结果缓存在类级别, 避免重复 I/O。
+        结果缓存在类级别 (按 project_dir 分区), 避免重复 I/O。
         """
-        if LeanREPL._env_version_cache:
-            return LeanREPL._env_version_cache
+        cached = LeanREPL._env_version_cache.get(self.project_dir)
+        if cached:
+            return cached
 
         parts = ["lean"]
         # 读取 lean-toolchain
@@ -355,7 +356,7 @@ class LeanREPL:
             pass
 
         tag = "|".join(parts)
-        LeanREPL._env_version_cache = tag
+        LeanREPL._env_version_cache[self.project_dir] = tag
         return tag
 
     def get_history(self) -> list[str]:

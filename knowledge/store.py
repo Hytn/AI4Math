@@ -650,3 +650,80 @@ class UnifiedKnowledgeStore(ProofContextStore):
             })
 
         return base
+
+    # ═══════════════════════════════════════════════════════════════
+    # Knowledge Decay & Cleanup
+    # ═══════════════════════════════════════════════════════════════
+
+    async def prune_stale_knowledge(
+        self,
+        max_age_days: float = 90,
+        min_decay_factor: float = 0.1,
+        max_rows_per_table: int = 50_000,
+    ) -> dict:
+        """Remove stale or low-quality knowledge entries.
+
+        Should be called periodically (e.g. after each eval run) to prevent
+        unbounded table growth.
+
+        Criteria for removal:
+          - tactic_effectiveness: decay_factor < min_decay_factor
+          - proved_lemmas: stale=1 AND last_cited_at older than max_age_days
+          - error_patterns: last_seen older than max_age_days
+          - Per-table row cap: oldest entries removed if count > max_rows_per_table
+
+        Returns:
+            Dict of {table_name: rows_deleted}.
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, self._prune_sync, max_age_days, min_decay_factor,
+            max_rows_per_table)
+
+    def _prune_sync(self, max_age_days, min_decay_factor,
+                    max_rows_per_table) -> dict:
+        cutoff = time.time() - (max_age_days * 86400)
+        deleted = {}
+
+        with self._connect() as conn:
+            # Layer 1: low-decay tactics
+            cur = conn.execute(
+                "DELETE FROM tactic_effectiveness WHERE decay_factor < ?",
+                (min_decay_factor,))
+            deleted["tactic_effectiveness_decay"] = cur.rowcount
+
+            # Layer 1: stale uncited lemmas
+            cur = conn.execute(
+                "DELETE FROM proved_lemmas "
+                "WHERE stale = 1 AND last_cited_at < ? AND last_cited_at > 0",
+                (cutoff,))
+            deleted["proved_lemmas_stale"] = cur.rowcount
+
+            # Layer 1: old error patterns
+            cur = conn.execute(
+                "DELETE FROM error_patterns WHERE last_seen < ?",
+                (cutoff,))
+            deleted["error_patterns_old"] = cur.rowcount
+
+            # Row-cap enforcement (keep most recent by rowid)
+            for table in ("tactic_effectiveness", "proved_lemmas",
+                          "error_patterns", "strategy_patterns"):
+                try:
+                    count = conn.execute(
+                        f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                    if count > max_rows_per_table:
+                        excess = count - max_rows_per_table
+                        conn.execute(
+                            f"DELETE FROM {table} WHERE rowid IN "
+                            f"(SELECT rowid FROM {table} ORDER BY rowid ASC "
+                            f"LIMIT ?)", (excess,))
+                        deleted[f"{table}_capped"] = excess
+                except sqlite3.OperationalError:
+                    pass  # table may not exist yet
+
+            conn.commit()
+
+        total = sum(deleted.values())
+        if total > 0:
+            logger.info(f"Knowledge pruning: removed {total} rows — {deleted}")
+        return deleted
