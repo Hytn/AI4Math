@@ -32,15 +32,9 @@ async def async_prove_round(
     3. asyncio.gather 并行验证所有候选
     4. 广播发现, 返回排序结果
     """
-<<<<<<< HEAD
-    from agent.runtime.sub_agent import AgentSpec, AgentTask, AgentResult, ContextItem
-    from agent.brain.roles import AgentRole
-    from agent.strategy.confidence_estimator import ConfidenceEstimator
-=======
     from prover.pipeline._agent_deps import AgentSpec, AgentTask, AgentResult, ContextItem
     from common.roles import AgentRole
     from prover.pipeline._agent_deps import ConfidenceEstimator
->>>>>>> 7a01a9c (infra complete)
 
     if not components.agent_pool:
         return []
@@ -82,8 +76,6 @@ async def async_prove_round(
                 ContextItem("teammate_discoveries", broadcast_text,
                             0.95, "premise"))
 
-<<<<<<< HEAD
-=======
         # ── Knowledge injection (Gap 0 fix) ──
         if components.knowledge_reader:
             try:
@@ -98,7 +90,6 @@ async def async_prove_round(
             except Exception:
                 pass  # graceful degradation
 
->>>>>>> 7a01a9c (infra complete)
         for hk, hv in classification.get("domain_hints", {}).items():
             context_items.append(
                 ContextItem(hk, str(hv), 0.85, "premise"))
@@ -169,11 +160,7 @@ def run_async_prove_round(problem, components, **kwargs):
 def _default_directions(problem, classification, attempt_history):
     """默认的 4 方向规划"""
     from prover.pipeline.heterogeneous_engine import ProofDirection
-<<<<<<< HEAD
-    from agent.brain.roles import AgentRole
-=======
     from common.roles import AgentRole
->>>>>>> 7a01a9c (infra complete)
 
     directions = [
         ProofDirection(
