@@ -37,6 +37,27 @@ class AsyncLLMProvider(ABC):
                        tools: list = None,
                        max_tokens: int = 4096) -> LLMResponse: ...
 
+    async def chat(self, system: str, messages: list[dict],
+                   temperature: float = 0.7, tools: list = None,
+                   max_tokens: int = 4096) -> LLMResponse:
+        """Multi-turn chat with full messages array.
+
+        Default falls back to generate() with last user message.
+        Providers should override for proper multi-turn support.
+        """
+        last_user = ""
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    last_user = content
+                elif isinstance(content, list):
+                    last_user = " ".join(
+                        b.get("text", "") for b in content
+                        if isinstance(b, dict) and b.get("type") == "text")
+                break
+        return await self.generate(system, last_user, temperature, tools, max_tokens)
+
     @property
     @abstractmethod
     def model_name(self) -> str: ...
@@ -70,11 +91,18 @@ class AsyncClaudeProvider(AsyncLLMProvider):
                        temperature: float = 0.7,
                        tools: list = None,
                        max_tokens: int = 4096) -> LLMResponse:
+        return await self.chat(system, [{"role": "user", "content": user}],
+                               temperature, tools, max_tokens)
+
+    async def chat(self, system: str = "", messages: list[dict] = None,
+                   temperature: float = 0.7, tools: list = None,
+                   max_tokens: int = 4096) -> LLMResponse:
+        """Multi-turn async chat supporting tool_use conversations."""
         client = self._get_client()
         kwargs = dict(
             model=self._model, max_tokens=max_tokens,
             temperature=temperature, system=system,
-            messages=[{"role": "user", "content": user}])
+            messages=messages or [])
         if tools:
             kwargs["tools"] = tools
 
@@ -100,7 +128,8 @@ class AsyncClaudeProvider(AsyncLLMProvider):
                     content=content, model=self._model,
                     tokens_in=response.usage.input_tokens,
                     tokens_out=response.usage.output_tokens,
-                    latency_ms=latency, tool_calls=tool_calls)
+                    latency_ms=latency, tool_calls=tool_calls,
+                    stop_reason=response.stop_reason or "end_turn")
 
             except Exception as e:
                 last_error = e
@@ -136,11 +165,16 @@ class AsyncMockProvider(AsyncLLMProvider):
 
     async def generate(self, system="", user="", temperature=0.7,
                        tools=None, max_tokens=4096) -> LLMResponse:
-        await asyncio.sleep(0.01)  # 模拟网络延迟
+        return await self.chat(system, [{"role": "user", "content": user}],
+                               temperature, tools, max_tokens)
+
+    async def chat(self, system="", messages=None, temperature=0.7,
+                   tools=None, max_tokens=4096) -> LLMResponse:
+        await asyncio.sleep(0.01)
         return LLMResponse(
             content="```lean\n:= by\n  sorry\n```",
             model="async-mock", tokens_in=100, tokens_out=20,
-            latency_ms=10)
+            latency_ms=10, stop_reason="end_turn")
 
 
 class AsyncCachedProvider(AsyncLLMProvider):

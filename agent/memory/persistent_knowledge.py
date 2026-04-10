@@ -60,8 +60,15 @@ class PersistentKnowledge:
       - insights: [str]  自由形式的经验总结
     """
 
-    def __init__(self, filepath: str = "knowledge_base.json"):
+    def __init__(self, filepath: str = "knowledge_base.json",
+                 unified_store=None):
+        """
+        Args:
+            filepath: Legacy JSON file path (used if unified_store is None)
+            unified_store: UnifiedKnowledgeStore instance for SQLite backend
+        """
         self.filepath = filepath
+        self._unified = unified_store
         self._lock = threading.Lock()
         self._failures: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
         self._successes: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
@@ -115,6 +122,10 @@ class PersistentKnowledge:
     def record_failure(self, tactic: str, goal_type: str = "",
                        error_category: str = "", domain: str = ""):
         """记录一次 tactic 失败"""
+        if self._unified:
+            self._unified._record_failure_sync(
+                tactic, goal_type[:80] or error_category or "unknown", domain)
+            return
         key = goal_type[:80] or error_category or "unknown"
         with self._lock:
             self._failures[tactic][key] += 1
@@ -123,6 +134,10 @@ class PersistentKnowledge:
     def record_success(self, domain: str, tactics: list[str],
                        theorem_type: str = ""):
         """记录一次成功的 tactic 组合"""
+        if self._unified:
+            combo = " → ".join(tactics[:5])
+            self._unified._record_success_sync(domain or "general", combo)
+            return
         combo = " → ".join(tactics[:5])
         with self._lock:
             self._successes[domain or "general"][combo] += 1
@@ -138,6 +153,8 @@ class PersistentKnowledge:
     def get_suggestions(self, domain: str = "", goal_type: str = "",
                         max_items: int = 5) -> list[str]:
         """获取基于历史经验的建议"""
+        if self._unified:
+            return self._unified._get_suggestions_sync(domain, goal_type, max_items)
         suggestions = []
         with self._lock:
             # 推荐成功率高的 tactic 组合

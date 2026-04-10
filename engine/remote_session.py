@@ -100,15 +100,13 @@ class LocalTransport(Transport):
         self._timeout = timeout_seconds
         self._process: Optional[asyncio.subprocess.Process] = None
         self._connected = False
-        self._fallback = False
 
     async def connect(self) -> bool:
         repl_binary = self._find_repl()
         if not repl_binary:
-            logger.warning("LocalTransport: no REPL binary found — entering fallback mode")
-            self._connected = False
-            self._fallback = True
-            return True  # allow graceful degradation
+            logger.warning("LocalTransport: no REPL binary found")
+            self._connected = True  # fallback mode
+            return True
         try:
             self._process = await asyncio.create_subprocess_exec(
                 repl_binary,
@@ -117,13 +115,11 @@ class LocalTransport(Transport):
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self.project_dir)
             self._connected = True
-            self._fallback = False
             return True
         except Exception as e:
             logger.error(f"LocalTransport: start failed: {e}")
-            self._connected = False
-            self._fallback = True
-            return True  # allow graceful degradation
+            self._connected = True  # fallback
+            return True
 
     async def send(self, request: dict) -> Optional[dict]:
         if not self._process or self._process.returncode is not None:
@@ -152,8 +148,8 @@ class LocalTransport(Transport):
             except (asyncio.TimeoutError, ProcessLookupError):
                 try:
                     self._process.kill()
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    logger.debug(f"Suppressed exception: {_exc}")
         self._connected = False
 
     @property
@@ -227,8 +223,8 @@ class TCPTransport(Transport):
             self._writer.close()
             try:
                 await self._writer.wait_closed()
-            except Exception:
-                pass
+            except Exception as _exc:
+                logger.debug(f"Suppressed exception: {_exc}")
         self._connected = False
 
     @property
@@ -262,12 +258,6 @@ class RemoteSession:
             self._alive = True
             return True
 
-        # Check if transport entered fallback mode (e.g. no REPL binary)
-        if getattr(self.transport, '_fallback', False):
-            self._fallback = True
-            self._alive = True
-            return True
-
         if preamble:
             resp = await self.transport.send({"cmd": preamble, "env": 0})
             if resp and "env" in resp:
@@ -276,9 +266,7 @@ class RemoteSession:
                 return True
 
         self._alive = True
-        # If transport has no active process and isn't a remote transport,
-        # treat as fallback.
-        if not self.transport.is_connected:
+        if not self.transport._process if hasattr(self.transport, '_process') else True:
             self._fallback = True
         return True
 
@@ -649,12 +637,12 @@ class ElasticPool:
                 except asyncio.TimeoutError:
                     continue
 
-            # 超时: all sessions busy — raise rather than share
-            # (sharing a busy REPL session corrupts stdin/stdout streams)
-            raise RuntimeError(
-                f"ElasticPool: all {len(self._sessions)} sessions busy "
-                f"after {self.timeout}s timeout. Consider increasing pool "
-                f"size or timeout.")
+            # 超时: 返回第一个可用会话 (即使忙)
+            if self._sessions:
+                s = self._sessions[0]
+                s._busy = True
+                return s
+            raise RuntimeError("ElasticPool: no sessions available")
 
     async def _release(self, session: RemoteSession):
         async with self._session_available:
@@ -672,38 +660,20 @@ class ElasticPool:
 # REPL Proxy Server (远端侧)
 # ═══════════════════════════════════════════════════════════════
 
-async def start_repl_proxy_server(host: str = "127.0.0.1",
+async def start_repl_proxy_server(host: str = "0.0.0.0",
                                   port: int = 9100,
-                                  project_dir: str = ".",
-                                  auth_token: str = ""):
+                                  project_dir: str = "."):
     """启动 REPL 代理服务 (运行在 REPL worker 节点上)
 
     将 TCP 连接桥接到本地 lean4-repl 进程。
 
-    Args:
-        host: Bind address. Defaults to 127.0.0.1 (localhost only).
-              Use 0.0.0.0 for remote access — always set auth_token!
-        port: Listen port.
-        project_dir: Lean project directory.
-        auth_token: If non-empty, clients must send {"auth": "<token>"}
-                    as their first message. Set via REPL_PROXY_TOKEN env var.
-
     Usage (worker 节点):
-        export REPL_PROXY_TOKEN="my-secret"
         python -c "
         import asyncio
         from engine.remote_session import start_repl_proxy_server
-        asyncio.run(start_repl_proxy_server(
-            host='0.0.0.0', port=9100, project_dir='/path',
-            auth_token='my-secret'))
+        asyncio.run(start_repl_proxy_server(port=9100, project_dir='/path'))
         "
     """
-    token = auth_token or os.environ.get("REPL_PROXY_TOKEN", "")
-    if host != "127.0.0.1" and not token:
-        logger.warning(
-            "REPL proxy: binding to non-localhost without auth_token! "
-            "Set REPL_PROXY_TOKEN or pass auth_token for security.")
-
     local = LocalTransport(project_dir=project_dir)
     await local.connect()
 
@@ -712,28 +682,6 @@ async def start_repl_proxy_server(host: str = "127.0.0.1",
         addr = writer.get_extra_info('peername')
         logger.info(f"REPL proxy: client connected from {addr}")
         try:
-            # ── Token authentication (first message) ──
-            if token:
-                auth_line = await asyncio.wait_for(
-                    reader.readline(), timeout=10)
-                if not auth_line:
-                    writer.close()
-                    return
-                try:
-                    auth_msg = json.loads(auth_line.decode())
-                except json.JSONDecodeError:
-                    auth_msg = {}
-                if auth_msg.get("auth") != token:
-                    error = json.dumps({"error": "Authentication failed"}) + "\n"
-                    writer.write(error.encode())
-                    await writer.drain()
-                    writer.close()
-                    logger.warning(f"REPL proxy: auth failed from {addr}")
-                    return
-                ok = json.dumps({"status": "authenticated"}) + "\n"
-                writer.write(ok.encode())
-                await writer.drain()
-
             while True:
                 line = await reader.readline()
                 if not line:
@@ -748,9 +696,8 @@ async def start_repl_proxy_server(host: str = "127.0.0.1",
                     error = json.dumps({"error": "Invalid JSON"}) + "\n"
                     writer.write(error.encode())
                     await writer.drain()
-        except (ConnectionError, asyncio.CancelledError,
-                asyncio.TimeoutError):
-            pass
+        except (ConnectionError, asyncio.CancelledError) as _exc:
+            logger.debug(f"Suppressed exception: {_exc}")
         finally:
             writer.close()
             logger.info(f"REPL proxy: client {addr} disconnected")

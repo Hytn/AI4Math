@@ -152,6 +152,43 @@ CREATE TABLE IF NOT EXISTS knowledge_changelog (
     created_at      REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_kcl_layer ON knowledge_changelog(layer);
+
+-- Episodic memory (replaces episodic_memory.jsonl)
+CREATE TABLE IF NOT EXISTS episodes (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    problem_type    TEXT NOT NULL,
+    difficulty      TEXT DEFAULT '',
+    winning_strategy TEXT DEFAULT '',
+    key_tactics     TEXT DEFAULT '[]',
+    key_insight     TEXT DEFAULT '',
+    solve_time_ms   INTEGER DEFAULT 0,
+    created_at      REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ep_type ON episodes(problem_type);
+CREATE INDEX IF NOT EXISTS idx_ep_diff ON episodes(difficulty);
+
+-- Persistent knowledge: failure patterns (replaces knowledge_base.json)
+CREATE TABLE IF NOT EXISTS pk_failures (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    tactic          TEXT NOT NULL,
+    goal_type       TEXT NOT NULL,
+    error_category  TEXT DEFAULT '',
+    domain          TEXT DEFAULT '',
+    count           INTEGER DEFAULT 1,
+    last_seen       REAL NOT NULL,
+    UNIQUE(tactic, goal_type)
+);
+
+-- Persistent knowledge: success patterns
+CREATE TABLE IF NOT EXISTS pk_successes (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain          TEXT NOT NULL,
+    tactic_combo    TEXT NOT NULL,
+    theorem_type    TEXT DEFAULT '',
+    count           INTEGER DEFAULT 1,
+    last_seen       REAL NOT NULL,
+    UNIQUE(domain, tactic_combo)
+);
 """
 
 
@@ -647,83 +684,403 @@ class UnifiedKnowledgeStore(ProofContextStore):
                 "concept_edges": _count("concept_edges"),
                 # Changelog
                 "changelog_entries": _count("knowledge_changelog"),
+                # Episodes (was JSONL)
+                "episodes": _count("episodes"),
+                # Persistent knowledge (was JSON)
+                "pk_failure_patterns": _count("pk_failures"),
+                "pk_success_patterns": _count("pk_successes"),
             })
 
         return base
 
-    # ═══════════════════════════════════════════════════════════════
-    # Knowledge Decay & Cleanup
-    # ═══════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════
+    # Episodic Memory (replaces agent/memory/episodic_memory.py JSONL)
+    # ═══════════════════════════════════════════════════════════
 
-    async def prune_stale_knowledge(
-        self,
-        max_age_days: float = 90,
-        min_decay_factor: float = 0.1,
-        max_rows_per_table: int = 50_000,
-    ) -> dict:
-        """Remove stale or low-quality knowledge entries.
+    async def add_episode(
+            self, problem_type: str, difficulty: str,
+            winning_strategy: str, key_tactics: list[str],
+            key_insight: str, solve_time_ms: int) -> int:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, self._add_episode_sync,
+            problem_type, difficulty, winning_strategy,
+            key_tactics, key_insight, solve_time_ms)
 
-        Should be called periodically (e.g. after each eval run) to prevent
-        unbounded table growth.
+    def _add_episode_sync(self, problem_type, difficulty,
+                           winning_strategy, key_tactics,
+                           key_insight, solve_time_ms) -> int:
+        now = time.time()
+        with self._connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO episodes "
+                "(problem_type, difficulty, winning_strategy, "
+                "key_tactics, key_insight, solve_time_ms, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (problem_type, difficulty, winning_strategy,
+                 json.dumps(key_tactics), key_insight,
+                 solve_time_ms, now))
+            return cur.lastrowid
 
-        Criteria for removal:
-          - tactic_effectiveness: decay_factor < min_decay_factor
-          - proved_lemmas: stale=1 AND last_cited_at older than max_age_days
-          - error_patterns: last_seen older than max_age_days
-          - Per-table row cap: oldest entries removed if count > max_rows_per_table
+    async def query_episodes(
+            self, problem_type: str = "", difficulty: str = "",
+            top_k: int = 5) -> list[dict]:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, self._query_episodes_sync,
+            problem_type, difficulty, top_k)
 
-        Returns:
-            Dict of {table_name: rows_deleted}.
+    def _query_episodes_sync(self, problem_type, difficulty, top_k):
+        with self._connect() as conn:
+            conditions = ["1=1"]
+            params: list = []
+            if problem_type:
+                conditions.append("problem_type=?")
+                params.append(problem_type)
+            if difficulty:
+                conditions.append("difficulty=?")
+                params.append(difficulty)
+            where = " AND ".join(conditions)
+            rows = conn.execute(
+                f"SELECT * FROM episodes WHERE {where} "
+                f"ORDER BY created_at DESC LIMIT ?",
+                (*params, top_k)).fetchall()
+            return [{
+                "id": r["id"],
+                "problem_type": r["problem_type"],
+                "difficulty": r["difficulty"],
+                "winning_strategy": r["winning_strategy"],
+                "key_tactics": json.loads(r["key_tactics"] or "[]"),
+                "key_insight": r["key_insight"],
+                "solve_time_ms": r["solve_time_ms"],
+                "created_at": r["created_at"],
+            } for r in rows]
+
+    # ═══════════════════════════════════════════════════════════
+    # Persistent Knowledge (replaces knowledge_base.json)
+    # ═══════════════════════════════════════════════════════════
+
+    async def record_failure(
+            self, tactic: str, goal_type: str = "",
+            error_category: str = "", domain: str = "") -> None:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, self._record_failure_sync,
+            tactic, goal_type or error_category or "unknown", domain)
+
+    def _record_failure_sync(self, tactic, goal_type, domain):
+        now = time.time()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, count FROM pk_failures "
+                "WHERE tactic=? AND goal_type=?",
+                (tactic, goal_type[:80])).fetchone()
+            if row:
+                conn.execute(
+                    "UPDATE pk_failures SET count=?, last_seen=? WHERE id=?",
+                    (row["count"] + 1, now, row["id"]))
+            else:
+                conn.execute(
+                    "INSERT INTO pk_failures "
+                    "(tactic, goal_type, domain, count, last_seen) "
+                    "VALUES (?, ?, ?, 1, ?)",
+                    (tactic, goal_type[:80], domain, now))
+
+    async def record_success(
+            self, domain: str, tactics: list[str],
+            theorem_type: str = "") -> None:
+        loop = asyncio.get_event_loop()
+        combo = " → ".join(tactics[:5])
+        await loop.run_in_executor(
+            None, self._record_success_sync, domain or "general", combo)
+
+    def _record_success_sync(self, domain, combo):
+        now = time.time()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, count FROM pk_successes "
+                "WHERE domain=? AND tactic_combo=?",
+                (domain, combo)).fetchone()
+            if row:
+                conn.execute(
+                    "UPDATE pk_successes SET count=?, last_seen=? WHERE id=?",
+                    (row["count"] + 1, now, row["id"]))
+            else:
+                conn.execute(
+                    "INSERT INTO pk_successes "
+                    "(domain, tactic_combo, count, last_seen) "
+                    "VALUES (?, ?, 1, ?)",
+                    (domain, combo, now))
+
+    async def get_suggestions(
+            self, domain: str = "", goal_type: str = "",
+            max_items: int = 5) -> list[str]:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, self._get_suggestions_sync, domain, goal_type, max_items)
+
+    def _get_suggestions_sync(self, domain, goal_type, max_items):
+        suggestions = []
+        with self._connect() as conn:
+            if domain:
+                rows = conn.execute(
+                    "SELECT tactic_combo, count FROM pk_successes "
+                    "WHERE domain=? ORDER BY count DESC LIMIT ?",
+                    (domain, max_items)).fetchall()
+                for r in rows:
+                    suggestions.append(
+                        f"Proven effective ({r['count']}x): {r['tactic_combo']}")
+
+            rows = conn.execute(
+                "SELECT tactic, goal_type, count FROM pk_failures "
+                "WHERE count >= 3 ORDER BY count DESC LIMIT ?",
+                (max_items,)).fetchall()
+            for r in rows:
+                if not goal_type or goal_type in r["goal_type"]:
+                    suggestions.append(
+                        f"AVOID `{r['tactic']}` on {r['goal_type']} "
+                        f"(failed {r['count']}x)")
+        return suggestions[:max_items]
+
+    # ═══════════════════════════════════════════════════════════
+    # RL-aligned: Reward-based reinforcement
+    # ═══════════════════════════════════════════════════════════
+
+    async def reinforce(self, entity_type: str, entity_id: int,
+                        reward: float) -> None:
+        """Reinforce or weaken a knowledge entry based on RL reward.
+
+        Instead of pure time-based decay, this allows the RL training
+        loop to strengthen knowledge that helped produce successful
+        proofs and weaken knowledge that led to failures.
+
+        Args:
+            entity_type: "tactic", "lemma", "strategy", "error_pattern"
+            entity_id: Row ID in the corresponding table
+            reward: Positive = strengthen, negative = weaken.
+                    Clamped to [-1, 1], applied as multiplicative
+                    adjustment to decay_factor.
+        """
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, self._reinforce_sync, entity_type, entity_id, reward)
+
+    def _reinforce_sync(self, entity_type, entity_id, reward):
+        table_map = {
+            "tactic": "tactic_effectiveness",
+            "lemma": "proved_lemmas",
+            "strategy": "strategy_patterns",
+        }
+        table = table_map.get(entity_type)
+        if not table:
+            return
+
+        # Clamp reward to [-1, 1]
+        reward = max(-1.0, min(1.0, reward))
+        # Convert to multiplicative factor: reward=1 → 1.2x, reward=-1 → 0.8x
+        factor = 1.0 + reward * 0.2
+
+        with self._connect() as conn:
+            row = conn.execute(
+                f"SELECT id, decay_factor FROM {table} WHERE id=?",
+                (entity_id,)).fetchone()
+            if row:
+                new_decay = max(0.01, min(2.0, row["decay_factor"] * factor))
+                conn.execute(
+                    f"UPDATE {table} SET decay_factor=? WHERE id=?",
+                    (new_decay, entity_id))
+                self._log_change(
+                    conn, layer="RL", entity_type=table,
+                    entity_id=entity_id, action="reinforce",
+                    old_value=f"decay={row['decay_factor']:.3f}",
+                    new_value=f"decay={new_decay:.3f}",
+                    reason=f"reward={reward:.3f}")
+
+    # ═══════════════════════════════════════════════════════════
+    # RL-aligned: Batch trajectory export
+    # ═══════════════════════════════════════════════════════════
+
+    async def export_trajectories_batch(
+            self, min_depth: int = 1, limit: int = 10000,
+            format: str = "dict") -> list[dict]:
+        """Export proof trajectories for RL training.
+
+        Returns flat dicts suitable for conversion to DataFrame/Arrow.
+
+        Args:
+            min_depth: Minimum tactic sequence length
+            limit: Max rows to return
+            format: "dict" (default) or "flat" (flattened for tabular)
         """
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
-            None, self._prune_sync, max_age_days, min_decay_factor,
-            max_rows_per_table)
+            None, self._export_batch_sync, min_depth, limit, format)
 
-    def _prune_sync(self, max_age_days, min_decay_factor,
-                    max_rows_per_table) -> dict:
-        cutoff = time.time() - (max_age_days * 86400)
-        deleted = {}
-
+    def _export_batch_sync(self, min_depth, limit, format):
         with self._connect() as conn:
-            # Layer 1: low-decay tactics
-            cur = conn.execute(
-                "DELETE FROM tactic_effectiveness WHERE decay_factor < ?",
-                (min_decay_factor,))
-            deleted["tactic_effectiveness_decay"] = cur.rowcount
+            # Check if proof_traces table exists (from parent ProofContextStore)
+            tables = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name='proof_traces'").fetchone()
+            if not tables:
+                return []
 
-            # Layer 1: stale uncited lemmas
-            cur = conn.execute(
-                "DELETE FROM proved_lemmas "
-                "WHERE stale = 1 AND last_cited_at < ? AND last_cited_at > 0",
-                (cutoff,))
-            deleted["proved_lemmas_stale"] = cur.rowcount
+            try:
+                rows = conn.execute(
+                    "SELECT pt.*, pc.theorem, pc.solved "
+                    "FROM proof_traces pt "
+                    "JOIN proof_contexts pc ON pt.context_id = pc.id "
+                    "WHERE json_array_length(pt.tactic_sequence_json) >= ? "
+                    "ORDER BY pt.created_at DESC LIMIT ?",
+                    (min_depth, limit)).fetchall()
+            except Exception:
+                return []
 
-            # Layer 1: old error patterns
-            cur = conn.execute(
-                "DELETE FROM error_patterns WHERE last_seen < ?",
-                (cutoff,))
-            deleted["error_patterns_old"] = cur.rowcount
-
-            # Row-cap enforcement (keep most recent by rowid)
-            for table in ("tactic_effectiveness", "proved_lemmas",
-                          "error_patterns", "strategy_patterns"):
+            results = []
+            for r in rows:
                 try:
-                    count = conn.execute(
-                        f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-                    if count > max_rows_per_table:
-                        excess = count - max_rows_per_table
-                        conn.execute(
-                            f"DELETE FROM {table} WHERE rowid IN "
-                            f"(SELECT rowid FROM {table} ORDER BY rowid ASC "
-                            f"LIMIT ?)", (excess,))
-                        deleted[f"{table}_capped"] = excess
-                except sqlite3.OperationalError:
-                    pass  # table may not exist yet
+                    tactics = json.loads(r["tactic_sequence_json"] or "[]")
+                except (json.JSONDecodeError, TypeError):
+                    tactics = []
 
-            conn.commit()
+                if format == "flat":
+                    # Flatten for tabular: one row per tactic step
+                    for step_idx, step in enumerate(tactics):
+                        results.append({
+                            "trace_id": r["id"],
+                            "context_id": r["context_id"],
+                            "theorem": r["theorem"],
+                            "solved": bool(r["solved"]),
+                            "step_idx": step_idx,
+                            "total_steps": len(tactics),
+                            "tactic": step.get("tactic", "") if isinstance(step, dict) else str(step),
+                            "success": step.get("success", False) if isinstance(step, dict) else False,
+                            "goal_before": step.get("goal_before", "") if isinstance(step, dict) else "",
+                            "duration_ms": r["duration_ms"],
+                        })
+                else:
+                    results.append({
+                        "trace_id": r["id"],
+                        "context_id": r["context_id"],
+                        "theorem": r["theorem"],
+                        "solved": bool(r["solved"]),
+                        "tactic_sequence": tactics,
+                        "num_steps": len(tactics),
+                        "duration_ms": r["duration_ms"],
+                        "success": bool(r["success"]),
+                    })
+            return results
 
-        total = sum(deleted.values())
-        if total > 0:
-            logger.info(f"Knowledge pruning: removed {total} rows — {deleted}")
-        return deleted
+    def export_to_parquet(self, path: str, min_depth: int = 1,
+                          limit: int = 50000) -> int:
+        """Export trajectories to Parquet file for RL framework consumption.
+
+        Requires pyarrow. Returns number of rows written.
+        """
+        rows = self._export_batch_sync(min_depth, limit, format="flat")
+        if not rows:
+            return 0
+
+        try:
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+
+            table = pa.Table.from_pylist(rows)
+            pq.write_table(table, path, compression="snappy")
+            logger.info(f"Exported {len(rows)} trajectory rows to {path}")
+            return len(rows)
+        except ImportError:
+            # Fallback: write as JSONL
+            import os
+            jsonl_path = path.replace(".parquet", ".jsonl")
+            os.makedirs(os.path.dirname(jsonl_path) or ".", exist_ok=True)
+            with open(jsonl_path, "w") as f:
+                for r in rows:
+                    f.write(json.dumps(r) + "\n")
+            logger.info(
+                f"pyarrow not available; exported {len(rows)} rows "
+                f"to {jsonl_path} instead")
+            return len(rows)
+
+    # ═══════════════════════════════════════════════════════════
+    # Unified decay & GC (for KnowledgeEvolver)
+    # ═══════════════════════════════════════════════════════════
+
+    async def decay_all(self, decay_rate: float = 0.95,
+                        min_samples: int = 3) -> dict:
+        """Apply time-based decay to all knowledge layers.
+
+        Entries with fewer than min_samples observations are protected.
+        Returns stats about how many rows were decayed per layer.
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, self._decay_all_sync, decay_rate, min_samples)
+
+    def _decay_all_sync(self, decay_rate, min_samples):
+        stats = {}
+        with self._connect() as conn:
+            # L1: tactic_effectiveness
+            r = conn.execute(
+                "UPDATE tactic_effectiveness "
+                "SET decay_factor = decay_factor * ? "
+                "WHERE (successes + failures) >= ?",
+                (decay_rate, min_samples))
+            stats["tactics_decayed"] = r.rowcount
+
+            # L1: proved_lemmas
+            r = conn.execute(
+                "UPDATE proved_lemmas "
+                "SET decay_factor = decay_factor * ? "
+                "WHERE times_cited >= ?",
+                (decay_rate, min_samples))
+            stats["lemmas_decayed"] = r.rowcount
+
+            # L2: strategy_patterns
+            r = conn.execute(
+                "UPDATE strategy_patterns "
+                "SET decay_factor = decay_factor * ? "
+                "WHERE times_applied >= ?",
+                (decay_rate, min_samples))
+            stats["strategies_decayed"] = r.rowcount
+
+        return stats
+
+    async def gc_stale(self, threshold: float = 0.1) -> dict:
+        """Mark entries with decay_factor below threshold as stale."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, self._gc_stale_sync, threshold)
+
+    def _gc_stale_sync(self, threshold):
+        stats = {}
+        with self._connect() as conn:
+            r = conn.execute(
+                "UPDATE proved_lemmas SET stale=1 "
+                "WHERE decay_factor < ? AND stale=0",
+                (threshold,))
+            stats["lemmas_staled"] = r.rowcount
+
+            # For tactics/strategies: delete low-value entries
+            r = conn.execute(
+                "DELETE FROM tactic_effectiveness "
+                "WHERE decay_factor < ? AND (successes + failures) < 5",
+                (threshold,))
+            stats["tactics_removed"] = r.rowcount
+
+            r = conn.execute(
+                "DELETE FROM strategy_patterns "
+                "WHERE decay_factor < ? AND times_applied < 3",
+                (threshold,))
+            stats["strategies_removed"] = r.rowcount
+
+        return stats
+
+    def close(self):
+        """Close the database connection."""
+        if hasattr(self, '_shared_conn') and self._shared_conn:
+            try:
+                self._shared_conn.close()
+            except Exception:
+                pass
+            self._shared_conn = None

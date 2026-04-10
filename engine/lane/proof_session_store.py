@@ -175,9 +175,8 @@ def build_snapshot(
                     "content": msg.content[:500],
                     "timestamp": msg.timestamp,
                 })
-        except Exception:
-            logger.debug("Failed to serialize broadcast messages for snapshot",
-                         exc_info=True)
+        except Exception as _exc:
+            logger.debug(f"Suppressed exception: {_exc}")
 
     # Extract knowledge context
     last_feedback_text = getattr(memory, 'last_feedback_text', '')

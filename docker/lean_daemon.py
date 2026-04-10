@@ -127,8 +127,8 @@ class REPLSession:
             try:
                 self._process.kill()
                 await asyncio.wait_for(self._process.wait(), timeout=5)
-            except Exception:
-                pass
+            except Exception as _exc:
+                logger.debug(f"Suppressed exception: {_exc}")
 
     @property
     def is_alive(self) -> bool:
@@ -198,8 +198,8 @@ class REPLPool:
             session = self._warm_queue.get_nowait()
             if session.is_alive:
                 return session
-        except asyncio.QueueEmpty:
-            pass
+        except asyncio.QueueEmpty as _exc:
+            logger.debug(f"Suppressed exception: {_exc}")
 
         # Fallback: create on demand
         await self._semaphore.acquire()
@@ -327,8 +327,8 @@ async def handle_client_repl(reader, writer, pool: REPLPool):
 
             logger.info(f"req={request_id} elapsed={elapsed_ms}ms")
 
-    except (ConnectionResetError, BrokenPipeError):
-        pass
+    except (ConnectionResetError, BrokenPipeError) as _exc:
+        logger.debug(f"Suppressed exception: {_exc}")
     except Exception as e:
         logger.error(f"Client error: {e}")
     finally:
@@ -336,8 +336,8 @@ async def handle_client_repl(reader, writer, pool: REPLPool):
         writer.close()
         try:
             await writer.wait_closed()
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.debug(f"Suppressed exception: {_exc}")
 
 
 async def handle_client_compile(reader, writer):
@@ -374,16 +374,16 @@ async def handle_client_compile(reader, writer):
 
             logger.info(f"req={request_id} elapsed={elapsed_ms}ms")
 
-    except (ConnectionResetError, BrokenPipeError):
-        pass
+    except (ConnectionResetError, BrokenPipeError) as _exc:
+        logger.debug(f"Suppressed exception: {_exc}")
     except Exception as e:
         logger.error(f"Client error: {e}")
     finally:
         writer.close()
         try:
             await writer.wait_closed()
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.debug(f"Suppressed exception: {_exc}")
 
 
 # ─── Main ─────────────────────────────────────────────────────

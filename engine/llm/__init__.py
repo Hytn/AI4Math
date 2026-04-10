@@ -1,4 +1,6 @@
 """
+import logging
+logger = logging.getLogger(__name__)
 engine/llm — LLM Tactic Suggestion Engine
 
 Integrates with Claude API to suggest tactics based on goal state.
@@ -27,7 +29,7 @@ TACTIC_PROMPT = """You are an expert Lean 4 theorem prover. Given a proof goal, 
 RULES:
 - Output ONLY a JSON array of tactic strings, nothing else
 - Suggest 3-8 tactics ranked by likelihood of success
-- Available tactics: intro, assumption, apply, exact, cases, induction, simp, rfl, trivial, ring, omega, linarith, constructor, contradiction
+- Available tactics: intro, assumption, apply, exact, sorry, cases, induction, simp, rfl, trivial, ring, omega, linarith, constructor, contradiction
 - For `intro`, specify the variable name: "intro x"
 - For `apply`, specify the lemma: "apply lemma_name"
 - For `exact`, specify the term: "exact term"
@@ -158,7 +160,7 @@ class LLMTacticEngine:
                     tactics.append(f"exact {hname}")
 
         # Generic fallbacks
-        tactics.extend(["trivial", "simp", "rfl", "omega"])
+        tactics.extend(["trivial", "simp", "sorry"])
 
         elapsed = (time.time() - t0) * 1000
         return LLMSuggestion(
@@ -181,8 +183,8 @@ def _parse_tactic_response(text: str) -> List[str]:
             arr = json_mod.loads(text[start:end+1])
             if isinstance(arr, list):
                 return [str(t) for t in arr if isinstance(t, str)]
-        except (ValueError, json_mod.JSONDecodeError):
-            pass
+        except (ValueError, json_mod.JSONDecodeError) as _exc:
+            logger.debug(f"Suppressed exception: {_exc}")
     # Fallback: split by lines
     return [line.strip().strip('"').strip("'") for line in text.split("\n")
             if line.strip() and not line.strip().startswith("#")]

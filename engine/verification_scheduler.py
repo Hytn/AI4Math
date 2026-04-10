@@ -539,6 +539,6 @@ class VerificationScheduler:
             metrics_snapshot = self._metrics.snapshot()
             if metrics_snapshot:
                 result["metrics"] = metrics_snapshot
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.debug(f"Suppressed exception: {_exc}")
         return result

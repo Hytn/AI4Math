@@ -206,8 +206,8 @@ class LocalTransport(REPLTransport):
             try:
                 self._process.kill()
                 await asyncio.wait_for(self._process.wait(), timeout=5)
-            except (asyncio.TimeoutError, ProcessLookupError, OSError):
-                pass
+            except (asyncio.TimeoutError, ProcessLookupError, OSError) as _exc:
+                logger.debug(f"Suppressed exception: {_exc}")
 
     async def send(self, cmd: dict) -> Optional[dict]:
         if self._fallback:
@@ -330,8 +330,8 @@ class LocalTransport(REPLTransport):
             self._heartbeat_task.cancel()
             try:
                 await self._heartbeat_task
-            except asyncio.CancelledError:
-                pass
+            except asyncio.CancelledError as _exc:
+                logger.debug(f"Suppressed exception: {_exc}")
         await self._kill_process()
 
     @property
@@ -414,8 +414,8 @@ class SocketTransport(REPLTransport):
         if self._writer:
             try:
                 self._writer.close()
-            except Exception:
-                pass
+            except Exception as _exc:
+                logger.debug(f"Suppressed exception: {_exc}")
         await asyncio.sleep(0.5)
         return await self._connect()
 
@@ -468,8 +468,8 @@ class SocketTransport(REPLTransport):
             try:
                 self._writer.close()
                 await self._writer.wait_closed()
-            except Exception:
-                pass
+            except Exception as _exc:
+                logger.debug(f"Suppressed exception: {_exc}")
         self._alive = False
 
     @property

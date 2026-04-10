@@ -191,5 +191,7 @@ def _fix_identifier(proof: str, error: LeanError) -> str:
     }
     for old, new in common_fixes.items():
         if old in error.message.lower() or old in proof.lower():
-            proof = proof.replace(old, new)
+            # Use word-boundary-aware replacement to avoid partial matches
+            import re
+            proof = re.sub(r'\b' + re.escape(old) + r'\b', new, proof)
     return proof

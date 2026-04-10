@@ -52,8 +52,7 @@ from engine.lane.policy import PolicyEngine, PolicyAction
 from engine.lane.dashboard import ProofDashboard
 from engine.observability import metrics as obs_metrics, MetricsExporter
 
-from common.logging_config import setup_logging
-setup_logging(level="INFO")
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -222,8 +221,8 @@ async def prove_single_async(
                     )
                     await knowledge_writer.ingest_step(
                         step, theorem=problem.theorem_statement)
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    logger.debug(f"Suppressed exception: {_exc}")
 
             return attempt
 

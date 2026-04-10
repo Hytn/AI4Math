@@ -118,8 +118,8 @@ def detect_best_backend(project_dir: str = ".") -> str:
             with open(lakefile) as f:
                 if "leanprover-community/repl" in f.read():
                     return "lean4-repl"
-        except OSError:
-            pass
+        except OSError as _exc:
+            logger.debug(f"Suppressed exception: {_exc}")
 
     # 2. pantograph
     if shutil.which("pantograph"):
@@ -315,21 +315,20 @@ class LeanREPL:
             except Exception:
                 try:
                     self._process.kill()
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    logger.debug(f"Suppressed exception: {_exc}")
             self._process = None
 
-    _env_version_cache: dict[str, str] = {}  # class-level cache keyed by project_dir
+    _env_version_cache: str = ""  # class-level cache
 
     def _get_env_version_tag(self) -> str:
         """获取 Lean4 + Mathlib 环境版本标识, 用于缓存键.
 
         读取 lean-toolchain 和 lake-manifest.json (如果存在) 生成版本标签。
-        结果缓存在类级别 (按 project_dir 分区), 避免重复 I/O。
+        结果缓存在类级别, 避免重复 I/O。
         """
-        cached = LeanREPL._env_version_cache.get(self.project_dir)
-        if cached:
-            return cached
+        if LeanREPL._env_version_cache:
+            return LeanREPL._env_version_cache
 
         parts = ["lean"]
         # 读取 lean-toolchain
@@ -338,8 +337,8 @@ class LeanREPL:
             if os.path.isfile(toolchain_path):
                 with open(toolchain_path) as f:
                     parts.append(f.read().strip()[:50])
-        except OSError:
-            pass
+        except OSError as _exc:
+            logger.debug(f"Suppressed exception: {_exc}")
 
         # 读取 lake-manifest.json 中 mathlib 的 rev
         manifest_path = os.path.join(self.project_dir, "lake-manifest.json")
@@ -352,11 +351,11 @@ class LeanREPL:
                     if pkg.get("name") == "mathlib":
                         parts.append(pkg.get("rev", "")[:12])
                         break
-        except (OSError, ValueError):
-            pass
+        except (OSError, ValueError) as _exc:
+            logger.debug(f"Suppressed exception: {_exc}")
 
         tag = "|".join(parts)
-        LeanREPL._env_version_cache[self.project_dir] = tag
+        LeanREPL._env_version_cache = tag
         return tag
 
     def get_history(self) -> list[str]:
@@ -667,6 +666,6 @@ class LeanREPL:
         if self._process:
             try:
                 self._process.kill()
-            except Exception:
-                pass
+            except Exception as _exc:
+                logger.debug(f"Suppressed exception: {_exc}")
             self._process = None

@@ -70,11 +70,10 @@ def main():
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
-    from common.logging_config import setup_logging
     if args.verbose:
-        setup_logging(level="DEBUG")
+        logging.basicConfig(level=logging.DEBUG, format="%(message)s")
     else:
-        setup_logging(level="WARNING")
+        logging.basicConfig(level=logging.WARNING, format="%(message)s")
 
     asyncio.run(run_debug(args))
 

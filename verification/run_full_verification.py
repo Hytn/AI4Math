@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """
+import logging
+logger = logging.getLogger(__name__)
 AI4Math — 全方位组件验证与性能评测
 ===================================
 
@@ -188,8 +190,8 @@ def section_1():
         try:
             Expr.bvar(0).lift(-1, 0)
             raise AssertionError("should have raised ValueError")
-        except ValueError:
-            pass
+        except ValueError as _exc:
+            logger.debug(f"Suppressed exception: {_exc}")
         # Safe case
         assert Expr.bvar(0).lift(-1, 1) == Expr.bvar(0)
         return "guard works"

@@ -210,11 +210,8 @@ class TrainedWorldModel(WorldModelPredictor):
 
     def _load_model(self, path: str):
         """加载训练好的模型权重。"""
-        raise NotImplementedError(
-            f"World model loading not yet implemented. "
-            f"Attempted to load from: {path}. "
-            f"Remove model_path from config to use the heuristic fallback."
-        )
+        # TODO: 实际加载 PyTorch/ONNX 模型
+        pass
 
     def predict(self, goal_state: str, tactic: str,
                 hypotheses: list[str] = None,

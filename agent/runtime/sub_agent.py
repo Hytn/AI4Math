@@ -220,3 +220,121 @@ class SubAgent:
             result, feedback=feedback,
             l0_passed=l0_passed, l1_passed=l1_passed,
             l2_passed=l2_passed)
+
+    # ── Agentic Mode (multi-turn with tool use) ──────────────────────────
+
+    async def execute_with_tools(
+        self,
+        task: AgentTask,
+        tool_registry=None,
+        max_turns: int = 10,
+    ) -> AgentResult:
+        """Execute task using the agentic loop with tool use.
+
+        This is the key upgrade over execute(): instead of a single LLM call,
+        the agent enters a multi-turn loop where it can call tools (search
+        premises, inspect goals, verify proofs, etc.) autonomously.
+
+        Requires an AsyncLLMProvider. Falls back to execute() if the LLM
+        provider is synchronous.
+
+        Args:
+            task: The proof task
+            tool_registry: ToolRegistry with available tools
+            max_turns: Maximum number of LLM turns in the loop
+
+        Returns:
+            AgentResult with the final proof and conversation history
+        """
+        from agent.runtime.agent_loop import AgentLoop, LoopConfig
+        from agent.tools.base import ToolContext
+        from agent.tools.registry import ToolRegistry as TR
+
+        registry = tool_registry or self.tool_registry
+        if not registry or not isinstance(registry, TR):
+            # No tool registry → fall back to single-turn
+            return self.execute(task)
+
+        start = time.time()
+
+        # Build system prompt
+        system = self.spec.system_prompt_override or ROLE_PROMPTS.get(
+            self.spec.role, ROLE_PROMPTS[AgentRole.PROOF_GENERATOR])
+
+        # Build initial message
+        parts = [task.description]
+        for ctx_item in task.injected_context:
+            parts.append(f"\n--- {ctx_item.key} ---\n{ctx_item.content}")
+        if self.spec.few_shot_override:
+            parts.append(f"\n{self.spec.few_shot_override}")
+        initial_message = "\n".join(parts)
+
+        # Build tool context
+        tool_ctx = ToolContext(
+            agent_name=self.spec.name,
+            theorem_statement=task.theorem_statement,
+            budget_remaining_tokens=self.spec.context_budget,
+            timeout_seconds=self.spec.timeout_seconds,
+        )
+
+        # Determine available tools
+        allowed_tools = self.spec.tools if self.spec.tools else None
+        tool_schemas = registry.to_claude_tools_schema(allowed=allowed_tools)
+
+        # Configure the loop
+        config = LoopConfig(
+            max_turns=max_turns,
+            max_tokens_per_turn=self.spec.max_tokens,
+            temperature=self.spec.temperature,
+            timeout_seconds=self.spec.timeout_seconds,
+            max_total_tokens=self.spec.context_budget,
+        )
+
+        try:
+            loop = AgentLoop(llm=self.llm, tools=registry, config=config)
+            loop_result = await loop.run(
+                system_prompt=system,
+                initial_message=initial_message,
+                tool_ctx=tool_ctx,
+            )
+
+            latency = int((time.time() - start) * 1000)
+            return AgentResult(
+                agent_name=self.spec.name,
+                role=self.spec.role,
+                content=loop_result.content,
+                proof_code=loop_result.proof_code,
+                tool_calls=[{"tools_used": loop_result.tools_called}],
+                tokens_used=loop_result.total_tokens,
+                latency_ms=latency,
+                confidence=self._estimate_confidence_from_loop(loop_result),
+                success=False,
+                metadata={
+                    **task.metadata,
+                    "loop_turns": loop_result.turns_used,
+                    "loop_stop_reason": loop_result.stopped_reason,
+                    "tools_called": loop_result.tools_called,
+                },
+            )
+        except Exception as e:
+            latency = int((time.time() - start) * 1000)
+            logger.error(f"Agentic execution failed for '{self.spec.name}': {e}")
+            # Fall back to single-turn
+            return self.execute(task)
+
+    def _estimate_confidence_from_loop(self, loop_result) -> float:
+        """Estimate confidence from agentic loop result."""
+        base = self._estimate_confidence(
+            LLMResponse(content=loop_result.content, model="",
+                        tokens_in=0, tokens_out=0, latency_ms=0),
+            loop_result.proof_code)
+
+        # Bonus for using tools (agent actively explored)
+        if loop_result.tools_called:
+            base = min(1.0, base + 0.1)
+
+        # Bonus for proof_found stop reason
+        if loop_result.stopped_reason == "proof_found":
+            base = min(1.0, base + 0.2)
+
+        return base

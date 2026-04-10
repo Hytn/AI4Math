@@ -9,8 +9,7 @@ from prover.pipeline.orchestrator import Orchestrator
 from prover.models import BenchmarkProblem
 from benchmarks.datasets.builtin.problems import BUILTIN_PROBLEMS
 
-from common.logging_config import setup_logging
-setup_logging(level="INFO")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
 
 def main():
     parser = argparse.ArgumentParser(description="AI4Math — Single Problem Test")

@@ -205,8 +205,8 @@ class PluginLoader:
             if line:
                 try:
                     premises.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
+                except json.JSONDecodeError as _exc:
+                    logger.debug(f"Suppressed exception: {_exc}")
         return premises
 
     @staticmethod

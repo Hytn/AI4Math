@@ -173,8 +173,8 @@ class EngineFactory:
             for cleanup in reversed(cleanup_needed):
                 try:
                     cleanup()
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    logger.debug(f"Suppressed exception: {_exc}")
             raise
 
     def build(self, llm_provider=None, retriever=None,

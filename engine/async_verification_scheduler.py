@@ -353,8 +353,8 @@ class AsyncVerificationScheduler:
             if tmp_path and os.path.exists(tmp_path):
                 try:
                     os.unlink(tmp_path)
-                except OSError:
-                    pass
+                except OSError as _exc:
+                    logger.debug(f"Suppressed exception: {_exc}")
 
     # ── 广播辅助 ──
 

@@ -87,8 +87,8 @@ class LeanEnvironment:
                                     text=True, timeout=10)
                 if r.returncode == 0:
                     s.lean_version = r.stdout.strip().split("\n")[0]
-            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-                pass
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as _exc:
+                logger.debug(f"Suppressed exception: {_exc}")
 
         # Check lake
         s.lake_installed = shutil.which("lake") is not None
@@ -273,8 +273,8 @@ lean_lib «AI4MathCheck» where
             if check_file.exists():
                 try:
                     check_file.unlink()
-                except OSError:
-                    pass
+                except OSError as _exc:
+                    logger.debug(f"Suppressed exception: {_exc}")
 
     def _compile_docker(self, code: str) -> tuple[int, str, str]:
         """Compile using Docker container."""
@@ -313,8 +313,8 @@ lean_lib «AI4MathCheck» where
         finally:
             try:
                 os.unlink(tmp)
-            except (OSError, UnboundLocalError):
-                pass
+            except (OSError, UnboundLocalError) as _exc:
+                logger.debug(f"Suppressed exception: {_exc}")
 
     # ── Convenience ──
 

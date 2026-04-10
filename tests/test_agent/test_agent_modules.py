@@ -141,11 +141,13 @@ class TestMetaController:
 
     def test_initial_strategy_hard(self):
         mc = MetaController()
-        assert mc.select_initial_strategy("hard") == "light"
+        assert mc.select_initial_strategy("hard") == "medium"
 
     def test_escalation(self):
         mc = MetaController({"max_light_rounds": 2})
-        mem = WorkingMemory(current_strategy="light", rounds_completed=3)
+        # BudgetEscalationRule triggers when total_samples/max_samples > 0.3
+        mem = WorkingMemory(current_strategy="light", rounds_completed=3,
+                            total_samples=50)  # 50/128 ≈ 39% > 30% threshold
         assert mc.should_escalate(mem) == "medium"
 
     def test_no_escalation_if_solved(self):

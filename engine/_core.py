@@ -79,16 +79,13 @@ class AsyncCompileCache:
         self._cache: OrderedDict[str, 'FullVerifyResult'] = OrderedDict()
         self._maxsize = maxsize
         self._lock = None  # lazy init (needs running event loop)
-        self._init_guard = threading.Lock()  # guards lazy lock creation
         self.hits = 0
         self.misses = 0
 
     def _ensure_lock(self):
         if self._lock is None:
-            with self._init_guard:
-                if self._lock is None:  # double-checked locking
-                    import asyncio
-                    self._lock = asyncio.Lock()
+            import asyncio
+            self._lock = asyncio.Lock()
 
     async def get(self, key: str) -> Optional['FullVerifyResult']:
         self._ensure_lock()

@@ -48,11 +48,11 @@ class ProofEventBus:
       "*"                — everything
     """
 
-    def __init__(self, max_log_size: int = 10_000):
+    def __init__(self):
         self._handlers: dict[str, list[EventHandler]] = defaultdict(list)
         self._lock = threading.Lock()
         self._event_log: list[TaskEvent] = []
-        self._max_log_size = max_log_size
+        self._max_log_size = 10_000
 
     def subscribe(self, pattern: str, handler: EventHandler):
         """Subscribe a handler to events matching the glob pattern."""

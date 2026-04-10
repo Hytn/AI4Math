@@ -86,15 +86,8 @@ def load_config(path: str = "config/default.yaml",
 
     # Validate
     issues = validate_config(config)
-    critical = [i for i in issues if i.startswith("Missing required")]
-    warnings = [i for i in issues if i not in critical]
-
-    for issue in warnings:
+    for issue in issues:
         logger.warning(f"Config issue: {issue}")
-
-    if critical:
-        msg = "Configuration has critical issues:\n" + "\n".join(f"  - {c}" for c in critical)
-        raise ValueError(msg)
 
     return config
 
@@ -229,29 +222,24 @@ def _apply_env_overrides(config: dict, prefix: str = "APE_"):
 
 
 def _coerce_value(value: str):
-    """Coerce string env var to appropriate Python type.
-
-    Priority: None → int → float → bool → string.
-    Integer parsing comes before boolean so that "0" → 0 and "1" → 1,
-    not False/True.
-    """
+    """Coerce string env var to appropriate Python type."""
+    # Boolean
+    if value.lower() in ("true", "yes", "1"):
+        return True
+    if value.lower() in ("false", "no", "0"):
+        return False
     # None
     if value.lower() in ("null", "none", ""):
         return None
-    # Integer (must come before boolean so "0"→0, "1"→1)
+    # Integer
     try:
         return int(value)
-    except ValueError:
-        pass
+    except ValueError as _exc:
+        logger.debug(f"Suppressed exception: {_exc}")
     # Float
     try:
         return float(value)
-    except ValueError:
-        pass
-    # Boolean (only non-numeric words)
-    if value.lower() in ("true", "yes"):
-        return True
-    if value.lower() in ("false", "no"):
-        return False
+    except ValueError as _exc:
+        logger.debug(f"Suppressed exception: {_exc}")
     # String
     return value

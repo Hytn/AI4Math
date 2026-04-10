@@ -287,8 +287,8 @@ class KnowledgeEvolver:
             self._background_task.cancel()
             try:
                 await self._background_task
-            except asyncio.CancelledError:
-                pass
+            except asyncio.CancelledError as _exc:
+                logger.debug(f"Suppressed exception: {_exc}")
             logger.info("KnowledgeEvolver: background task stopped")
 
     async def _background_loop(self, interval: float):
@@ -301,8 +301,8 @@ class KnowledgeEvolver:
                     await self.gc_stale()
                 except Exception as e:
                     logger.warning(f"KnowledgeEvolver background error: {e}")
-        except asyncio.CancelledError:
-            pass
+        except asyncio.CancelledError as _exc:
+            logger.debug(f"Suppressed exception: {_exc}")
 
     # ═══════════════════════════════════════════════════════════
     # Stats

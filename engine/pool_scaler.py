@@ -95,8 +95,8 @@ class PoolScaler:
             self._task.cancel()
             try:
                 await self._task
-            except asyncio.CancelledError:
-                pass
+            except asyncio.CancelledError as _exc:
+                logger.debug(f"Suppressed exception: {_exc}")
             self._task = None
         logger.info("PoolScaler: stopped")
 

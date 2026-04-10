@@ -244,8 +244,8 @@ class HeterogeneousEngine:
             for name in subscriptions:
                 try:
                     self.broadcast.unsubscribe(name)
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    logger.debug(f"Suppressed exception: {_exc}")
 
         return results
 

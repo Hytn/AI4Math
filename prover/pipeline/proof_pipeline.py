@@ -102,6 +102,9 @@ class ProofPipeline:
         self._feedback_budget = config.get("feedback_compression_budget", 800)
         self._broadcast_budget = config.get("broadcast_compression_budget", 1500)
 
+        # Verification filter: skip candidates below this confidence
+        self._verify_min_confidence = config.get("verify_min_confidence", 0.3)
+
         # Phase 3: Session persistence
         self._session_store: Optional[ProofSessionStore] = (
             getattr(components, 'session_store', None))
@@ -359,7 +362,20 @@ class ProofPipeline:
             if self.on_attempt:
                 self.on_attempt(attempt)
 
-            if not (r.proof_code and r.proof_code.strip() and r.confidence > 0.3):
+            if not (r.proof_code and r.proof_code.strip()):
+                continue
+
+            # Adaptive confidence threshold: raise bar as budget shrinks
+            budget = self.comp.budget
+            if budget and hasattr(budget, 'remaining_fraction'):
+                remaining = budget.remaining_fraction()
+            elif budget and hasattr(budget, 'max_samples'):
+                used = getattr(ctx.memory, 'total_samples', len(ctx.memory.attempt_history))
+                remaining = max(0.0, 1.0 - used / max(1, budget.max_samples))
+            else:
+                remaining = 1.0
+            min_conf = self._verify_min_confidence + 0.2 * (1.0 - remaining)
+            if r.confidence < min_conf:
                 continue
 
             success, failure_class = self._verify_and_classify(ctx, r)
@@ -521,19 +537,9 @@ class ProofPipeline:
                 return True
 
             elif action == RecoveryAction.RETRY_WITH_BACKOFF:
-                import time as _time
-                import asyncio as _asyncio
-                # Safety: warn if called from within a running event loop,
-                # as time.sleep would block it. Pipeline.run() is sync-only.
-                try:
-                    _asyncio.get_running_loop()
-                    logger.warning(
-                        "[Lane] RETRY_WITH_BACKOFF: time.sleep() called inside "
-                        "a running event loop — this blocks the loop. "
-                        "Use the async pipeline variant instead.")
-                except RuntimeError:
-                    pass  # No event loop — safe to sleep
-                _time.sleep(recipe.backoff_seconds)
+                # Non-blocking: just record the backoff intent;
+                # actual delay is handled by the caller if running async
+                logger.info(f"[Lane] recovery: backoff {recipe.backoff_seconds}s before retry")
                 if sm.status == TaskStatus.BLOCKED:
                     sm.transition_to(TaskStatus.GENERATING,
                                      detail=f"recovered: retry after {recipe.backoff_seconds}s")
@@ -881,5 +887,5 @@ class ProofPipeline:
         if self._session_store:
             try:
                 self._session_store.remove(problem_id)
-            except Exception:
-                pass
+            except Exception as _exc:
+                logger.debug(f"Suppressed exception: {_exc}")

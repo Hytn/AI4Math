@@ -598,8 +598,8 @@ class AsyncLeanPool:
                     logger.warning(f"Failed to close overflow session: {e}")
                 try:
                     self._sessions.remove(session)
-                except ValueError:
-                    pass
+                except ValueError as _exc:
+                    logger.debug(f"Suppressed exception: {_exc}")
                 logger.debug(
                     f"AsyncLeanPool: removed overflow session "
                     f"{session.session_id}, pool size={len(self._sessions)}")
@@ -786,5 +786,5 @@ class SyncLeanPool:
         try:
             if self._loop and not self._loop.is_closed():
                 self.shutdown()
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.debug(f"Suppressed exception: {_exc}")

@@ -492,8 +492,8 @@ class LaneProofRunner:
             try:
                 dead_ends_text = (
                     self.scheduler.error_intel.get_accumulated_knowledge(5))
-            except Exception:
-                pass
+            except Exception as _exc:
+                logger.debug(f"Suppressed exception: {_exc}")
 
         # Convert directions → (spec, task) pairs
         specs_and_tasks = []

@@ -134,8 +134,8 @@ class LeanChecker:
         if self._pool and not hasattr(self, '_pool_is_external'):
             try:
                 self._pool.shutdown()
-            except Exception:
-                pass
+            except Exception as _exc:
+                logger.debug(f"Suppressed exception: {_exc}")
 
     @classmethod
     def cache_stats(cls) -> dict:

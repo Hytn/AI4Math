@@ -225,8 +225,8 @@ class PremiseSelector:
             # 收集已有名称用于去重
             for doc in self._bm25._documents:
                 existing.add(doc.get("name", ""))
-        except (AttributeError, TypeError):
-            pass
+        except (AttributeError, TypeError) as _exc:
+            logger.debug(f"Suppressed exception: {_exc}")
 
         new_premises = []
         try:

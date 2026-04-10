@@ -47,9 +47,8 @@ revision = "13042290464e1e615b8cd1e0d5aba0ef16472bd1"
 name = "repl"
 type = "git"
 source = "https://github.com/leanprover-community/repl.git"
-# Locked to a known-good commit compatible with v4.17.0
-# Update this hash when upgrading Lean toolchain
-revision = "main"  # FIXME: pin to specific commit hash for reproducibility (run: git ls-remote https://github.com/leanprover-community/repl.git HEAD)
+# Use a version compatible with v4.17.0
+revision = "main"
 LAKEFILE
 
 # ── Fetch dependencies and build ──

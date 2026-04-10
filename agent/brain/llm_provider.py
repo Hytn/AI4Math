@@ -2,7 +2,6 @@
 from __future__ import annotations
 import hashlib
 import logging
-import threading
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -21,12 +20,41 @@ class LLMResponse:
     tool_calls: list = None
     raw_response: Optional[dict] = None
     cached: bool = False
+    stop_reason: str = "end_turn"  # "end_turn" | "tool_use" | "max_tokens"
 
 
 class LLMProvider(ABC):
     @abstractmethod
     def generate(self, system: str, user: str, temperature: float = 0.7,
                  tools: list = None, max_tokens: int = 4096) -> LLMResponse: ...
+
+    def chat(self, system: str, messages: list[dict],
+             temperature: float = 0.7, tools: list = None,
+             max_tokens: int = 4096) -> LLMResponse:
+        """Multi-turn chat with full messages array.
+
+        Default implementation falls back to generate() using the last
+        user message. Providers should override for proper multi-turn.
+
+        Args:
+            system: System prompt
+            messages: List of {"role": "user"|"assistant", "content": ...}
+            tools: Tool schemas for tool_use
+        """
+        # Fallback: extract last user message
+        last_user = ""
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    last_user = content
+                elif isinstance(content, list):
+                    last_user = " ".join(
+                        b.get("text", "") for b in content
+                        if isinstance(b, dict) and b.get("type") == "text")
+                break
+        return self.generate(system, last_user, temperature, tools, max_tokens)
+
     @property
     @abstractmethod
     def model_name(self) -> str: ...
@@ -55,7 +83,7 @@ class CachedProvider(LLMProvider):
         self._cache: OrderedDict[str, LLMResponse] = OrderedDict()
         self._maxsize = maxsize
         self._cache_all = cache_all
-        self._lock = threading.Lock()
+        self._lock = __import__('threading').Lock()
         self.hits = 0
         self.misses = 0
 

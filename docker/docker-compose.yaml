@@ -35,7 +35,6 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.agent
-    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:

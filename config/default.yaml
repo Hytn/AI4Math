@@ -6,7 +6,7 @@ agent:
     model: "claude-sonnet-4-20250514"
     api_key: ""
     max_tokens: 8192
-    extended_thinking: false
+    extended_thinking: true
   memory:
     working_memory_max_items: 20
     episodic_memory_enabled: false
@@ -26,6 +26,7 @@ prover:
     max_workers: 4
     temperature: 0.9
     max_samples: 128
+    verify_min_confidence: 0.3
   sketch:
     enabled: true
     max_hypotheses: 3
@@ -42,13 +43,13 @@ prover:
     docker_image: "ai4math-lean"
     docker_container: ""
     lean_project_dir: "/workspace/lean-project"
-    timeout_seconds: 120
+    timeout_seconds: 300
   repair:
     enabled: true
     max_cycles: 3
   lemma_bank:
     enabled: true
-    verify_extracted: false
+    verify_extracted: true
     max_banked: 10
   conjecture:
     enabled: false
