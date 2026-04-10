@@ -40,7 +40,12 @@ class ProofDashboard:
         with self._lock:
             self._tasks[sm.task_id] = sm
 
-    def unregister_task(self, task_id: str):
+    def unregister_task(self, task_id_or_sm):
+        """Remove a task from tracking. Accepts task_id string or SM object."""
+        if isinstance(task_id_or_sm, str):
+            task_id = task_id_or_sm
+        else:
+            task_id = task_id_or_sm.task_id
         with self._lock:
             self._tasks.pop(task_id, None)
 

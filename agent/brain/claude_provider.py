@@ -1,6 +1,6 @@
 """agent/brain/claude_provider.py — Claude 专用 Provider (支持 Tool Use + Extended Thinking)"""
 from __future__ import annotations
-import os, time, logging, random
+import os, time, logging, random, threading
 from agent.brain.llm_provider import LLMProvider, LLMResponse
 
 logger = logging.getLogger(__name__)
@@ -16,13 +16,16 @@ class ClaudeProvider(LLMProvider):
         self._model = model
         self._api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         self._extended_thinking = extended_thinking
-        self._client = None  # lazy singleton
+        self._client = None
+        self._client_lock = threading.Lock()
 
     def _get_client(self):
-        """Lazy singleton client — reuses connection pool."""
+        """Thread-safe lazy singleton client — reuses connection pool."""
         if self._client is None:
-            import anthropic
-            self._client = anthropic.Anthropic(api_key=self._api_key)
+            with self._client_lock:
+                if self._client is None:  # double-checked locking
+                    import anthropic
+                    self._client = anthropic.Anthropic(api_key=self._api_key)
         return self._client
 
     @property
@@ -37,11 +40,22 @@ class ClaudeProvider(LLMProvider):
     def chat(self, system: str = "", messages: list[dict] = None,
              temperature: float = 0.7, tools: list = None,
              max_tokens: int = 4096) -> LLMResponse:
-        """Multi-turn chat supporting tool_use conversations."""
+        """Multi-turn chat supporting tool_use and extended thinking."""
         client = self._get_client()
         kwargs = dict(model=self._model, max_tokens=max_tokens,
-                      temperature=temperature, system=system,
-                      messages=messages or [])
+                      system=system, messages=messages or [])
+
+        # Extended thinking requires temperature=1 and uses budget_tokens
+        # instead of max_tokens for the thinking portion.
+        if self._extended_thinking:
+            kwargs["temperature"] = 1
+            kwargs["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": min(max_tokens, 10000),
+            }
+        else:
+            kwargs["temperature"] = temperature
+
         if tools:
             kwargs["tools"] = tools
 
@@ -57,6 +71,8 @@ class ClaudeProvider(LLMProvider):
                 for block in response.content:
                     if block.type == "text":
                         content += block.text
+                    elif block.type == "thinking":
+                        pass  # thinking blocks are internal, not exposed
                     elif block.type == "tool_use":
                         tool_calls.append({"name": block.name, "input": block.input, "id": block.id})
                 return LLMResponse(
@@ -74,6 +90,8 @@ class ClaudeProvider(LLMProvider):
                     logger.warning(
                         f"Claude API call failed (attempt {attempt + 1}/{_MAX_RETRIES + 1}): "
                         f"{e}. Retrying in {wait:.1f}s...")
+                    # Use time.sleep here (sync provider). The async provider
+                    # (AsyncLLMProvider) uses asyncio.sleep instead.
                     time.sleep(wait)
                 else:
                     logger.error(f"Claude API call failed after {_MAX_RETRIES + 1} attempts: {e}")

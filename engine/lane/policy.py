@@ -17,6 +17,7 @@ Usage::
 """
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass, field
@@ -27,6 +28,8 @@ from engine.lane.task_state import (
     ProofTaskStateMachine, TaskEvent, TaskStatus, ProofFailureClass
 )
 from engine.lane.recovery import RecoveryRegistry, RecoveryAction
+
+logger = logging.getLogger(__name__)
 
 
 class PolicyAction(str, Enum):
@@ -92,36 +95,54 @@ class ConsecutiveSameErrorRule(PolicyRule):
 
 
 class BudgetEscalationRule(PolicyRule):
-    """Escalate strategy at budget milestones."""
+    """Escalate strategy at budget milestones (samples, tokens, or wall-time)."""
     name = "budget_escalation"
     priority = 20
 
     def __init__(self, light_budget_ratio: float = 0.3,
-                 medium_budget_ratio: float = 0.7):
+                 medium_budget_ratio: float = 0.7,
+                 max_tokens: int = 500_000,
+                 max_wall_seconds: float = 3600.0):
         self.light_ratio = light_budget_ratio
         self.medium_ratio = medium_budget_ratio
+        self.max_tokens = max_tokens
+        self.max_wall_seconds = max_wall_seconds
 
     def evaluate(self, sm, events):
         ctx = sm.context
-        if ctx.total_samples <= 0:
+        if ctx.total_samples <= 0 and ctx.total_api_tokens <= 0:
             return None
-        # Infer current strategy from metadata (stored by caller)
-        current_strategy = sm.context.__dict__.get("_current_strategy", "light")
-        # Budget ratio heuristic based on total_samples vs a reasonable max
-        max_samples = sm.context.__dict__.get("_max_samples", 128)
-        ratio = ctx.total_samples / max_samples
+
+        current_strategy = sm.context.current_strategy
+        max_samples = sm.context.max_samples
+
+        # Multi-dimensional: take the max across all budget dimensions
+        sample_ratio = ctx.total_samples / max(1, max_samples)
+        token_ratio = ctx.total_api_tokens / max(1, self.max_tokens)
+
+        import time as _time
+        elapsed = _time.time() - ctx.start_time
+        time_ratio = elapsed / max(1.0, self.max_wall_seconds)
+
+        ratio = max(sample_ratio, token_ratio, time_ratio)
 
         if current_strategy == "light" and ratio > self.light_ratio:
             return PolicyDecision(
                 action=PolicyAction.ESCALATE_STRATEGY,
-                reason=f"Budget {ratio:.0%} used in light mode — escalate to medium",
+                reason=(
+                    f"Budget {ratio:.0%} used in light mode "
+                    f"(samples={sample_ratio:.0%}, tokens={token_ratio:.0%}, "
+                    f"time={time_ratio:.0%}) — escalate to medium"),
                 rule_name=self.name,
                 metadata={"from": "light", "to": "medium", "ratio": ratio},
             )
         if current_strategy == "medium" and ratio > self.medium_ratio:
             return PolicyDecision(
                 action=PolicyAction.ESCALATE_STRATEGY,
-                reason=f"Budget {ratio:.0%} used in medium mode — escalate to heavy",
+                reason=(
+                    f"Budget {ratio:.0%} used in medium mode "
+                    f"(samples={sample_ratio:.0%}, tokens={token_ratio:.0%}, "
+                    f"time={time_ratio:.0%}) — escalate to heavy"),
                 rule_name=self.name,
                 metadata={"from": "medium", "to": "heavy", "ratio": ratio},
             )
@@ -141,7 +162,7 @@ class BankedLemmaDecomposeRule(PolicyRule):
         ctx = sm.context
         if (len(ctx.banked_lemmas) >= self.min_lemmas
                 and ctx.rounds_completed >= self.min_rounds
-                and not ctx.__dict__.get("_decompose_attempted", False)):
+                and not ctx.decompose_attempted):
             return PolicyDecision(
                 action=PolicyAction.TRY_DECOMPOSE,
                 reason=f"{len(ctx.banked_lemmas)} lemmas banked, "
@@ -233,7 +254,9 @@ class PolicyEngine:
                 decision = rule.evaluate(sm, events)
                 if decision is not None:
                     return decision
-            except Exception:
+            except Exception as e:
+                logger.warning(
+                    f"PolicyRule '{rule.name}' raised {type(e).__name__}: {e}")
                 continue  # rule errors don't block evaluation
 
         return PolicyDecision(

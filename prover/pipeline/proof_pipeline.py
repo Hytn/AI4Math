@@ -310,9 +310,9 @@ class ProofPipeline:
              for l in ctx.memory.banked_lemmas[:20]]
             if hasattr(ctx.memory, 'banked_lemmas') and ctx.memory.banked_lemmas
             else [])
-        sm.context.__dict__["_max_samples"] = (
+        sm.context.max_samples = (
             self.comp.budget.max_samples if self.comp.budget else 128)
-        sm.context.__dict__["_current_strategy"] = ctx.strategy_name
+        sm.context.current_strategy = ctx.strategy_name
 
         # ── Evaluate policy ──
         decision = self._policy.evaluate(sm)
@@ -365,7 +365,8 @@ class ProofPipeline:
             if not (r.proof_code and r.proof_code.strip()):
                 continue
 
-            # Adaptive confidence threshold: raise bar as budget shrinks
+            # Adaptive confidence threshold: lower bar as budget shrinks
+            # (when budget is running out, try verifying even low-confidence candidates)
             budget = self.comp.budget
             if budget and hasattr(budget, 'remaining_fraction'):
                 remaining = budget.remaining_fraction()
@@ -374,7 +375,7 @@ class ProofPipeline:
                 remaining = max(0.0, 1.0 - used / max(1, budget.max_samples))
             else:
                 remaining = 1.0
-            min_conf = self._verify_min_confidence + 0.2 * (1.0 - remaining)
+            min_conf = self._verify_min_confidence * remaining
             if r.confidence < min_conf:
                 continue
 
@@ -448,6 +449,12 @@ class ProofPipeline:
         if strategy_config.use_conjecture and ctx.memory.rounds_completed >= 3:
             self._try_conjecture(ctx)
 
+        # ── Knowledge decay: periodically age out stale knowledge ──
+        if (ctx.round_number % 5 == 0
+                and hasattr(self.comp, 'knowledge_evolver')
+                and self.comp.knowledge_evolver):
+            self._run_knowledge_decay()
+
         # ── Phase 3: Checkpoint after each round ──
         self._save_checkpoint(ctx)
 
@@ -492,7 +499,7 @@ class ProofPipeline:
 
         elif action == PolicyAction.TRY_DECOMPOSE:
             self._try_decompose(ctx)
-            ctx.sm.context.__dict__["_decompose_attempted"] = True
+            ctx.sm.context.decompose_attempted = True
 
         elif action == PolicyAction.TRY_CONJECTURE:
             self._try_conjecture(ctx)
@@ -626,7 +633,10 @@ class ProofPipeline:
         """Verify a proof and classify the failure if it fails.
 
         Returns (success, failure_class). failure_class is None on success.
+        Runs sorry/axiom integrity check even after Lean compilation success.
         """
+        from prover.verifier.sorry_detector import detect_sorry
+
         if self.comp.hooks:
             pre = self.comp.hooks.fire(
                 HookEvent.PRE_VERIFICATION,
@@ -639,6 +649,17 @@ class ProofPipeline:
                 agent_result.confidence = ConfidenceEstimator.refine_confidence(
                     agent_result, l0_passed=False)
                 return False, ProofFailureClass.INTEGRITY_VIOLATION
+
+        # ── Pre-flight sorry/axiom integrity check ──
+        sorry_report = detect_sorry(agent_result.proof_code)
+        if sorry_report.has_sorry:
+            logger.info(
+                f"[Lane] sorry detected pre-verification: "
+                f"{sorry_report.locations[:3]}")
+            return False, ProofFailureClass.SORRY_DETECTED
+        if sorry_report.warnings:
+            for w in sorry_report.warnings:
+                logger.warning(f"[Lane] integrity warning: {w}")
 
         try:
             if self.comp.scheduler:
@@ -660,6 +681,12 @@ class ProofPipeline:
                     l2_passed=vr.l2_verified)
 
                 if vr.success:
+                    # Post-success integrity check: reject if axiom/unsafe
+                    if sorry_report.warnings:
+                        logger.warning(
+                            f"[Lane] proof compiles but has integrity warnings: "
+                            f"{sorry_report.warnings}")
+                        return False, ProofFailureClass.INTEGRITY_VIOLATION
                     return True, None
 
                 fc = classify_verification_result(vr)
@@ -672,6 +699,11 @@ class ProofPipeline:
                     ctx.problem.theorem_statement, agent_result.proof_code)
 
                 if status == AttemptStatus.SUCCESS:
+                    if sorry_report.warnings:
+                        logger.warning(
+                            f"[Lane] proof compiles but has integrity warnings: "
+                            f"{sorry_report.warnings}")
+                        return False, ProofFailureClass.INTEGRITY_VIOLATION
                     return True, None
 
                 error_text = "\n".join(errors) if errors else (stderr or "")
@@ -789,6 +821,21 @@ class ProofPipeline:
                         "proof": "", "verified": False})
         except Exception as e:
             logger.warning(f"Conjecture failed: {e}")
+
+    def _run_knowledge_decay(self):
+        """Run knowledge decay/GC (async evolver called from sync context)."""
+        try:
+            import asyncio
+            evolver = self.comp.knowledge_evolver
+            # If there's a running event loop, schedule as a task;
+            # otherwise create a new loop for the decay tick.
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(evolver.decay_tick())
+            except RuntimeError:
+                asyncio.run(evolver.decay_tick())
+        except Exception as e:
+            logger.debug(f"Knowledge decay failed: {e}")
 
     def finalize(self, ctx: RoundContext) -> ProofTrace:
         """Legacy-compatible finalize."""

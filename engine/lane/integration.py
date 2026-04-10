@@ -79,9 +79,15 @@ def map_error_to_failure_class(error_category: str) -> ProofFailureClass:
 
 
 def map_verification_result_to_failure_class(vr) -> ProofFailureClass:
-    """Extract the primary failure class from a VerificationResult."""
+    """Extract the primary failure class from a VerificationResult.
+
+    Raises ValueError if called on a successful result.
+    """
     if vr.success:
-        return ProofFailureClass.TACTIC_FAILED  # shouldn't be called on success
+        raise ValueError(
+            "map_verification_result_to_failure_class called on a successful "
+            "VerificationResult — this indicates a logic error in the caller"
+        )
 
     # L0 rejection → syntax
     if not vr.l0_passed:
@@ -104,6 +110,7 @@ def map_verification_result_to_failure_class(vr) -> ProofFailureClass:
 def _direction_to_spec_and_task(
     direction,
     problem_statement: str,
+    problem_id: str = "",
     knowledge_text: str = "",
     broadcast_context: str = "",
     dead_ends_text: str = "",
@@ -158,7 +165,8 @@ def _direction_to_spec_and_task(
 
     # Create a minimal BenchmarkProblem for build_direction_prompt
     problem = BenchmarkProblem(
-        problem_id="", name="", theorem_statement=problem_statement)
+        problem_id=problem_id, name=problem_id,
+        theorem_statement=problem_statement)
     task_description = build_direction_prompt(direction, problem)
 
     task = AgentTask(
@@ -207,6 +215,7 @@ class LaneProofRunner:
         knowledge_reader: Optional[KnowledgeReader] = None,
         knowledge_writer: Optional[KnowledgeWriter] = None,
         knowledge_broadcaster: Optional[KnowledgeBroadcaster] = None,
+        knowledge_evolver=None,
         broadcast=None,
         event_bus: Optional[ProofEventBus] = None,
         dashboard: Optional[ProofDashboard] = None,
@@ -218,6 +227,7 @@ class LaneProofRunner:
         self.knowledge_reader = knowledge_reader
         self.knowledge_writer = knowledge_writer
         self.knowledge_broadcaster = knowledge_broadcaster
+        self.knowledge_evolver = knowledge_evolver
         self.policy = policy or PolicyEngine.default()
         self.event_bus = event_bus
         self.dashboard = dashboard
@@ -269,10 +279,10 @@ class LaneProofRunner:
             self.dashboard.register_task(sm)
 
         # Store budget info for policy rules
-        ctx.__dict__["_max_samples"] = packet.max_samples
-        ctx.__dict__["_current_strategy"] = packet.initial_strategy
-        ctx.__dict__["_domain_hints"] = {}
-        ctx.__dict__["_start_time"] = time.time()
+        ctx.max_samples = packet.max_samples
+        ctx.current_strategy = packet.initial_strategy
+        ctx.domain_hints = {}
+        ctx.start_time = time.time()
 
         start_time = time.time()
         knowledge_text = ""
@@ -465,7 +475,7 @@ class LaneProofRunner:
         )
 
         # Plan exploration directions
-        classification = ctx.__dict__.get("_domain_hints", {})
+        classification = ctx.domain_hints
         directions = self.direction_planner.plan(
             problem,
             classification=classification,
@@ -501,6 +511,7 @@ class LaneProofRunner:
             spec, task = _direction_to_spec_and_task(
                 direction,
                 problem_statement=ctx.formal_statement,
+                problem_id=ctx.theorem_name,
                 knowledge_text=knowledge_text,
                 broadcast_context=broadcast_context,
                 dead_ends_text=dead_ends_text,
@@ -540,6 +551,20 @@ class LaneProofRunner:
             if not (candidate.proof_code and candidate.proof_code.strip()):
                 continue
 
+            # ── Pre-flight sorry/axiom integrity check ──
+            from prover.verifier.sorry_detector import detect_sorry
+            sorry_report = detect_sorry(candidate.proof_code)
+            if sorry_report.has_sorry:
+                logger.info(
+                    f"[{sm.task_id}] sorry detected, skipping candidate")
+                attempt_history.append({
+                    "proof_code": candidate.proof_code[:500],
+                    "direction": candidate.metadata.get("direction", ""),
+                    "errors": [{"category": "sorry_detected",
+                                "message": "sorry keyword in proof"}],
+                })
+                continue
+
             vr = await self._verify_single(
                 ctx, candidate, require_l2)
             if vr is None:
@@ -551,6 +576,18 @@ class LaneProofRunner:
                 best_vr = vr
 
             if vr.success:
+                # Post-success integrity: reject axiom/unsafe proofs
+                if sorry_report.warnings:
+                    logger.warning(
+                        f"[{sm.task_id}] proof compiles but has integrity "
+                        f"warnings: {sorry_report.warnings}")
+                    attempt_history.append({
+                        "proof_code": candidate.proof_code[:500],
+                        "direction": candidate.metadata.get("direction", ""),
+                        "errors": [{"category": "integrity_violation",
+                                    "message": "; ".join(sorry_report.warnings)}],
+                    })
+                    continue
                 # ── PROOF FOUND ──────────────────────────────────────
                 sm.succeed(candidate.proof_code)
                 await self._deposit_knowledge_success(
@@ -638,20 +675,20 @@ class LaneProofRunner:
         new_status = TaskStatus.GENERATING
 
         if decision.action == PolicyAction.SWITCH_ROLE:
-            ctx.__dict__["_current_role"] = "repair"
+            ctx.current_role = "repair"
             if sm.status == TaskStatus.VERIFYING:
                 sm.transition_to(TaskStatus.REPAIRING, detail=detail)
             # Then to GENERATING for next round
 
         elif decision.action == PolicyAction.ESCALATE_STRATEGY:
             new_strategy = decision.metadata.get("to", "medium")
-            ctx.__dict__["_current_strategy"] = new_strategy
+            ctx.current_strategy = new_strategy
             logger.info(
                 f"[{sm.task_id}] Escalating to {new_strategy}")
             detail = f"escalated to {new_strategy}"
 
         elif decision.action == PolicyAction.TRY_DECOMPOSE:
-            ctx.__dict__["_decompose_attempted"] = True
+            ctx.decompose_attempted = True
             logger.info(f"[{sm.task_id}] Attempting decomposition")
             detail = "decompose"
 
@@ -702,18 +739,18 @@ class LaneProofRunner:
             await asyncio.sleep(recipe.backoff_seconds)
 
         elif action == RecoveryAction.RETRY_LARGER_TIMEOUT:
-            ctx.__dict__["_timeout_multiplier"] = recipe.timeout_multiplier
+            ctx.timeout_multiplier = recipe.timeout_multiplier
 
         elif action == RecoveryAction.REDUCE_CONCURRENCY:
-            ctx.__dict__["_reduced_concurrency"] = True
+            ctx.reduced_concurrency = True
 
         elif action == RecoveryAction.SWITCH_ROLE:
-            ctx.__dict__["_current_role"] = "repair"
+            ctx.current_role = "repair"
 
         elif action == RecoveryAction.SWITCH_STRATEGY:
-            current = ctx.__dict__.get("_current_strategy", "light")
+            current = ctx.current_strategy
             escalation = {"light": "medium", "medium": "heavy"}
-            ctx.__dict__["_current_strategy"] = escalation.get(
+            ctx.current_strategy = escalation.get(
                 current, "heavy")
 
     # ─────────────────────────────────────────────────────────────────
@@ -749,14 +786,13 @@ class LaneProofRunner:
                     domain=ctx.domain,
                 )
             except Exception as e:
-                logger.debug(
+                logger.warning(
                     f"Knowledge deposit (broadcast/success) failed: {e}")
 
         # Also write via writer for persistent record
         if self.knowledge_writer:
             try:
-                elapsed = time.time() - ctx.__dict__.get(
-                    "_start_time", time.time())
+                elapsed = time.time() - ctx.start_time
                 await self.knowledge_writer.ingest_proof_result(
                     context_id=0,
                     steps=[],
@@ -765,7 +801,7 @@ class LaneProofRunner:
                     duration_ms=int(elapsed * 1000),
                 )
             except Exception as e:
-                logger.debug(
+                logger.warning(
                     f"Knowledge deposit (writer/success) failed: {e}")
 
     async def _deposit_knowledge_failure(
@@ -780,8 +816,7 @@ class LaneProofRunner:
 
         if self.knowledge_writer:
             try:
-                elapsed = time.time() - ctx.__dict__.get(
-                    "_start_time", time.time())
+                elapsed = time.time() - ctx.start_time
                 await self.knowledge_writer.ingest_proof_result(
                     context_id=0,
                     steps=[],
@@ -790,27 +825,40 @@ class LaneProofRunner:
                     duration_ms=int(elapsed * 1000),
                 )
             except Exception as e:
-                logger.debug(
+                logger.warning(
                     f"Knowledge deposit (writer/failure) failed: {e}")
 
+        # Periodically decay stale knowledge
+        await self._maybe_decay_knowledge()
 
-# ═════════════════════════════════════════════════════════════════════════════
-# Convenience: lane-aware eval runner
-# ═════════════════════════════════════════════════════════════════════════════
+    async def _maybe_decay_knowledge(self):
+        """Run knowledge decay if evolver is configured."""
+        if not self.knowledge_evolver:
+            return
+        try:
+            stats = await self.knowledge_evolver.decay_tick()
+            if stats.decayed_count > 0:
+                logger.info(
+                    f"Knowledge decay: {stats.decayed_count} entries decayed")
+        except Exception as e:
+            logger.debug(f"Knowledge decay tick failed: {e}")
 
 async def run_eval_with_lanes(
     problems: list,
     runner: LaneProofRunner,
     config: dict = None,
+    max_concurrent: int = 4,
 ) -> tuple[list[ProofTaskStateMachine], dict]:
     """Run evaluation across multiple problems using lane runtime.
 
-    Drop-in replacement for run_eval_async.py.
+    Drop-in replacement for run_eval_async.py.  Uses a semaphore to run
+    up to ``max_concurrent`` proofs in parallel.
 
     Args:
         problems: List of BenchmarkProblem instances
         runner: Pre-configured LaneProofRunner
         config: Optional overrides for packet creation
+        max_concurrent: Max number of proofs to run concurrently
 
     Returns:
         (list of state machines, dashboard snapshot dict)
@@ -823,14 +871,18 @@ async def run_eval_with_lanes(
     runner.event_bus = bus
     runner.dashboard = dashboard
 
-    results: list[ProofTaskStateMachine] = []
-    for problem in problems:
-        packet = packet_from_benchmark_problem(problem, config)
-        sm = await runner.run(packet)
-        results.append(sm)
-        logger.info(
-            f"[{sm.task_id}] {sm.status.value} | "
-            f"{dashboard.summary_line()}")
+    sem = asyncio.Semaphore(max_concurrent)
+
+    async def _run_one(problem):
+        async with sem:
+            packet = packet_from_benchmark_problem(problem, config)
+            sm = await runner.run(packet)
+            logger.info(
+                f"[{sm.task_id}] {sm.status.value} | "
+                f"{dashboard.summary_line()}")
+            return sm
+
+    results = await asyncio.gather(*[_run_one(p) for p in problems])
 
     final = dashboard.snapshot()
     logger.info(
@@ -838,4 +890,4 @@ async def run_eval_with_lanes(
         f"{final['summary']['succeeded']}/{final['summary']['total']} "
         f"({final['summary']['pass_rate']:.1%})")
 
-    return results, final
+    return list(results), final

@@ -119,6 +119,15 @@ class TaskContext:
     knowledge_injected: bool = False
     best_attempt_code: str = ""
     best_attempt_errors: list[dict] = field(default_factory=list)
+    # Strategy / budget metadata (formerly stored via __dict__ hacks)
+    max_samples: int = 128
+    current_strategy: str = "light"
+    current_role: str = "generator"
+    decompose_attempted: bool = False
+    domain_hints: dict = field(default_factory=dict)
+    start_time: float = field(default_factory=time.time)
+    timeout_multiplier: float = 1.0
+    reduced_concurrency: bool = False
 
 
 class ProofTaskStateMachine:
