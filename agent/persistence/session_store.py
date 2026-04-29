@@ -107,7 +107,14 @@ class FileSessionStore(SessionStore):
         self._index = self._load_index()
 
     def save(self, data: SessionData) -> str:
-        """Save session data to disk. Returns session_id."""
+        """Save session data to disk. Returns session_id.
+
+        Writes both the legacy ``<session_id>.json`` (full SessionData
+        dict) and a sidecar ``<session_id>.dialog.json`` containing the
+        canonical AgentCPM-aligned trajectory derived from
+        ``data.messages``. SFT pipelines should read the sidecar; resume
+        / replay logic uses the legacy file.
+        """
         data.updated_at = time.time()
         session_id = data.session_id
 
@@ -125,6 +132,46 @@ class FileSessionStore(SessionStore):
             if tmp_path.exists():
                 tmp_path.unlink()
             raise
+
+        # Sidecar: self-contained dialog.json with everything from
+        # this session — messages, plus meta (model/theorem/...), plus
+        # result (status/tokens/...).
+        try:
+            from agent.persistence.dialog_adapters import (
+                from_session_messages,
+            )
+            from agent.persistence.dialog_format import save_dialog
+            if data.messages:
+                save_dialog(
+                    from_session_messages(
+                        list(data.messages),
+                        wrapped=True,
+                        meta={
+                            "task_id": data.session_id,
+                            "problem_id": data.problem_id,
+                            "theorem_statement": data.theorem,
+                            "model": data.model,
+                        },
+                        result={
+                            "success": data.proof_verified,
+                            "total_tokens": data.total_tokens,
+                            "total_attempts": data.total_turns,
+                            "total_duration_ms": data.total_latency_ms,
+                            "successful_proof": data.best_proof,
+                            "termination": data.status,
+                            "extra": {
+                                "tools_used": list(data.tools_used or []),
+                                "green_level": data.green_level,
+                            },
+                        },
+                    ),
+                    self._dialog_path(session_id),
+                )
+        except Exception as _e:
+            logger.debug(
+                "Failed to write dialog.json sidecar for session %s: %s",
+                session_id, _e,
+            )
 
         # Update index
         self._index[session_id] = {
@@ -176,6 +223,10 @@ class FileSessionStore(SessionStore):
         path = self._session_path(session_id)
         if path.exists():
             path.unlink()
+        # Also clean up the dialog.json sidecar
+        dialog = self._dialog_path(session_id)
+        if dialog.exists():
+            dialog.unlink()
         self._index.pop(session_id, None)
         self._save_index()
         return True
@@ -203,6 +254,9 @@ class FileSessionStore(SessionStore):
 
     def _session_path(self, session_id: str) -> Path:
         return self._base_dir / f"{session_id}.json"
+
+    def _dialog_path(self, session_id: str) -> Path:
+        return self._base_dir / f"{session_id}.dialog.json"
 
     def _load_index(self) -> dict:
         if self._index_path.exists():

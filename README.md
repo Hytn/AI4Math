@@ -4,7 +4,7 @@
 
 ### An Agent Operating System for Formal Theorem Proving
 
-[English](#overview) ·  [中文](#概览) · [Interactive Demo ↗](https://ai4math.github.io/ai4math) · [Tutorial (中文) ↗](TUTORIAL_CN.md)
+**English** · [中文](README_zh.md) · [Interactive Demo ↗](https://ai4math.github.io/ai4math) · [Tutorial (Chinese) ↗](TUTORIAL_CN.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://python.org)
@@ -38,7 +38,7 @@
 - [Citation](#citation)
 - [Acknowledgments](#acknowledgments)
 - [License](#license)
-- [中文版](#概览)
+- [中文版 (README_zh.md)](README_zh.md)
 
 ---
 
@@ -441,110 +441,4 @@ MIT — see [LICENSE](LICENSE) for details.
 
 ---
 
-<br>
-
-<div align="center">
-
-# 概览
-
-**[English](#overview)** · **中文**
-
-</div>
-
-## AI4Math 是什么
-
-AI4Math 是一个**智能体操作系统**，让数百个异构 AI 数学家像研究院一样协同工作，自动发现 Lean 4 形式化证明。
-
-它不是一个"更好的证明生成器"——它是证明生成器运行的**基础设施平台**。任何 LLM 都可以作为证明引擎插入这个平台。
-
-> **在线演示 →** 访问 [交互式前端](https://ai4math.github.io/ai4math) 查看完整的 Putnam 竞赛题解题过程，包含每个内部组件的可视化。
-
-## 为什么选择 AI4Math？
-
-| | 现有范式 (DeepSeek/Goedel/Kimina) | AI4Math |
-|---|---|---|
-| **反馈** | 每次尝试仅 1 bit (pass/fail) | ~100 bits 结构化错误诊断 |
-| **通信** | 方向之间零通信 | 所有智能体实时广播共享 |
-| **学习** | 失败经验完全丢失 | 每次失败沉淀可复用知识 |
-| **验证** | Lean 全编译 (2–12s) | 三级：语法 ~1μs → REPL ~50ms → 全编译 ~3s |
-
-## 快速开始
-
-### 环境准备
-
-```bash
-git clone https://github.com/ai4math/ai4math.git && cd ai4math
-pip install -r requirements.txt
-export ANTHROPIC_API_KEY="sk-ant-..."
-```
-
-Lean 4 环境安装请参考 [傻瓜式教程 (TUTORIAL_CN.md)](TUTORIAL_CN.md)，内含从零开始的完整步骤。
-
-### 单题证明
-
-```bash
-# 内置题目，完整管线追踪：
-python run_single_lane.py --builtin nat_add_comm --provider anthropic
-
-# 自定义定理：
-python run_single_lane.py --theorem "theorem t (n : Nat) : n + 0 = n" --provider anthropic
-```
-
-### 批量评测
-
-```bash
-bash eval.sh --real --benchmark builtin              # 5 题快速跑分 (~2 分钟)
-bash eval.sh --real --quick                           # 每个 benchmark 取 10 题
-bash eval.sh --real --benchmark minif2f --samples 32  # miniF2F 全量
-```
-
-### Docker 部署（推荐用于真实 Lean 4 验证）
-
-```bash
-cd docker && docker compose build && docker compose up -d
-docker compose run --rm agent bash eval.sh --real --lean
-```
-
-## 内置基准数据集（6,826 道题）
-
-| 数据集 | 题数 | 难度 | 说明 |
-|--------|------|------|------|
-| **builtin** | 5 | 入门 | 冒烟测试，推荐首次使用 |
-| **miniF2F** | 488 | AMC → IMO | 领域内最广泛使用的基准 |
-| **PutnamBench** | 672 | 大学竞赛 | 1962–2024 Putnam 竞赛题 |
-| **ProofNet** | 360 | 本科数学 | 分析、代数、拓扑核心课程 |
-| **FATE-M/H/X** | 350 | 本科→博士 | 抽象代数全难度覆盖 |
-| **FormalMATH** | 5,560 | 混合 | 多领域多难度 |
-
-## 四层架构
-
-> **交互版 →** 访问 [架构可视化](https://ai4math.github.io/ai4math#pillars) 和 [数据流全景](https://ai4math.github.io/ai4math#flowDiagram) 查看动画版本。
-
-| 层级 | 模块 | 定位 |
-|------|------|------|
-| **④ 数学家社会** | `agent/` | 11 种角色、并行探索、实时广播 |
-| **③ 世界模型** | `engine/world_model.py` | 内化 Lean4 状态动力学，预判策略效果 |
-| **② 活知识系统** | `knowledge/` | 四层金字塔、衰减遗忘、跨智能体共享 |
-| **① 验证 OS** | `engine/` | REPL 池、三级验证、弹性伸缩、增量编译 |
-
-**飞轮：** ④ 探索 → ① 验证 → ② 沉淀知识 → ③ 训练模型 → ④ 注入知识 → 加速探索
-
-## 常见问题
-
-**Q: 和 DeepSeek-Prover 的根本区别？**
-它们是"更强的证明生成器"，AI4Math 是"让证明生成器在其中运行的操作系统"。两者正交互补。
-
-**Q: 能支持 Coq / Isabelle 吗？**
-REPL 交互通过 `Transport(ABC)` 抽象，知识系统和智能体层不含 Lean4 特定代码。
-
-**Q: Green Contract 是什么？**
-验证分级合约。每个证明结果不再是 pass/fail 的 1 bit，而是分 6 级：NONE → SYNTAX_CLEAN → TACTIC_VALID → GOALS_CLOSED → FULL_COMPILE → SORRY_FREE。
-
-**Q: 断点续证怎么用？**
-`ProofPipeline` 每轮结束后自动保存 checkpoint。下次传入 `resume=True` 即可从上次中断处恢复。
-
----
-
-<div align="center">
-<sub>MIT License · 264 files · 56K+ lines · 797 tests · 7 benchmarks · 6,826 problems</sub>
-</div>
+<div align="center"><sub>📖 <a href="README_zh.md">中文版</a> · <a href="https://ai4math.github.io/ai4math">Interactive Demo</a></sub></div>

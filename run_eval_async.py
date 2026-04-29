@@ -295,7 +295,11 @@ async def prove_batch_async(
             logger.info(f"           {status}{dash_line}")
 
             if trace_dir:
-                trace.save(trace_dir / f"{problem.problem_id}.json")
+                # Unified AgentCPM-style layout
+                trace.save_unified(
+                    trace_dir / problem.problem_id,
+                    model=getattr(llm, "model_name", ""),
+                )
 
             return trace.to_dict()
 

@@ -32,7 +32,8 @@ class EvalRunner:
             logger.info(f"\n[{i}/{len(problems)}] {p.name} (difficulty={p.difficulty})")
             trace = self.orchestrator.prove(p)
             traces.append(trace)
-            trace.save(self.output_dir / "traces" / f"{p.problem_id}.json")
+            # Unified AgentCPM-style layout under traces/<problem_id>/
+            trace.save_unified(self.output_dir / "traces" / p.problem_id)
 
             if trace.solved:
                 solved_count += 1

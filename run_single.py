@@ -41,7 +41,14 @@ def main():
     p_cfg = config.get("prover", {}).get("pipeline", {})
     orc = Orchestrator(lean, llm, retriever, p_cfg)
     trace = orc.prove(problem)
-    trace.save(Path("results/traces") / f"{problem.problem_id}.json")
+    # Unified AgentCPM-style layout: results/traces/<id>/{dialog,result,
+    # meta_config,trace}.json. The legacy trace.json is kept inside the
+    # directory for backward compatibility with downstream readers.
+    trace.save_unified(
+        Path("results/traces") / problem.problem_id,
+        model=getattr(llm, "model_name", ""),
+        provider=brain_cfg.get("provider", ""),
+    )
     print(f"\n{'✓ PROVED!' if trace.solved else '✗ FAILED'} — {trace.total_attempts} attempts, {trace.total_tokens} tokens")
     if trace.solved: print(f"Proof:\n{trace.successful_proof}")
 

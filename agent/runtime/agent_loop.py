@@ -98,6 +98,59 @@ class LoopResult:
     def has_proof(self) -> bool:
         return bool(self.proof_code.strip())
 
+    # ── Unified dialog format (AgentCPM-aligned) ──────────────────────
+
+    def to_dialog(self, *, problem_id: str = "", model: str = "",
+                  provider: str = "", system_prompt: str = "",
+                  tools: list = None,
+                  initial_task: str = "") -> dict:
+        """Render the loop's history as a self-contained Dialog."""
+        from agent.persistence.dialog_adapters import from_loop_messages
+        meta_extras: dict = {}
+        if problem_id:
+            meta_extras["problem_id"] = problem_id
+        if model:
+            meta_extras["model"] = model
+        if provider:
+            meta_extras["provider"] = provider
+        if system_prompt:
+            meta_extras["system_prompt"] = system_prompt
+        if tools:
+            meta_extras["tools"] = tools
+        result_extras = {
+            "success": self.has_proof
+                       and self.stopped_reason == "proof_found",
+            "total_attempts": self.turns_used,
+            "total_tokens": self.total_tokens,
+            "total_duration_ms": self.total_latency_ms,
+            "successful_proof": self.proof_code if self.has_proof else "",
+            "termination": self.stopped_reason,
+            "extra": {
+                "tools_called": self.tools_called,
+                "final_content": self.content,
+            },
+        }
+        return from_loop_messages(
+            self.messages, initial_task=initial_task,
+            wrapped=True, meta=meta_extras or None,
+            result=result_extras,
+        )
+
+    def save_unified(self, task_dir, *, problem_id: str = "",
+                     model: str = "", provider: str = "",
+                     system_prompt: str = "", tools: list = None,
+                     initial_task: str = ""):
+        """Write the self-contained ``dialog.json`` for this loop run."""
+        from agent.persistence.unified_storage import save_task
+        return save_task(
+            task_dir,
+            self.to_dialog(
+                problem_id=problem_id, model=model, provider=provider,
+                system_prompt=system_prompt, tools=tools,
+                initial_task=initial_task,
+            ),
+        )
+
 
 class AgentLoop:
     """Multi-turn agent loop with tool use.

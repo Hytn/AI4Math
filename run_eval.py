@@ -435,8 +435,12 @@ def main():
                 status += f" [correct={trace.correct_count}/{trace.total_attempts}]"
             logger.info(f"           {status}")
 
-            # 增量保存: 立即写入磁盘
-            trace.save(trace_dir / f"{problem.problem_id}.json")
+            # 增量保存: 使用统一的 AgentCPM 风格目录布局
+            # results/traces/<problem_id>/{dialog,result,meta_config,trace}.json
+            trace.save_unified(
+                trace_dir / problem.problem_id,
+                model=getattr(llm, "model_name", ""),
+            )
             trace_dicts.append(trace.to_dict())
 
         elapsed = time.time() - t_start

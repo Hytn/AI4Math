@@ -123,6 +123,46 @@ class ProofTrace:
         with open(path, "w") as f:
             json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
 
+    # ── Unified dialog format (AgentCPM-aligned) ──────────────────────
+    # All trajectory classes in AI4Math expose ``to_dialog()`` so the
+    # canonical AgentCPM-style ``dialog.json`` can be derived from any
+    # of them. See ``agent/persistence/dialog_format.py`` for the spec.
+
+    def to_dialog(self, *, model: str = "", provider: str = "",
+                  system_prompt: str = "", tools: list = None) -> dict:
+        """Render this trace as a self-contained Dialog (wrapped form
+        with meta + messages + result populated). See
+        ``agent/persistence/dialog_format.py`` for the schema.
+        """
+        from agent.persistence.dialog_adapters import from_proof_trace
+        meta_extras = {}
+        if model:
+            meta_extras["model"] = model
+        if provider:
+            meta_extras["provider"] = provider
+        if system_prompt:
+            meta_extras["system_prompt"] = system_prompt
+        if tools:
+            meta_extras["tools"] = tools
+        return from_proof_trace(
+            self, wrapped=True,
+            meta=meta_extras or None,
+        )
+
+    def save_unified(self, task_dir, *, model: str = "",
+                     provider: str = "", system_prompt: str = "",
+                     tools: list = None) -> Path:
+        """Write the self-contained ``dialog.json`` for this trace.
+        ``task_dir`` is a directory; only ``dialog.json`` is written."""
+        from agent.persistence.unified_storage import save_task
+        return save_task(
+            task_dir,
+            self.to_dialog(
+                model=model, provider=provider,
+                system_prompt=system_prompt, tools=tools,
+            ),
+        )
+
 
 @dataclass
 class BenchmarkProblem:

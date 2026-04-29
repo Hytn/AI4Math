@@ -223,3 +223,38 @@ class Trajectory:
             "wall_time_s": round(self.wall_time_s, 2),
             "total_tokens": self.total_tokens,
         }
+
+    # ── Unified dialog format (AgentCPM-aligned) ──────────────────────
+
+    def to_dialog(self, *, model: str = "", provider: str = "",
+                  system_prompt: str = "", tools: list = None) -> dict:
+        """Render this rollout as a self-contained Dialog (wrapped form
+        with meta + messages + result populated)."""
+        from agent.persistence.dialog_adapters import from_trajectory
+        meta_extras = {}
+        if model:
+            meta_extras["model"] = model
+        if provider:
+            meta_extras["provider"] = provider
+        if system_prompt:
+            meta_extras["system_prompt"] = system_prompt
+        if tools:
+            meta_extras["tools"] = tools
+        return from_trajectory(
+            self, wrapped=True,
+            meta=meta_extras or None,
+        )
+
+    def save_unified(self, task_dir, *, model: str = "",
+                     provider: str = "", system_prompt: str = "",
+                     tools: list = None):
+        """Write the self-contained ``dialog.json`` for this rollout.
+        ``task_dir`` is a directory."""
+        from agent.persistence.unified_storage import save_task
+        return save_task(
+            task_dir,
+            self.to_dialog(
+                model=model, provider=provider,
+                system_prompt=system_prompt, tools=tools,
+            ),
+        )

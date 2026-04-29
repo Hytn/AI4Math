@@ -113,6 +113,82 @@ class ProofSessionSnapshot:
         filtered = {k: v for k, v in data.items() if k in known_fields}
         return ProofSessionSnapshot(**filtered)
 
+    # ── Unified dialog format (AgentCPM-aligned) ──────────────────────
+
+    def to_dialog(self, *, model: str = "",
+                  provider: str = "") -> dict:
+        """Synthesize a self-contained Dialog from this snapshot's
+        ``trace_attempts``."""
+        from agent.persistence.dialog_format import (
+            DialogBuilder, ToolCall,
+        )
+        import json as _json
+
+        b = DialogBuilder()
+        b.set_meta(
+            problem_id=self.problem_id,
+            problem_name=self.problem_name,
+            theorem_statement=self.theorem_statement,
+            model=model, provider=provider,
+            extra={
+                "round_number": self.round_number,
+                "strategy_name": self.strategy_name,
+                "trace_id": self.trace_id,
+                "lane_status": self.lane_status,
+                "checkpoint_round": self.checkpoint_round,
+                "version": self.version,
+                "config_snapshot":
+                    dict(self.trace_config_snapshot or {}),
+            },
+        )
+        b.add_user(
+            "Prove the following theorem in Lean 4:\n\n"
+            + (self.theorem_statement or "").strip()
+        )
+        for att in self.trace_attempts or []:
+            proof = (att.get("generated_proof") or "").strip()
+            if not proof:
+                err = att.get("lean_stderr") or "(empty proof)"
+                b.add_assistant(content=f"(generation failed: {err})")
+                continue
+            tc = ToolCall.new(
+                name="lean_verify",
+                arguments={"code": proof},
+                server_id="lean",
+            )
+            b.add_assistant(
+                content="```lean\n" + proof + "\n```",
+                tool_calls=[tc],
+            )
+            payload = {
+                "verified": att.get("lean_result") == "success",
+                "status": att.get("lean_result", ""),
+                "errors": att.get("lean_errors", []),
+                "stderr": (att.get("lean_stderr") or "")[:1000],
+            }
+            b.add_tool_response(
+                name="lean_verify",
+                content=_json.dumps(payload, ensure_ascii=False),
+                server_id="lean",
+            )
+        b.set_result(
+            success=self.solved,
+            total_attempts=len(self.trace_attempts or []),
+            total_tokens=self.trace_total_tokens,
+            total_duration_ms=self.total_elapsed_ms,
+            error_distribution=dict(self.trace_error_distribution or {}),
+        )
+        return b.build()
+
+    def save_unified(self, task_dir, *, model: str = "",
+                     provider: str = ""):
+        """Write the self-contained ``dialog.json`` for this snapshot."""
+        from agent.persistence.unified_storage import save_task
+        return save_task(
+            task_dir,
+            self.to_dialog(model=model, provider=provider),
+        )
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Snapshot Builder — extract session state from live objects
