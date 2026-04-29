@@ -324,7 +324,22 @@ class ProofPipeline:
         self._apply_policy_decision(ctx, decision)
 
     def generate(self, ctx: RoundContext):
-        """阶段 2: 生成证明候选"""
+        """阶段 2: 生成证明候选
+
+        路由优先级:
+          1. config['profile_name'] → 走 UnifiedProofRunner (单 profile)
+          2. ctx.strategy_name == "sequential" → SequentialEngine (legacy)
+          3. ctx.strategy_name in ("unified_*", "single", ...) → UnifiedProofRunner
+          4. 其他 → HeterogeneousEngine (默认主路径; 内部已迁移到 UnifiedProofRunner)
+        """
+        # ── Route 1: explicit profile in config (single-profile bypass) ──
+        profile_name = self.config.get("profile_name") or self.config.get("profile")
+        if profile_name and profile_name not in (
+                "heterogeneous", "hetero", "default"):
+            self._generate_via_unified(ctx, profile_name)
+            return
+
+        # ── Route 2: sequential (legacy compat) ──
         if ctx.strategy_name == "sequential":
             from prover.pipeline.sequential_engine import SequentialEngine
             engine = SequentialEngine(
@@ -340,13 +355,84 @@ class ProofPipeline:
                         and a.lean_result == AttemptStatus.SUCCESS):
                     ctx.memory.solved = True
             ctx.candidates = []
-        else:
+            return
+
+        # ── Route 3: strategy-encoded unified preset ──
+        if isinstance(ctx.strategy_name, str) and ctx.strategy_name.startswith("unified_"):
+            self._generate_via_unified(
+                ctx, ctx.strategy_name.removeprefix("unified_"))
+            return
+
+        # ── Route 4: heterogeneous parallel (default; v3 = UnifiedProofRunner-backed) ──
+        results = self.comp.hetero_engine.run_round(
+            ctx.problem,
+            classification=ctx.classification,
+            attempt_history=ctx.memory.attempt_history,
+            budget=self.comp.budget)
+        ctx.candidates = results
+
+    def _generate_via_unified(self, ctx: RoundContext, profile_name: str):
+        """单 profile 模式: 直接调 ``UnifiedProofRunner``, 不走方向 fan-out。
+
+        把单次 UnifiedResult 包装成 1 个 AgentResult, 让下游 verify/fuser
+        逻辑无差别处理。
+        """
+        import asyncio
+        from prover.unified import (
+            UnifiedProofRunner, get_profile, unified_to_agent_result,
+        )
+
+        # 校验 profile
+        try:
+            profile = get_profile(profile_name)
+        except ValueError as e:
+            logger.warning(f"Unknown profile {profile_name!r}: {e}; "
+                           f"falling back to hetero")
             results = self.comp.hetero_engine.run_round(
                 ctx.problem,
                 classification=ctx.classification,
                 attempt_history=ctx.memory.attempt_history,
                 budget=self.comp.budget)
             ctx.candidates = results
+            return
+
+        # 通过 hetero_engine 取共享的 LLM / lean_pool / broadcast / scheduler
+        he = self.comp.hetero_engine
+        runner = UnifiedProofRunner(
+            llm=he.llm if he else None,
+            lean_pool=getattr(he, "lean_pool", None) or self.comp.lean_pool,
+            knowledge_store=getattr(he, "knowledge_store", None),
+            retriever=getattr(he, "retriever", None),
+            broadcast_bus=getattr(he, "broadcast", None),
+        )
+
+        # 跑一次 (sync 入口里面 await 异步任务)
+        try:
+            try:
+                loop = asyncio.get_event_loop()
+                running = loop.is_running()
+            except RuntimeError:
+                running = False
+            if running:
+                # 已在事件循环 — 用 ensure_future
+                future = asyncio.ensure_future(
+                    runner.run(ctx.problem, profile=profile))
+                # 当前调用是 sync; 如果上层是 async 入口走 async pipeline
+                logger.warning(
+                    "ProofPipeline._generate_via_unified called inside event loop; "
+                    "consider using async pipeline.")
+                ur = loop.run_until_complete(future)
+            else:
+                ur = asyncio.run(runner.run(ctx.problem, profile=profile))
+        except Exception as e:
+            logger.exception(f"UnifiedProofRunner failed: {e}")
+            ctx.candidates = []
+            return
+
+        ar = unified_to_agent_result(ur, agent_name=f"unified.{profile_name}")
+        if self.comp.budget is not None:
+            self.comp.budget.add_tokens(ar.tokens_used)
+        ctx.candidates = [ar]
 
     def verify(self, ctx: RoundContext):
         """阶段 3: 验证候选 — 失败时 classify → recover 闭环

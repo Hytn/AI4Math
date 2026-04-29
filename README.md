@@ -268,6 +268,186 @@ A static architecture diagram is also available at [`docs/architecture.svg`](doc
 
 ---
 
+## v3 Unified Pipeline (Profile-driven)
+
+> **TL;DR — Every mainstream theorem-proving method except MCTS is reproducible through `prover.unified` by switching the `--profile` flag. No code changes.**
+
+### Design essence
+
+Modern LLM-based theorem proving methods differ along just three dimensions:
+1. **`max_turns`** — how many LLM calls per session
+2. **`tools`** — what the LLM can call
+3. **`system_prompt` + initial user message** — what work mode the LLM enters
+
+These three live in a single `Profile` dataclass executed by `UnifiedProofRunner`. Same code, same `dialog.json` schema, six different algorithms.
+
+### Active presets
+
+| Profile | Method | `max_turns` | `tools` | Status |
+|---|---|---|---|---|
+| `whole_proof` | DeepSeek-Prover · Kimina · Goedel | 1 | `[]` | ✅ complete |
+| `whole_proof_repair` | Compile-and-fix loop (project default) | 6 | `[lean_verify]` | ✅ complete |
+| `dsp` | Draft-Sketch-Prove | 10 | `[decompose, premise_search, lean_verify]` | ✅ complete |
+| `reprover` | ReProver (RAG + step-level) | 30 | `[premise_search, tactic_apply, goal_inspect]` | ✅ complete |
+| `leandojo` | LeanDojo (pure step-level) | 50 | `[tactic_apply, goal_inspect, lean_auto]` | ✅ complete |
+| `heterogeneous` | AI4Math 4-way parallel + broadcast | 4 | sub-profiles + `broadcast` | ✅ complete |
+
+### How each algorithm is parameterised
+
+#### `whole_proof` ↔ DeepSeek-Prover / Kimina / Goedel
+
+```python
+Profile(
+    tools=[],                            # no tools = forced single-shot
+    max_turns=1,
+    framing="whole_proof",               # "Output one ```lean block. Do NOT call tools."
+    observation=ObservationPolicy(
+        inject_few_shot=True,            # 5 representative Mathlib examples
+        inject_premises_in_prompt=True,  # top-N retrieved lemmas pre-injected
+        auto_inject_lean_compile=True,   # runtime force-verifies emitted code
+    ),
+)
+```
+**Coverage**: ✅ single-shot ✅ pass@k via `--max-samples K` (i.i.d.) ✅ few-shot from `common/prompt_builder.py` ✅ premise injection via `PremiseSelector` ✅ Lean4 final verify. ⚠️ No explicit chain-of-thought scaffolding (relies on underlying model's reasoning ability).
+
+#### `whole_proof_repair` ↔ Compile-and-fix loop
+
+```python
+Profile(
+    tools=[ToolKit.LEAN_VERIFY],
+    max_turns=6,
+    framing="whole_proof_repair",        # "Submit proof, see errors, fix, repeat."
+    observation=ObservationPolicy(
+        compress_errors_budget=1200,     # error compression via lane.summary_compressor
+        auto_inject_lean_compile=True,
+    ),
+)
+```
+**Coverage**: ✅ multi-round closure ✅ structured error feedback ✅ real Lean4 verification ✅ full dialog history.
+
+#### `dsp` ↔ Draft-Sketch-Prove
+
+```python
+Profile(
+    tools=[ToolKit.DECOMPOSE, ToolKit.PREMISE_SEARCH, ToolKit.LEAN_VERIFY],
+    max_turns=10,
+    framing="dsp",                        # explicit phases A-E in system prompt
+)
+```
+**Coverage**: ✅ phase A (sketch via comment block) ✅ phase B (`DecomposeSubgoalTool` calls `prover/decompose/goal_decomposer.py`) ✅ phase C (premise search) ✅ phases D-E (formalize + repair). ⚠️ Original DSP used informal-to-formal training data; this framework is zero-shot DSP via system prompt.
+
+#### `reprover` ↔ ReProver
+
+```python
+Profile(
+    tools=[ToolKit.PREMISE_SEARCH, ToolKit.TACTIC_APPLY, ToolKit.GOAL_INSPECT],
+    max_turns=30,
+    framing="step_level_with_retrieval",
+    observation=ObservationPolicy(
+        auto_inject_goal_state=True,      # tactic_apply natively returns new goals
+        inject_premises_in_prompt=False,   # ReProver retrieves on-demand
+        inject_few_shot=False,
+    ),
+)
+```
+**Coverage**: ✅ true step-level via `TacticApplyTool` (real REPL apply, returns `remaining_goals` + `is_proof_complete`) ✅ on-demand retrieval ✅ 30-turn horizon. ⚠️ Retriever is TF-IDF/BM25 hybrid; original ReProver used ColBERT fine-tuned on LeanDojo data.
+
+#### `leandojo` ↔ LeanDojo
+
+```python
+Profile(
+    tools=[ToolKit.TACTIC_APPLY, ToolKit.GOAL_INSPECT, ToolKit.LEAN_AUTO],
+    max_turns=50,
+    framing="step_level_pure",
+)
+```
+**Coverage**: ✅ pure step-level (shares `TacticApplyTool` with reprover) ✅ Mathlib hammer (`exact?`/`apply?`/`aesop`/`polyrith`) ✅ 50-turn horizon. ⚠️ Original LeanDojo also had a best-first search wrapper — that part lives in `EXPERIMENTAL_PRESETS["best_first"]` (set aside per scope).
+
+#### `heterogeneous` ↔ AI4Math project flagship
+
+```python
+Profile(
+    search=SearchConfig(
+        kind="parallel",
+        parallel_profiles=["whole_proof", "reprover", "leandojo", "whole_proof_repair"],
+    ),
+    tools=[ToolKit.LEAN_VERIFY, ToolKit.BROADCAST],
+)
+```
+**Coverage**: ✅ true parallelism via `asyncio.gather` ✅ shared `BroadcastBus` for cross-direction discoveries ✅ heterogeneous (4 different framings/tools/turns) ✅ `ResultFuser` cross-fusion ✅ backward-compat with v2 `assembly.py` constructor.
+
+### How the code becomes a unified base
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                UnifiedProofRunner (single entry)                 │
+│                                                                  │
+│   prove(problem, profile)                                        │
+│      ── build initial prompt (theorem + few-shot + premises)     │
+│      ── AgentLoop                                                 │
+│           ├── system_prompt = framing[X]                          │
+│           ├── tools = ToolKit → Tool instances                   │
+│           ├── max_turns = N                                       │
+│           └── multi-turn: LLM → tool call → tool result → ...    │
+│      ── auto_verify (safety net)                                  │
+│      ── dialog.json (uniform output)                              │
+└────────────────────────────────────────────────────────────────┘
+```
+
+**One data path for all methods**:
+1. **Entry**: `UnifiedProofRunner.run(problem, profile)`
+2. **Core loop**: `agent.runtime.AgentLoop`
+3. **Tools**: `agent.tools.ToolRegistry`
+4. **Persistence**: `dialog.json` schema v2.0
+5. **Bridge**: `prover.unified.adapters` for legacy `ProofAttempt`/`AgentResult` compat
+
+**Adding a new method = adding one Profile** in `prover/unified/profiles.py` (or registering from YAML). No changes to runner / loop / tools / pipeline.
+
+### Honest implementation-vs-paper diff
+
+| Profile | Implemented | Differs from paper |
+|---|---|---|
+| `whole_proof` | full single-shot + few-shot + premise + final verify | no forced CoT scaffold |
+| `whole_proof_repair` | full closure | — |
+| `dsp` | all 5 phases via tools | zero-shot DSP (no I2F training data) |
+| `reprover` | step-level + on-demand retrieval | TF-IDF/BM25 instead of fine-tuned ColBERT |
+| `leandojo` | pure step-level + hammer | search wrapper in `EXPERIMENTAL_PRESETS` |
+| `heterogeneous` | full parallel + broadcast + fusion | — |
+| `mcts` / `beam` / `best_first` | code complete in `EXPERIMENTAL_PRESETS` | not yet merged into linear-dialog mainline (v4) |
+
+### CLI
+
+```bash
+# Switch method by changing --profile only
+python run_unified.py --builtin nat_add_comm --profile whole_proof
+python run_unified.py --builtin nat_add_comm --profile whole_proof_repair
+python run_unified.py --builtin nat_add_comm --profile dsp
+python run_unified.py --builtin nat_add_comm --profile reprover
+python run_unified.py --builtin nat_add_comm --profile leandojo
+python run_unified.py --builtin nat_add_comm --profile heterogeneous
+
+# Benchmark eval supports --profile too
+python run_eval.py --benchmark minif2f --provider anthropic --profile reprover
+
+# YAML-defined profiles
+python run_unified.py --profile-yaml my_method.yaml --profile my_method --builtin nat_add_comm
+
+# Opt-in to experimental search presets
+python -c "from prover.unified import enable_experimental_search_presets; enable_experimental_search_presets()"
+python run_unified.py --builtin nat_add_comm --profile mcts
+```
+
+### Test coverage
+
+```bash
+$ python -m pytest tests/ -q
+1001 passed, 1 skipped in 7.84s
+```
+
+See [`REFACTOR_REPORT.md`](REFACTOR_REPORT.md) for the full migration analysis.
+
+---
+
 ## Project Structure
 
 ```

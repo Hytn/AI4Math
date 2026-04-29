@@ -1,0 +1,67 @@
+# config/profiles/mcts_with_retrieval.yaml
+#
+# A user-defined profile: MCTS-UCB1 outer search, with the agent given access
+# to premise_search at expansion time. This file is loaded at runtime via:
+#
+#     from prover.unified import load_profile_from_yaml, register_profile
+#     register_profile(load_profile_from_yaml("config/profiles/mcts_with_retrieval.yaml"))
+#
+# Then `--profile mcts_with_retrieval` becomes selectable on the CLI.
+#
+# Edit any field below and re-run — no Python changes needed. This is the
+# "switch panel" the user can fiddle with.
+
+name: mcts_with_retrieval
+description: "UCB tree search + Mathlib retrieval at each expansion node"
+
+# 1. ── Tool kit ────────────────────────────────────────────────────────
+# Available kits (see prover/unified/profiles.py::ToolKit):
+#   lean_verify, tactic_apply, goal_inspect, tactic_suggest,
+#   premise_search, lean_auto, decompose_subgoal, lemma_bank, cas_compute,
+#   broadcast, tree_view, tree_select
+tools:
+  - tactic_apply
+  - premise_search
+  - tree_view             # let the LLM see ancestors / siblings / open leaves
+
+# 2. ── Loop nature ─────────────────────────────────────────────────────
+# Per-expansion (since search.kind != none) the agent runs a small loop.
+# max_turns here is the per-node budget — set 1 for "one tactic per node",
+# set higher to let the LLM browse premise_search before committing.
+max_turns: 2
+temperature: 0.7
+model: claude-sonnet-4-20250514
+
+# 3. ── Algorithmic framing (LLM's mental model) ────────────────────────
+# Available framings (see prover/unified/system_prompts.py):
+#   whole_proof, whole_proof_repair, dsp,
+#   step_level_with_retrieval, step_level_pure
+framing: step_level_with_retrieval
+
+# 4. ── Outer search algorithm ──────────────────────────────────────────
+search:
+  kind: ucb               # one of: none, best_first, ucb, beam, parallel
+  max_nodes: 400
+  max_depth: 30
+  ucb_c: 1.414
+  expansion_max_turns: 2
+
+# 5. ── Observation policy: how tool results flow back to the LLM ──────
+observation:
+  auto_inject_lean_compile: false      # step-level — no full compile
+  auto_inject_goal_state: true         # tactic_apply already returns this
+  compress_errors_budget: 1200
+  visible_history_turns: -1
+  include_search_state_in_prompt: true # show ancestors/siblings in user msg
+  include_knowledge_briefing: true     # static briefing prepended once
+
+# 6. ── Termination ─────────────────────────────────────────────────────
+stop:
+  on_proof_found: true
+  on_text_only: false
+  on_all_goals_closed: true
+  max_total_tokens: 400000
+  timeout_seconds: 600.0
+
+# 7. ── (optional) domain plugins to also register ──────────────────────
+plugins: []

@@ -62,7 +62,8 @@ def prove_single(problem: BenchmarkProblem, llm, premise_selector,
                  knowledge_reader: KnowledgeReader = None,
                  knowledge_writer: KnowledgeWriter = None,
                  multi_role: bool = False,
-                 early_stop: bool = False) -> ProofTrace:
+                 early_stop: bool = False,
+                 profile: str = None) -> ProofTrace:
     """对单道题进行证明尝试。
 
     v3 改进:
@@ -71,11 +72,23 @@ def prove_single(problem: BenchmarkProblem, llm, premise_selector,
       - 多角色: Generator → Repair → Generator 交替 (Fix #3)
       - pass@k: 默认跑满全部 samples, 仅 early_stop=True 时提前退出 (Fix #4)
       - 验证标注: lean_mode=skip 时 stderr 明确标注 [unverified] (Fix #5)
+      - profile (v3 新增): 不为 None 时走 prover.unified 主管线;
+        每个 sample 是一次 UnifiedProofRunner.run(profile)。
 
     温度调度模式:
       - "fixed": 所有样本使用相同温度 (默认 0.8), 满足 pass@k i.i.d. 假设
       - "escalating": 逐步提高温度 (0.3 → 1.0) 增加多样性
     """
+    # ── v3 unified path ──
+    if profile:
+        return _prove_single_unified(
+            problem, llm, premise_selector,
+            max_samples=max_samples, lean_env=lean_env,
+            lean_mode=lean_mode,
+            knowledge_reader=knowledge_reader,
+            knowledge_writer=knowledge_writer,
+            profile_name=profile,
+        )
     trace = ProofTrace(
         problem_id=problem.problem_id,
         problem_name=problem.name,
@@ -304,6 +317,106 @@ def load_existing_traces(trace_dir: Path) -> dict[str, dict]:
     return existing
 
 
+def _prove_single_unified(
+    problem: BenchmarkProblem,
+    llm,
+    premise_selector,
+    *,
+    max_samples: int,
+    lean_env,
+    lean_mode: str,
+    knowledge_reader,
+    knowledge_writer,
+    profile_name: str,
+) -> ProofTrace:
+    """v3 unified 主管线路径: 每个 sample = 一次 UnifiedProofRunner.run。
+
+    每次 run 根据 profile 决定方法学 (whole_proof / repair / reprover / ...);
+    sample 之间是独立的 i.i.d. 调用 (满足 pass@k 假设)。
+    """
+    from prover.unified import (
+        UnifiedProofRunner, get_profile, unified_to_attempt,
+    )
+    from prover.pipeline.heterogeneous_engine import _SyncToAsyncAdapter
+    import inspect
+
+    trace = ProofTrace(
+        problem_id=problem.problem_id,
+        problem_name=problem.name,
+        theorem_statement=problem.theorem_statement,
+        natural_language=problem.natural_language,
+        config_snapshot={"profile": profile_name, "via": "unified"},
+    )
+
+    # Resolve profile (or fall back gracefully)
+    try:
+        profile = get_profile(profile_name)
+    except ValueError as e:
+        logger.error(f"  unknown profile {profile_name!r}: {e}")
+        return trace
+
+    # Coerce sync LLM → async if needed
+    is_async = (
+        inspect.iscoroutinefunction(getattr(llm, "generate", None))
+        or inspect.iscoroutinefunction(getattr(llm, "chat", None))
+    )
+    async_llm = llm if is_async else _SyncToAsyncAdapter(llm)
+
+    # Lean pool extraction
+    lean_pool = None
+    if lean_env is not None:
+        lean_pool = getattr(lean_env, "pool", None) or lean_env
+
+    # Knowledge store (if writer/reader given, share their store)
+    knowledge_store = None
+    if knowledge_reader is not None:
+        knowledge_store = getattr(knowledge_reader, "store", None)
+
+    runner = UnifiedProofRunner(
+        llm=async_llm,
+        lean_pool=lean_pool,
+        knowledge_store=knowledge_store,
+        retriever=premise_selector,
+        broadcast_bus=None,
+    )
+
+    # 跑 max_samples 次 (pass@k 兼容)
+    for sample_idx in range(max_samples):
+        try:
+            ur = asyncio.run(runner.run(problem, profile=profile))
+        except RuntimeError as e:
+            # 已在事件循环里 → 用 ensure_future
+            try:
+                loop = asyncio.get_event_loop()
+                ur = loop.run_until_complete(runner.run(problem, profile=profile))
+            except Exception as e2:
+                logger.error(f"    sample {sample_idx+1} failed: {e2}")
+                continue
+        except Exception as e:
+            logger.error(f"    sample {sample_idx+1} failed: {e}")
+            continue
+
+        attempt = unified_to_attempt(ur, attempt_number=sample_idx + 1)
+        trace.add_attempt(attempt)
+
+        if ur.success:
+            trace.solved = True
+            trace.successful_proof = ur.proof_code
+            trace.correct_count += 1
+            # 写知识库
+            if knowledge_writer is not None:
+                try:
+                    asyncio.run(knowledge_writer.observe_solved_attempt(
+                        problem=problem.theorem_statement,
+                        proof=ur.proof_code,
+                        domain=getattr(problem, "domain", ""),
+                    ))
+                except Exception as e:
+                    logger.debug(f"    knowledge write failed: {e}")
+
+    return trace
+
+
 def main():
     parser = argparse.ArgumentParser(description="AI4Math 真实基准评测 (v3)")
     parser.add_argument("--benchmark", default="builtin",
@@ -330,6 +443,14 @@ def main():
     # 向后兼容旧参数
     parser.add_argument("--no-early-stop", action="store_true",
                         help="(已废弃, 现在默认不提前退出)")
+    parser.add_argument(
+        "--profile", default=None,
+        help=(
+            "走统一管线 (prover.unified) 的 profile 名. "
+            "可选: whole_proof, whole_proof_repair, dsp, reprover, "
+            "leandojo, heterogeneous. "
+            "不指定 = 使用 v2 旧 prove_single 路径 (兼容)."
+        ))
     args = parser.parse_args()
 
     if args.no_early_stop:
@@ -427,6 +548,7 @@ def main():
                 knowledge_writer=knowledge_writer,
                 multi_role=args.multi_role,
                 early_stop=args.early_stop,
+                profile=args.profile,
             )
 
             status = ("✓ 通过" if trace.solved

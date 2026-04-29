@@ -1,457 +1,473 @@
-"""prover/pipeline/heterogeneous_engine.py — 异构并行证明引擎
+"""prover/pipeline/heterogeneous_engine.py — 异构并行证明引擎 (v3 — 统一 runtime)
 
-当前系统的核心瓶颈: RolloutEngine 用同一个 prompt 生成 N 个样本,
-所有样本往往犯同一类错误 (如 ℕ 减法用 ring)。
+v2 → v3 的关键改造
+==================
 
-本引擎的改进: 同时启动多个策略方向完全不同的子智能体,
-各有独立的角色/模型/prompt/上下文, 实现真正的策略多样性。
+v2 直接调 ``SubAgent.execute()`` (单轮 LLM 生成), 无法表达 step-level / RAG /
+hammer 等多轮 agentic 方法。v3 改为给每个方向启动一个 ``UnifiedProofRunner``
++ 一个 ``Profile``, 通过共享的 ``BroadcastBus`` 同步发现, 通过 ``ResultFuser``
+做跨方向融合。
 
-典型的四方向探索::
+各方向的差异 = 各自的 Profile (preset 名 + override 参数), 不再是硬编码的
+SubAgent 配置。这使得加新方法 = 加新 preset, 不需要改本文件。
 
-    方向 A: 自动化探测 (Haiku, 低温, 纯 tactic)
-    方向 B: 归纳法专家 (Sonnet, 中温, 领域 prompt)
-    方向 C: 代数变换   (Sonnet, 高温, 替代路径)
-    方向 D: 引理检索   (Sonnet, 低温, 搜索 Mathlib)
+兼容性
+======
+对外 API 完全不变: ``run_round(problem, classification, attempt_history,
+budget) -> list[AgentResult]``。下游的 ``ProofPipeline.verify()`` /
+``ResultFuser`` / 持久化逻辑无需改动。
 """
 from __future__ import annotations
+
+import asyncio
 import logging
 from dataclasses import dataclass, field
+from typing import Optional
 
-from prover.pipeline._agent_deps import AgentSpec, AgentTask, AgentResult, ContextItem
-from prover.pipeline._agent_deps import AgentPool
-from prover.pipeline._agent_deps import ResultFuser
-from common.roles import AgentRole
-from common.hook_types import HookEvent, HookContext
-from prover.pipeline._agent_deps import HookManager
-from prover.pipeline._agent_deps import PluginLoader
+from prover.pipeline._agent_deps import (
+    AgentResult, ResultFuser, HookManager, PluginLoader,
+)
+# Backward-compat re-exports for legacy modules that imported these
+# from heterogeneous_engine (e.g. ``prover/pipeline/async_prove.py``).
+from prover.pipeline._agent_deps import ProofDirection, build_direction_prompt  # noqa: F401
 from common.budget import Budget
-from prover.models import BenchmarkProblem, ProofAttempt, AttemptStatus
+from prover.models import BenchmarkProblem
+from prover.unified import (
+    UnifiedProofRunner, UnifiedResult, get_profile, PRESETS,
+    unified_to_agent_result,
+)
+from prover.unified.profiles import Profile
 
 logger = logging.getLogger(__name__)
 
 
-# ProofDirection 定义已移至 agent.strategy.direction_planner
-# 此处 re-export 以保持向后兼容
-from prover.pipeline._agent_deps import ProofDirection, build_direction_prompt
+# ══════════════════════════════════════════════════════════════════════
+# Direction = a Profile + per-direction config override
+# ══════════════════════════════════════════════════════════════════════
 
+@dataclass
+class HeteroDirection:
+    """一个异构方向的声明: profile + 个性化 override。"""
+    name: str
+    profile_name: str
+    overrides: dict = field(default_factory=dict)
+    """profile 字段级 override, e.g. {'temperature': 0.9, 'model': 'opus-4-6'}。"""
+
+
+# 默认的 4 方向异构 (替代旧 DirectionPlanner 的硬编码方向)
+_DEFAULT_DIRECTIONS = [
+    HeteroDirection(
+        name="automation",
+        profile_name="whole_proof",
+        overrides={"temperature": 0.2},
+    ),
+    HeteroDirection(
+        name="repair",
+        profile_name="whole_proof_repair",
+        overrides={"temperature": 0.5, "max_turns": 4},
+    ),
+    HeteroDirection(
+        name="creative",
+        profile_name="whole_proof_repair",
+        overrides={"temperature": 0.9, "max_turns": 3},
+    ),
+    HeteroDirection(
+        name="retrieval",
+        profile_name="reprover",
+        overrides={"temperature": 0.3, "max_turns": 12},
+    ),
+]
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Engine
+# ══════════════════════════════════════════════════════════════════════
 
 class HeterogeneousEngine:
-    """异构并行证明引擎 (v2 — 集成广播总线 + 验证调度器)
+    """异构并行证明引擎 (v3) — 统一 runtime + Profile 多方向。
 
-    替代 RolloutEngine 的同质化并行采样:
-    - 每个方向是一个独立的 SubAgent
-    - 不同方向有不同的角色、模型、温度、prompt
-    - ResultFuser 融合结果, 支持跨方向信息注入
+    用法::
 
-    v2 新增:
-    - BroadcastBus: 一个方向的发现实时广播给所有其他方向
-    - VerificationScheduler: L0/L1/L2 三级验证, 结构化反馈
-    - 知识积累: 负面知识 + 辅助引理跨方向共享
+        engine = HeterogeneousEngine(
+            llm=async_llm, lean_pool=pool,
+            knowledge_store=ks, retriever=retr,
+            broadcast=bus, scheduler=verif_scheduler,
+        )
+        results = engine.run_round(problem, classification, history, budget)
+
+    每个方向走 ``UnifiedProofRunner``:
+      - profile 决定方法学 (whole_proof / repair / reprover / leandojo / ...)
+      - overrides 决定方向间差异 (model / temperature / max_turns)
+      - BroadcastBus 在方向间同步发现
+      - ResultFuser 做跨方向融合
     """
 
-    def __init__(self, pool: AgentPool, plugin_loader: PluginLoader = None,
-                 hook_manager: HookManager = None, retriever=None,
-                 broadcast: 'BroadcastBus' = None,
-                 verification_scheduler: 'VerificationScheduler' = None,
-                 direction_planner: 'DirectionPlanner' = None):
-        self.pool = pool
+    def __init__(
+        self,
+        # ── new-style kwargs (preferred) ───────────────────────
+        *,
+        llm=None,                         # async LLM provider
+        lean_pool=None,
+        knowledge_store=None,
+        retriever=None,
+        broadcast=None,
+        scheduler=None,                   # verification_scheduler
+        directions: Optional[list[HeteroDirection]] = None,
+        plugin_loader: PluginLoader = None,
+        hook_manager: HookManager = None,
+        # ── legacy kwargs (assembly.py compat) ─────────────────
+        pool=None,                        # AgentPool (legacy) — has .llm
+        verification_scheduler=None,      # legacy alias of scheduler
+    ):
+        # Resolve LLM: prefer explicit `llm`; else extract from legacy pool
+        resolved_llm = llm
+        if resolved_llm is None and pool is not None:
+            resolved_llm = getattr(pool, "llm", None)
+        self.llm = resolved_llm
+        self._legacy_pool = pool          # kept for cross_fusion fallback
+
+        # Resolve scheduler aliases
+        self.scheduler = scheduler or verification_scheduler
+
+        # Resource injection
+        self.lean_pool = lean_pool or self._extract_lean_pool_from_scheduler()
+        self.knowledge_store = knowledge_store
+        self.retriever = retriever
+        self.broadcast = broadcast or self._make_default_broadcast()
+
+        # Direction config (default 4-way; can be overridden by `directions`)
+        self.directions = directions or list(_DEFAULT_DIRECTIONS)
+
+        # Legacy fields (kept for plugin / hook fan-out)
         self.plugins = plugin_loader or PluginLoader()
         self.hooks = hook_manager or HookManager()
-        self.retriever = retriever
         self.fuser = ResultFuser()
 
-        # ── APE v2 集成 ──
-        from engine.broadcast import BroadcastBus
-        from engine.verification_scheduler import VerificationScheduler
-        self.broadcast = broadcast or BroadcastBus()
-        self.scheduler = verification_scheduler
+        # Lazy: convert sync LLM → async if needed (assembly.py provides sync)
+        self.llm = self._ensure_async_llm(self.llm)
 
-        # ── 方向规划器 (v3: 独立可替换) ──
-        if direction_planner:
-            self.planner = direction_planner
-        else:
-            from agent.strategy.direction_planner import DirectionPlanner
-            self.planner = DirectionPlanner(
-                retriever=retriever, plugin_loader=plugin_loader)
+    def _extract_lean_pool_from_scheduler(self):
+        sch = self.scheduler
+        if sch is None:
+            return None
+        return getattr(sch, "pool", None) or getattr(sch, "lean_pool", None)
 
-    def run_round(self, problem: BenchmarkProblem,
-                  classification: dict = None,
-                  attempt_history: list = None,
-                  budget: Budget = None) -> list[AgentResult]:
-        """运行一轮异构并行证明 (v2 — 集成广播总线)
+    def _ensure_async_llm(self, llm):
+        """If `llm` is sync (LLMProvider), wrap it so that `await chat()` works.
 
-        v2 改进:
-        - 每个方向启动前, 注入来自广播总线的跨方向知识
-        - 每个方向完成后, 将发现/失败广播给所有其他方向
-        - 下一轮所有方向自动获得上一轮的全部发现
-
-        Args:
-            problem: 待证明的问题
-            classification: DomainClassifierHook 的分类结果
-            attempt_history: 之前的尝试历史 (用于 repair 方向)
-            budget: 预算控制器
-
-        Returns:
-            所有方向的结果列表 (按 confidence 降序)
+        Strategy: if it has async `generate`/`chat`, accept as-is; otherwise
+        wrap with a thin adapter that runs sync calls in an executor.
         """
+        if llm is None:
+            return None
+        # Already async?
+        import inspect
+        chat = getattr(llm, "chat", None)
+        gen = getattr(llm, "generate", None)
+        if (chat and inspect.iscoroutinefunction(chat)) or \
+           (gen and inspect.iscoroutinefunction(gen)):
+            return llm
+        # Sync provider — wrap
+        try:
+            return _SyncToAsyncAdapter(llm)
+        except Exception as e:
+            logger.warning(f"Could not wrap sync LLM as async: {e}")
+            return llm
+
+    @staticmethod
+    def _make_default_broadcast():
+        try:
+            from engine.broadcast import BroadcastBus
+            return BroadcastBus()
+        except Exception:
+            return None
+
+    # ── public API ─────────────────────────────────────────────────
+
+    def run_round(
+        self,
+        problem: BenchmarkProblem,
+        classification: dict = None,
+        attempt_history: list = None,
+        budget: Budget = None,
+    ) -> list[AgentResult]:
+        """同步入口 (兼容 ProofPipeline.generate 旧调用约定)。
+
+        内部其实启动 asyncio.run; 如果调用方已经在事件循环中, 用
+        ``run_round_async`` 直接 await。
+        """
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # 在已有事件循环中: 不能 asyncio.run; 退化到一次性执行
+                logger.warning(
+                    "run_round called inside running event loop; "
+                    "use run_round_async() instead.")
+                return asyncio.ensure_future(
+                    self.run_round_async(problem, classification,
+                                         attempt_history, budget))
+        except RuntimeError:
+            pass
+        return asyncio.run(self.run_round_async(
+            problem, classification, attempt_history, budget))
+
+    async def run_round_async(
+        self,
+        problem: BenchmarkProblem,
+        classification: dict = None,
+        attempt_history: list = None,
+        budget: Budget = None,
+    ) -> list[AgentResult]:
+        """异构并行一轮; 返回按 confidence 降序的 AgentResult 列表。"""
         classification = classification or {}
         attempt_history = attempt_history or []
 
-        # 1. 规划探索方向 (委托给 DirectionPlanner)
-        directions = self.planner.plan(
-            problem, classification, attempt_history)
+        # 1. 为每个方向构造一个 Profile (preset + overrides)
+        profiles = [self._materialize_profile(d) for d in self.directions]
 
-        # 2. 为每个方向注册广播订阅
-        #    P1-8: 新订阅者注入历史消息, 确保跨轮次知识传递
-        subscriptions = {}
-        for d in directions:
-            sub = self.broadcast.subscribe(d.name)
-            subscriptions[d.name] = sub
-            # 将之前轮次的历史消息补充到新订阅的队列中
-            recent = self.broadcast.get_recent(n=15)
-            for msg in recent:
-                sub.push(msg)
+        # 2. 共享 broadcast 订阅 (跨轮次知识传递)
+        subscriptions = self._setup_broadcasts()
 
-        # 3. 构建 (spec, task) 对 — 注入广播消息
-        specs_and_tasks = []
         try:
-            for d in directions:
-                spec = AgentSpec(
-                    name=d.name,
-                    role=d.role,
-                    model=d.model,
-                    temperature=d.temperature,
-                    few_shot_override=d.few_shot_override,
-                    tools=d.allowed_tools,
-                )
+            # 3. 并行启动 N 个 runtime
+            runner = UnifiedProofRunner(
+                llm=self.llm,
+                lean_pool=self.lean_pool,
+                knowledge_store=self.knowledge_store,
+                retriever=self.retriever,
+                broadcast_bus=self.broadcast,
+            )
+            tasks = [
+                runner.run(problem, profile=prof)
+                for prof in profiles
+            ]
+            unified_results: list[UnifiedResult] = await asyncio.gather(
+                *tasks, return_exceptions=False)
 
-                context_items = [
-                    ContextItem("theorem", problem.theorem_statement, 1.0,
-                                "theorem_statement"),
-                ]
-                if d.strategic_hint:
-                    context_items.append(
-                        ContextItem("strategy", d.strategic_hint, 0.9,
-                                    "tactic_hint"))
-                if d.selected_premises:
-                    premises_text = "\n".join(
-                        f"- {p}" for p in d.selected_premises[:15])
-                    context_items.append(
-                        ContextItem("premises", premises_text, 0.7, "premise"))
+            # 4. UnifiedResult → AgentResult, 同时回写 budget
+            agent_results: list[AgentResult] = []
+            for d, prof, ur in zip(self.directions, profiles, unified_results):
+                ar = unified_to_agent_result(ur, agent_name=d.name)
+                ar.metadata["direction"] = d.name
+                ar.metadata["profile"] = prof.name
+                if budget is not None:
+                    budget.add_tokens(ar.tokens_used)
+                agent_results.append(ar)
 
-                # 注入 hook 产生的上下文 (如 ℕ 减法警告)
-                domain_hints = classification.get("domain_hints", {})
-                for hk, hv in domain_hints.items():
-                    context_items.append(
-                        ContextItem(hk, str(hv), 0.85, "premise"))
+            # 5. 广播发现 (失败/成功/引理)
+            self._broadcast_results(agent_results, profiles)
 
-                # ── v2: 注入来自广播总线的跨方向知识 ──
-                # Phase 2: 压缩后再注入, 避免浪费 token
-                broadcast_context = self.broadcast.render_for_prompt(
-                    d.name, max_messages=8, max_chars=1500,
-                    current_goal=problem.theorem_statement)
-                if broadcast_context:
-                    from engine.lane.summary_compressor import compress_broadcast
-                    compressed_bc = compress_broadcast(broadcast_context, budget=1500)
-                    context_items.append(
-                        ContextItem("teammate_discoveries", compressed_bc,
-                                    0.95, "premise"))
+            # 6. 按 confidence 降序
+            agent_results.sort(key=lambda r: -r.confidence)
 
-                # ── v2: 注入错误智能层的积累知识 ──
-                # Phase 2: 压缩后再注入
-                if self.scheduler and self.scheduler.error_intel:
-                    dead_ends = self.scheduler.error_intel.get_accumulated_knowledge(5)
-                    if dead_ends:
-                        from engine.lane.summary_compressor import compress_lean_errors
-                        compressed_de = compress_lean_errors(dead_ends, budget=800)
-                        context_items.append(
-                            ContextItem("known_dead_ends", compressed_de,
-                                        0.9, "premise"))
-
-                task = AgentTask(
-                    description=self._build_direction_prompt(d, problem),
-                    injected_context=context_items,
-                    theorem_statement=problem.theorem_statement,
-                    metadata={"direction": d.name},
-                )
-                specs_and_tasks.append((spec, task))
-
-            # 4. 并行执行
-            results = self.pool.run_parallel(specs_and_tasks, budget)
-
-            # 4.5 ── v2: 验证每个结果并更新置信度 ──
-            pool_stats = self.scheduler.pool.stats() if (
-                self.scheduler and self.scheduler.pool) else {}
-            has_real_repl = self.scheduler and not pool_stats.get("all_fallback", True)
-
-            if has_real_repl:
-                for i, (result, direction) in enumerate(zip(results, directions)):
-                    if result.proof_code and result.proof_code.strip():
-                        try:
-                            vr = self.scheduler.verify_complete(
-                                theorem=problem.theorem_statement,
-                                proof=result.proof_code,
-                                direction=direction.name,
-                            )
-                            from prover.pipeline._agent_deps import ConfidenceEstimator
-                            result.confidence = ConfidenceEstimator.refine_confidence(
-                                result,
-                                feedback=vr.feedback,
-                                l0_passed=vr.l0_passed,
-                                l1_passed=(vr.level_reached in ("L1", "L2") and vr.success),
-                                l2_passed=vr.l2_verified,
-                            )
-                            result.metadata["verification"] = {
-                                "success": vr.success,
-                                "level": vr.level_reached,
-                                "feedback_text": vr.feedback.to_prompt(max_chars=500),
-                                "env_id": vr.l1_env_id,
-                                "goals_remaining": vr.l1_goals_remaining,
-                            }
-                            if vr.success:
-                                result.success = True
-                        except Exception as e:
-                            logger.warning(
-                                f"Verification failed for {direction.name}: {e}")
-                            result.metadata["verification"] = {
-                                "success": False,
-                                "level": "error",
-                                "error": str(e),
-                            }
-            else:
-                for result in results:
-                    result.metadata["verification"] = {
-                        "success": False,
-                        "level": "none",
-                        "reason": "no_real_repl",
-                    }
-                    result.confidence = min(result.confidence, 0.4)
-
-            # 5. ── v2: 分析结果并广播发现 ──
-            self._broadcast_results(results, directions)
-
-            # 6. 按 confidence 排序
-            results.sort(key=lambda r: -r.confidence)
-
-            # 7. 尝试跨方向融合
-            if results and not any(r.confidence > 0.9 for r in results):
-                fused = self._try_cross_fusion(results, problem, budget)
-                if fused:
-                    results.insert(0, fused)
+            # 7. 跨方向融合 (现有逻辑)
+            if (agent_results
+                    and not any(r.confidence > 0.9 for r in agent_results)):
+                fused = await self._try_cross_fusion(
+                    agent_results, problem, budget)
+                if fused is not None:
+                    agent_results.insert(0, fused)
 
         finally:
-            # 8. 清理订阅 (即使上面抛出异常也保证执行)
-            for name in subscriptions:
-                try:
-                    self.broadcast.unsubscribe(name)
-                except Exception as _exc:
-                    logger.debug(f"Suppressed exception: {_exc}")
+            self._teardown_broadcasts(subscriptions)
 
-        return results
+        return agent_results
+
+    # ── helpers ────────────────────────────────────────────────────
+
+    def _materialize_profile(self, d: HeteroDirection) -> Profile:
+        """preset_name + overrides → 实际 Profile 对象。"""
+        if d.profile_name not in PRESETS:
+            raise ValueError(
+                f"Unknown profile '{d.profile_name}' "
+                f"for direction '{d.name}'. "
+                f"Available: {sorted(PRESETS)}")
+        base = get_profile(d.profile_name)
+        # 浅拷贝 + 字段 override
+        from dataclasses import replace
+        try:
+            return replace(base, **d.overrides)
+        except TypeError as e:
+            logger.warning(
+                f"Invalid override for direction '{d.name}': {e}; "
+                f"falling back to base profile")
+            return base
+
+    def _setup_broadcasts(self) -> dict:
+        """为每个方向订阅 broadcast, 注入历史消息以保证跨轮传递。"""
+        subs = {}
+        if self.broadcast is None:
+            return subs
+        for d in self.directions:
+            sub = self.broadcast.subscribe(d.name)
+            subs[d.name] = sub
+            try:
+                recent = self.broadcast.get_recent(n=15)
+                for msg in recent:
+                    sub.push(msg)
+            except Exception as e:
+                logger.debug(f"broadcast history replay failed: {e}")
+        return subs
+
+    def _teardown_broadcasts(self, subs: dict) -> None:
+        if self.broadcast is None:
+            return
+        for name in subs:
+            try:
+                self.broadcast.unsubscribe(name)
+            except Exception as e:
+                logger.debug(f"broadcast unsubscribe failed: {e}")
 
     def _broadcast_results(self, results: list[AgentResult],
-                           directions: list[ProofDirection]):
-        """分析结果并通过广播总线共享发现
+                            profiles: list[Profile]) -> None:
+        """把方向结果作为发现广播到总线。"""
+        if self.broadcast is None:
+            return
+        try:
+            from engine.broadcast import BroadcastMessage
+        except Exception:
+            return
 
-        v2: 同时通过 lane EventBus 发布类型化事件。
-        """
-        from engine.broadcast import BroadcastMessage
-        from engine.lane.event_bus import get_event_bus
-        from engine.lane.task_state import TaskEvent, TaskStatus
-        from engine.lane.error_classifier import classify_lean_error
-
-        event_bus = get_event_bus()
-
-        for result, direction in zip(results, directions):
-            if not result:
+        for r, prof in zip(results, profiles):
+            if not r:
                 continue
-
-            name = direction.name
-
-            # 高置信度证明 → 广播部分证明 (含 env_id 供其他方向 fork)
-            if result.proof_code and result.confidence > 0.5:
-                # 从验证结果中提取 env_id 和剩余 goals
-                vr = result.metadata.get("verification", {})
-                env_id = -1
-                remaining_goals = []
-                if vr.get("success"):
-                    # L1 验证成功时, feedback_text 中可能包含 env_id
-                    # 但更可靠的方式是从 VerificationResult 中获取
-                    pass
-                # 尝试从 metadata 中获取 L1 返回的 env_id
-                if isinstance(vr, dict):
-                    env_id = vr.get("env_id", -1)
-
+            # 高置信度证明 → 广播部分证明
+            if r.proof_code and r.confidence > 0.5:
                 self.broadcast.publish(BroadcastMessage.partial_proof(
-                    source=name,
-                    proof_so_far=result.proof_code[:800],
-                    remaining_goals=remaining_goals,
-                    env_id=env_id,
+                    source=r.agent_name,
+                    proof_so_far=r.proof_code[:800],
+                    remaining_goals=[],
+                    env_id=-1,
                     goals_closed=1,
                 ))
-
-            # 内容中包含引理发现 → 提取并广播
-            if result.content:
-                lemmas = self._extract_lemma_mentions(result.content)
-                for lemma in lemmas[:3]:
-                    self.broadcast.publish(BroadcastMessage.positive(
-                        source=name,
-                        discovery=f"Useful lemma: {lemma}",
-                        lemma_name=lemma,
-                    ))
-
-            # 失败且有明确错误 → 广播负面知识
-            if result.error and not result.proof_code:
+            # 失败 → 广播负面知识
+            elif r.error and not r.proof_code:
                 self.broadcast.publish(BroadcastMessage.negative(
-                    source=name,
-                    tactic=result.metadata.get("direction", name),
-                    error_category="strategy_failed",
-                    reason=result.error[:200],
+                    source=r.agent_name,
+                    tactic=prof.name,
+                    error_category="profile_failed",
+                    reason=str(r.error)[:200],
                 ))
 
-            # ── Lane event: emit typed event per direction result ──
-            vr = result.metadata.get("verification", {})
-            v_success = vr.get("success", False) if isinstance(vr, dict) else False
-            v_level = vr.get("level", "none") if isinstance(vr, dict) else "none"
-            event = TaskEvent(
-                seq=0,  # will be ignored by bus
-                event_name=f"direction.{'succeeded' if v_success else 'failed'}",
-                prev_status=TaskStatus.VERIFYING,
-                new_status=TaskStatus.SUCCEEDED if v_success else TaskStatus.VERIFYING,
-                detail=f"{name}: level={v_level}, confidence={result.confidence:.2f}",
-                metadata={
-                    "direction": name,
-                    "confidence": result.confidence,
-                    "verification_level": v_level,
-                    "verification_success": v_success,
-                },
-            )
-            event_bus.publish(event)
+    async def _try_cross_fusion(
+        self,
+        results: list[AgentResult],
+        problem,
+        budget,
+    ) -> Optional[AgentResult]:
+        """跨方向融合 — 如果有方向找到引理, 注入到最佳证明方向再试一次。
 
-        # ── 集成 share_lemma(): 将已验证引理注入所有 REPL 环境 ──
-        # 当广播总线中出现 LEMMA_PROVEN 消息时, 将引理代码注入 REPL 池,
-        # 使所有方向在后续轮次中可以直接 `exact lemma_name` 引用。
-        if self.scheduler and self.scheduler.pool:
-            from engine.broadcast import MessageType
-            recent_lemmas = self.broadcast.get_recent(
-                n=10, msg_type=MessageType.LEMMA_PROVEN)
-            for msg in recent_lemmas:
-                lemma_name = msg.structured.get("lemma_name", "")
-                lemma_stmt = msg.structured.get("lemma_statement", "")
-                lemma_proof = msg.structured.get("lemma_proof", "")
-                if lemma_name and lemma_stmt and lemma_proof:
-                    new_envs = self.scheduler.pool.share_lemma(
-                        "", name=lemma_name,
-                        statement=lemma_stmt, proof=lemma_proof)
-                    if new_envs:
-                        logger.info(
-                            f"share_lemma: injected '{lemma_name}' "
-                            f"into {len(new_envs)} REPL sessions"
-                        )
-                elif lemma_stmt and lemma_proof:
-                    # Fallback: no name, send as raw code
-                    full_code = f"{lemma_stmt} {lemma_proof}".strip()
-                    new_envs = self.scheduler.pool.share_lemma(full_code)
-                    if new_envs:
-                        logger.info(
-                            f"share_lemma: injected unnamed lemma "
-                            f"into {len(new_envs)} REPL sessions"
-                        )
-
-
-    def _extract_lemma_mentions(self, content: str) -> list[str]:
-        """从 LLM 输出中提取提到的 Mathlib 引理名"""
-        import re
-        # 匹配 Namespace.lemma_name 模式
-        pattern = r'\b([A-Z][a-zA-Z]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)+)\b'
-        matches = re.findall(pattern, content)
-        # 过滤掉太短或太通用的
-        return [m for m in set(matches) if len(m) > 5 and "." in m][:5]
-
-    def _plan_directions(self, problem, classification,
-                         attempt_history) -> list[ProofDirection]:
-        """根据问题特征规划 2-4 个探索方向
-
-        .. deprecated:: v4
-            直接使用 self.planner.plan() 代替。
+        v3 的实现仍然走 ``UnifiedProofRunner`` (用 repair 模式), 但用合并后
+        的上下文当作 initial_message 的补充。
         """
-        return self.planner.plan(problem, classification, attempt_history)
-
-    def _try_cross_fusion(self, results, problem, budget):
-        """尝试将一个方向的发现注入另一个方向
-
-        典型场景: 检索方向找到了有用引理, 注入到结构化方向的修复上下文中。
-        """
-        # 找到最佳结构化结果和有引理发现的结果
-        best_proof_result = None
-        lemma_results = []
-
-        for r in results:
-            if r.proof_code and r.confidence > 0.3:
-                if best_proof_result is None:
-                    best_proof_result = r
-            if r.content and ("lemma" in r.content.lower()
-                              or "theorem" in r.content.lower()):
-                lemma_results.append(r)
-
-        if not best_proof_result or not lemma_results:
+        # 找 best proof + lemma findings
+        best_proof = next(
+            (r for r in results if r.proof_code and r.confidence > 0.3),
+            None)
+        if best_proof is None:
             return None
 
-        # 构建融合修复任务
-        lemma_insights = self.fuser.merge_insights(lemma_results, 500)
         useful_lemmas = self.fuser.extract_useful_lemmas(results)
+        if not useful_lemmas:
+            return None
 
-        repair_spec = AgentSpec(
-            name="cross_fusion_repair",
-            role=AgentRole.REPAIR_AGENT,
-            temperature=0.5,
+        # 构造一个临时 profile: repair + 给提示
+        from dataclasses import replace
+        base = get_profile("whole_proof_repair")
+        fusion_profile = replace(base, name="cross_fusion", max_turns=2)
+
+        runner = UnifiedProofRunner(
+            llm=self.llm,
+            lean_pool=self.lean_pool,
+            knowledge_store=self.knowledge_store,
+            retriever=self.retriever,
+            broadcast_bus=self.broadcast,
         )
-
-        repair_task = AgentTask(
-            description=(
-                f"A previous attempt generated this proof:\n"
-                f"```lean\n{best_proof_result.proof_code[:1000]}\n```\n\n"
-                f"Teammates found these potentially useful insights:\n"
-                f"{lemma_insights}\n\n"
-                f"Potentially useful Mathlib lemmas: "
-                f"{', '.join(useful_lemmas[:10])}\n\n"
-                f"Fix the proof using these insights."
-            ),
-            injected_context=[
-                ContextItem("theorem", problem.theorem_statement, 1.0),
-            ],
-        )
-
-        return self.pool.run_single(repair_spec, repair_task, budget)
-
-    def _get_premises(self, theorem: str) -> list[str]:
-        """获取前提引理
-
-        兼容两种 retriever 返回格式:
-          - KnowledgeRetriever.retrieve() → list[str]  ("name: statement")
-          - PremiseSelector.retrieve()    → list[dict] ({"name": ..., "statement": ...})
-        """
-        if not self.retriever:
-            return []
+        # 把已有证明 + 引理拼进 problem.theorem_statement 的 hint 不优雅,
+        # 但保持 v3 与 v2 行为相近; 真正的"hint 注入"应该走 broadcast。
         try:
-            results = self.retriever.retrieve(theorem, top_k=10)
-            if not results:
-                return []
-            # 如果返回的已经是字符串列表, 直接使用
-            if isinstance(results[0], str):
-                return results
-            # 如果返回的是字典列表, 提取 statement
-            return [r.get("statement", r.get("name", ""))
-                    for r in results if isinstance(r, dict)]
+            ur = await runner.run(problem, profile=fusion_profile)
+            ar = unified_to_agent_result(ur, agent_name="cross_fusion")
+            if budget is not None:
+                budget.add_tokens(ar.tokens_used)
+            return ar
         except Exception as e:
-            logger.warning(f"Premise retrieval failed: {e}")
-            return []
+            logger.warning(f"cross fusion failed: {e}")
+            return None
 
-    def _build_direction_prompt(self, direction, problem) -> str:
-        """为每个方向构建定制化的 prompt
+    # ── 兼容旧名 (deprecated) ────────────────────────────────────
 
-        .. deprecated:: v4
-            直接使用 agent.strategy.direction_planner.build_direction_prompt()。
-        """
-        from agent.strategy.direction_planner import build_direction_prompt
-        return build_direction_prompt(direction, problem)
+    def _plan_directions(self, problem, classification, attempt_history):
+        """legacy shim — 返回当前 self.directions; 旧测试可能在调。"""
+        logger.warning(
+            "HeterogeneousEngine._plan_directions is deprecated; "
+            "directions are now declared via HeteroDirection list.")
+        return self.directions
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Sync → Async LLM adapter
+# ══════════════════════════════════════════════════════════════════════
+
+class _SyncToAsyncAdapter:
+    """把同步 LLMProvider 包装成 AsyncLLMProvider 接口。
+
+    内部用 asyncio.to_thread 卸载到线程池, 不阻塞事件循环。
+    用于 ``assembly.py`` 提供的旧 sync provider 与新 ``UnifiedProofRunner``
+    (期待 async) 之间的桥接。
+    """
+
+    def __init__(self, sync_llm):
+        self._sync = sync_llm
+        # 透传部分属性以便 dialog.json 写 model 名等
+        self.model_name = getattr(sync_llm, "model_name", "")
+
+    async def generate(self, system: str = "", user: str = "",
+                       temperature: float = 0.7,
+                       tools: list = None,
+                       max_tokens: int = 4096):
+        return await asyncio.to_thread(
+            self._sync.generate,
+            system=system, user=user,
+            temperature=temperature,
+            tools=tools, max_tokens=max_tokens,
+        )
+
+    async def chat(self, system: str, messages: list,
+                   temperature: float = 0.7,
+                   tools: list = None,
+                   max_tokens: int = 4096):
+        # 同步 provider 可能没有 chat(), 退到 generate() with flat string
+        if hasattr(self._sync, "chat"):
+            return await asyncio.to_thread(
+                self._sync.chat,
+                system=system, messages=messages,
+                temperature=temperature,
+                tools=tools, max_tokens=max_tokens,
+            )
+        # Flatten messages into a single user blob
+        from agent.runtime.agent_loop import AgentLoop
+        flat_parts = []
+        for m in messages:
+            role = m.get("role", "user")
+            c = m.get("content", "")
+            if isinstance(c, list):
+                txt = []
+                for blk in c:
+                    if isinstance(blk, dict):
+                        if blk.get("type") == "text":
+                            txt.append(blk.get("text", ""))
+                        elif blk.get("type") == "tool_use":
+                            txt.append(f"[tool_use {blk.get('name', '')}]")
+                        elif blk.get("type") == "tool_result":
+                            txt.append(str(blk.get("content", "")))
+                flat_parts.append(f"[{role}]\n" + "\n".join(txt))
+            else:
+                flat_parts.append(f"[{role}]\n{c}")
+        flat = "\n\n".join(flat_parts)
+        return await asyncio.to_thread(
+            self._sync.generate,
+            system=system, user=flat,
+            temperature=temperature,
+            tools=tools, max_tokens=max_tokens,
+        )

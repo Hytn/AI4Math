@@ -68,6 +68,13 @@ def main():
     parser.add_argument("--model", default="claude-sonnet-4-20250514")
     parser.add_argument("--max-samples", type=int, default=8)
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument(
+        "--profile", default=None,
+        help=(
+            "走统一管线 (prover.unified) 的 profile 名. "
+            "可选: whole_proof, whole_proof_repair, dsp, reprover, "
+            "leandojo, heterogeneous. 不指定则走原 Lane 路径."
+        ))
     args = parser.parse_args()
 
     if args.verbose:

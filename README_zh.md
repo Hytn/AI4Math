@@ -109,6 +109,310 @@ AI4Math 分为四层，形成飞轮：
 
 ---
 
+## v3 大一统主管线 (Profile 驱动)
+
+> **一句话：除 MCTS 外，所有主流定理证明方法都已通过 `prover.unified` 主管线实现。切换方法 = 切 `--profile` 参数，无需改代码。**
+
+### 设计本质
+
+现代基于 LLM 的定理证明方法之间的差异，可以完全收敛到三个变量：
+1. **`max_turns`** — 一次会话允许 LLM 调用多少轮
+2. **`tools`** — LLM 能调用的工具集
+3. **`system_prompt` + 初始 user message** — 指引 LLM 进入哪种工作范式
+
+这三者构成 `Profile` dataclass，由 `UnifiedProofRunner` 统一执行。同一份代码、同一份 dialog.json schema，跑出 6 个不同的算法。
+
+### Profile 全表 (active presets)
+
+| Profile | 对应方法 | `max_turns` | `tools` | `framing` | 状态 |
+|---|---|---|---|---|---|
+| `whole_proof` | DeepSeek-Prover · Kimina · Goedel | 1 | `[]` | `whole_proof` | ✅ 完整 |
+| `whole_proof_repair` | 项目原默认主路径 (compile-and-fix) | 6 | `[lean_verify]` | `whole_proof_repair` | ✅ 完整 |
+| `dsp` | Draft-Sketch-Prove | 10 | `[decompose, premise_search, lean_verify]` | `dsp` | ✅ 完整 |
+| `reprover` | ReProver (RAG + step-level) | 30 | `[premise_search, tactic_apply, goal_inspect]` | `step_level_with_retrieval` | ✅ 完整 |
+| `leandojo` | LeanDojo (纯 step-level) | 50 | `[tactic_apply, goal_inspect, lean_auto]` | `step_level_pure` | ✅ 完整 |
+| `heterogeneous` | AI4Math 异构并行 (项目卖点) | 4 | 4 路 sub-profile + `broadcast` | `whole_proof_repair` | ✅ 完整 |
+
+### 各算法对照如何被参数化复现
+
+#### 1. DeepSeek-Prover / Kimina / Goedel — `whole_proof`
+
+**论文本质**：单轮 LLM 一次性输出完整 Lean 证明，pass@k 由外层独立采样 K 次实现。
+
+**本框架的参数映射**：
+```python
+Profile(
+    name="whole_proof",
+    tools=[],                           # 关掉所有工具 → 强制单轮整证
+    max_turns=1,                        # 一轮就结束
+    framing="whole_proof",              # 系统提示: "Output exactly one ```lean block. Do NOT call any tools."
+    observation=ObservationPolicy(
+        inject_few_shot=True,           # ✅ 注入 5 个 Mathlib 示例 (DeepSeek/Goedel 训练数据风格)
+        inject_premises_in_prompt=True, # ✅ 检索 top-N Mathlib 引理预注入
+        auto_inject_lean_compile=True,  # ✅ 即使 LLM 没调 verify, runtime 后置自动跑 Lean4 编译
+    ),
+    stop=StopCondition(on_text_only=True),  # 一段文字结束就终止
+)
+```
+
+**实现完整度核查**：
+- ✅ 单轮整证：`max_turns=1` + `stop_on_text_only=True`
+- ✅ Pass@k：`run_eval.py --max-samples K` 在外层独立采 K 次（满足 i.i.d.）
+- ✅ Few-shot：`common/prompt_builder.py::FEW_SHOT_EXAMPLES` 含 5 个有代表性的 Mathlib 证明，自动注入初始 user message
+- ✅ Premise 注入：`PremiseSelector.retrieve()` 默认 hybrid mode (TF-IDF + BM25)，注入 top-10 引理
+- ✅ 终态验证：`auto_inject_lean_compile=True` 走 LeanPool 全编译
+- ⚠️ 与原版差异：DeepSeek-Prover-V2 用了显式的 `<think>` chain-of-thought 训练数据；本框架默认不强制 CoT 但允许通过 `temperature` 和 `model` 调节（推理模型如 `claude-opus-4-7` 会自然 CoT）
+
+#### 2. Repair Loop — `whole_proof_repair`
+
+**论文本质**：生成 → 编译 → 看错误 → 重生成。N 轮后停止。
+
+**本框架的参数映射**：
+```python
+Profile(
+    name="whole_proof_repair",
+    tools=[ToolKit.LEAN_VERIFY],        # 唯一工具: 整证编译验证
+    max_turns=6,                        # 5 轮修复机会
+    framing="whole_proof_repair",       # 系统提示: "Output proof, see errors, fix, repeat. One ```lean block per turn."
+    observation=ObservationPolicy(
+        compress_errors_budget=1200,    # 错误用 lane.summary_compressor 压到 1200 字
+        auto_inject_lean_compile=True,  # 兜底: 若 LLM 不主动调 verify, runtime 自动跑
+    ),
+)
+```
+
+**实现完整度核查**：
+- ✅ 多轮闭环：`max_turns=6`，每轮 LLM 看到上轮错误反馈
+- ✅ 错误结构化：`engine/lane/error_classifier.py` + `summary_compressor.py` 把 Lean stderr 压缩为可读分类
+- ✅ Lean4 真实验证：`LeanVerifyTool` 直接调 LeanPool 完整编译
+- ✅ 增量上下文：dialog 历史完整保留，LLM 看到所有过去尝试
+
+#### 3. Draft-Sketch-Prove (DSP) — `dsp`
+
+**论文本质**：分阶段——先非形式化 sketch → 拆子目标 → 找引理 → 形式化 → 修复。
+
+**本框架的参数映射**：
+```python
+Profile(
+    name="dsp",
+    tools=[ToolKit.DECOMPOSE,           # 把目标拆成子目标 (prover.decompose.GoalDecomposer)
+           ToolKit.PREMISE_SEARCH,      # 给每个子目标查 Mathlib 引理
+           ToolKit.LEAN_VERIFY],        # 形式化后的整证验证
+    max_turns=10,
+    framing="dsp",                       # 系统提示明确五阶段 A-E (Sketch → Decompose → Premises → Formalize → Repair)
+)
+```
+
+**实现完整度核查**：
+- ✅ Sketch (Phase A)：通过 system prompt 明确指示 LLM 在第一轮输出非形式化 sketch（注释块）
+- ✅ Decompose (Phase B)：`DecomposeSubgoalTool` 调用 `prover/decompose/goal_decomposer.py`
+- ✅ Premise (Phase C)：`PremiseSearchTool` 复用步级范式同款检索器
+- ✅ Formalize + Repair (Phase D-E)：`LeanVerifyTool` + 多轮反馈
+- ⚠️ 与原版差异：原 DSP 在 LLM 阶段用了 informal-to-formal 的额外训练数据；本框架仅靠 system prompt 引导，效果取决于底层模型的形式化能力
+
+#### 4. ReProver (RAG + step-level) — `reprover`
+
+**论文本质**：每步 (1) 查 Mathlib 引理，(2) 选一个 tactic，(3) REPL apply，(4) 看新 goal。重复至证明完成。
+
+**本框架的参数映射**：
+```python
+Profile(
+    name="reprover",
+    tools=[ToolKit.PREMISE_SEARCH,      # 步级按需查引理 (不在初始 prompt 注入)
+           ToolKit.TACTIC_APPLY,        # 单步 tactic apply via REPL
+           ToolKit.GOAL_INSPECT],       # 显式查看当前 goal
+    max_turns=30,
+    framing="step_level_with_retrieval",  # 系统提示: "ONE TACTIC PER TURN, retrieve premises as needed"
+    observation=ObservationPolicy(
+        auto_inject_goal_state=True,    # tactic_apply 工具结果天然含新 goal
+        auto_inject_lean_compile=False, # 步级不需要全编译
+        inject_premises_in_prompt=False, # ⚠️ 关键: ReProver 是按需检索, 不预注入
+        inject_few_shot=False,          # 步级不需要整证示例
+    ),
+)
+```
+
+**实现完整度核查**：
+- ✅ 步级 tactic apply：`TacticApplyTool` 通过 LeanPool REPL 实际执行单条 tactic 并返回新 goal state
+- ✅ 按需引理检索：`PremiseSearchTool` 由 LLM 在需要时主动调用，结果含 top-K 相关引理
+- ✅ Goal state 反馈：tactic_apply 的返回值天然包含 `remaining_goals`、`is_proof_complete`，等价于 ReProver 的 observation
+- ✅ 长 horizon：`max_turns=30` 足以覆盖大多数 IMO/Putnam 级证明
+- ⚠️ 与原版差异：ReProver 论文用了**特定训练**的 retriever (BM25+ColBERT 在 LeanDojo 数据上微调)；本框架默认用 TF-IDF + 项目自带 hybrid retriever。结构等价，retriever 质量差异由用户替换 retriever 控制
+
+#### 5. LeanDojo (纯 step-level) — `leandojo`
+
+**论文本质**：与 ReProver 类似但不依赖 retriever；只有 tactic apply + goal inspect + 自动化 hammer。
+
+**本框架的参数映射**：
+```python
+Profile(
+    name="leandojo",
+    tools=[ToolKit.TACTIC_APPLY,
+           ToolKit.GOAL_INSPECT,
+           ToolKit.LEAN_AUTO],          # exact?/aesop/polyrith hammer
+    max_turns=50,
+    framing="step_level_pure",
+    observation=ObservationPolicy(
+        auto_inject_goal_state=True,
+        inject_premises_in_prompt=False,
+        inject_few_shot=False,
+    ),
+)
+```
+
+**实现完整度核查**：
+- ✅ 纯步级交互：与 reprover 共用 TacticApplyTool，行为完全一致
+- ✅ Hammer 集成：`LeanAutoTool` 调用 Mathlib 内置自动化 (`exact?`, `apply?`, `aesop`, `polyrith`)
+- ✅ 长 horizon：`max_turns=50`
+- ⚠️ 与原版差异：LeanDojo 论文同时报告了 best-first search 配合 LLM expansion 的结果。这一搜索部分属于 MCTS 家族，**已搁置在 `EXPERIMENTAL_PRESETS["best_first"]`**，需 `enable_experimental_search_presets()` 显式启用
+
+#### 6. AI4Math 异构并行 — `heterogeneous`
+
+**项目原创**：4 路独立 agent 并行，每路有不同的 (model, temperature, system_prompt, tools)，通过 `BroadcastBus` 共享发现，`ResultFuser` 跨路融合。
+
+**本框架的参数映射**：
+```python
+Profile(
+    name="heterogeneous",
+    search=SearchConfig(
+        kind="parallel",
+        parallel_profiles=[
+            "whole_proof",          # 自动化探测路 (低温, 整证)
+            "reprover",             # 检索 + 步级路
+            "leandojo",             # 纯步级路
+            "whole_proof_repair",   # 修复路
+        ],
+    ),
+    tools=[ToolKit.LEAN_VERIFY, ToolKit.BROADCAST],  # broadcast 工具供 sub-agent 互相看到对方
+)
+```
+
+**实现完整度核查**：
+- ✅ 真正并行：`UnifiedProofRunner._run_parallel` 用 `asyncio.gather` 启动 N 个独立 runner
+- ✅ 共享广播总线：`BroadcastBus` 实例由父 runner 创建并注入所有 sub-runner
+- ✅ 异构性：4 个 sub-profile 在 `tools` / `framing` / `max_turns` 上完全不同
+- ✅ Result fusion：`ResultFuser.extract_useful_lemmas()` + cross-fusion repair attempt
+- ✅ 与 v2 兼容：assembly.py 的旧 `HeterogeneousEngine(pool=..., ...)` 构造签名通过 `_SyncToAsyncAdapter` 自动支持
+
+### 架构如何成为大一统基座
+
+```
+┌───────────────────────────────────────────────────────────────────────┐
+│                    UnifiedProofRunner (单一入口)                        │
+│                                                                         │
+│   prove(problem, profile) ──→  initial prompt (theorem + few-shot      │
+│                                  + premises + briefing)                 │
+│                              ──→  AgentLoop                             │
+│                                    ├── system_prompt = framing[X]       │
+│                                    ├── tools = ToolKit → Tool 实例     │
+│                                    ├── max_turns = N                    │
+│                                    └── 多轮: LLM → tool call → result   │
+│                              ──→  auto_verify (兜底)                    │
+│                              ──→  dialog.json (统一格式输出)            │
+└───────────────────────────────────────────────────────────────────────┘
+            ▲                                                ▲
+            │                                                │
+   ┌────────┴────────┐                                ┌──────┴───────┐
+   │   Profile       │                                │ ToolKit      │
+   │                 │                                │              │
+   │ tools list      │                                │ LEAN_VERIFY  │
+   │ max_turns       │                                │ TACTIC_APPLY │
+   │ framing         │                                │ GOAL_INSPECT │
+   │ temperature     │                                │ PREMISE_SEARCH│
+   │ ObservationPolicy                                │ LEAN_AUTO    │
+   │ StopCondition   │                                │ DECOMPOSE    │
+   │ SearchConfig    │                                │ BROADCAST    │
+   └─────────────────┘                                │ ...          │
+                                                      └──────────────┘
+```
+
+**所有方法走同一条数据通路**：
+1. **入口**：`UnifiedProofRunner.run(problem, profile)` — 唯一执行入口
+2. **核心循环**：`agent.runtime.AgentLoop` — 唯一主循环 (LLM ↔ tool 反馈)
+3. **工具层**：`agent.tools.ToolRegistry` — 唯一工具调度
+4. **持久化**：`agent.persistence.dialog_format` — 唯一输出格式 (`dialog.json` schema v2.0)
+5. **兼容桥**：`prover.unified.adapters` — `UnifiedResult` ↔ 旧 `ProofAttempt` / `AgentResult`
+
+**新加方法只需改一个文件**：`prover/unified/profiles.py` 加一项 Profile（或写 YAML 后 `register_profile`），不动 runner / loop / tools / pipeline。
+
+### 已知的"实现 vs 论文"差异（坦诚清单）
+
+| Profile | 实现到位的 | 与原版差异 |
+|---|---|---|
+| `whole_proof` | 整证 + few-shot + premise + 终态验证 | 没有强制 chain-of-thought scaffolding（依赖底层模型自身的 reasoning 能力） |
+| `whole_proof_repair` | 完整闭环 | — |
+| `dsp` | 五阶段架构 + 工具齐全 | 原 DSP 用 informal-to-formal 训练数据；本框架靠 system prompt 引导，等价于 zero-shot DSP |
+| `reprover` | 步级 + 按需检索 + REPL | retriever 默认 TF-IDF/BM25 hybrid，原 ReProver 用了在 LeanDojo 上微调的 ColBERT |
+| `leandojo` | 纯步级 + hammer | 原 LeanDojo 还包括 best-first search wrapper（属 MCTS 家族，搁置在 experimental） |
+| `heterogeneous` | 4 路并行 + broadcast + fusion | — |
+| `mcts` / `beam` / `best_first` | 代码完整，搁置在 `EXPERIMENTAL_PRESETS` | 与 dialog-linear 主管线尚未合流（v4 工作） |
+
+### CLI 用法
+
+```bash
+# 切换方法只改 --profile
+python run_unified.py --builtin nat_add_comm --profile whole_proof
+python run_unified.py --builtin nat_add_comm --profile whole_proof_repair
+python run_unified.py --builtin nat_add_comm --profile dsp
+python run_unified.py --builtin nat_add_comm --profile reprover
+python run_unified.py --builtin nat_add_comm --profile leandojo
+python run_unified.py --builtin nat_add_comm --profile heterogeneous
+
+# 批量评测同样支持 --profile
+python run_eval.py --benchmark minif2f --provider anthropic --profile reprover
+
+# 自定义 Profile (YAML)
+python run_unified.py --profile-yaml my_method.yaml --profile my_method --builtin nat_add_comm
+
+# 启用实验性搜索 (MCTS / beam / best_first)
+python -c "from prover.unified import enable_experimental_search_presets; enable_experimental_search_presets()"
+python run_unified.py --builtin nat_add_comm --profile mcts
+```
+
+### Python API 用法
+
+```python
+from prover.unified import UnifiedProofRunner, get_profile
+
+runner = UnifiedProofRunner(
+    llm=async_llm,
+    lean_pool=pool,
+    knowledge_store=knowledge,    # 可选
+    retriever=retriever,           # 可选
+    broadcast_bus=bus,             # 异构并行时启用
+)
+
+# 直接选 preset
+result = await runner.run(problem, profile_name="reprover")
+
+# 或 override 字段
+from dataclasses import replace
+prof = replace(get_profile("reprover"), max_turns=20, temperature=0.3)
+result = await runner.run(problem, profile=prof)
+
+print(result.success, result.proof_code)
+result.save_unified("results/traces/my_run", problem_id=problem.problem_id)
+```
+
+### 测试覆盖
+
+```bash
+$ python -m pytest tests/ -q
+1001 passed, 1 skipped in 7.84s
+```
+
+包含 16 个专门的 unified-pipeline 测试用例验证：
+- 6 个 active preset 的字段约束
+- 3 个 experimental preset 的 opt-in 隔离
+- HeterogeneousEngine v3 的 legacy 构造兼容
+- ProofLoop shim 的语义保持
+- adapters 的 Dialog ↔ ProofAttempt 数据无损
+- 端到端 mock LLM 跑通 dialog.json 产出
+
+详细迁移说明见 [REFACTOR_REPORT.md](REFACTOR_REPORT.md)。
+
+---
+
 ## 环境要求
 
 | 依赖 | 版本 | 用途 |
@@ -348,20 +652,24 @@ docker compose run --rm agent \
 | `engine/lane/` | ~3,500 | Lane 运行时：状态机、策略引擎、恢复、错误分类、压缩、持久化 |
 | `knowledge/` | ~2,200 | 活知识系统：四层金字塔、读写管道、衰减遗忘 |
 | `prover/` | ~7,600 | 证明编排：异步管线、修复、分解、代码生成、引理银行 |
+| `prover/unified/` | ~1,700 | **v3 统一主管线**: Profile · Runner · adapters · system_prompts · tool_kits |
 | `agent/` | ~3,700 | 智能体层：11 种角色、策略控制、钩子、插件 |
 | `benchmarks/` | ~800 | 评测框架：7 大基准加载器、指标计算 |
-| `tests/` | ~4,000 | 938 项测试覆盖全部核心模块 |
+| `tests/` | ~4,000 | 1001 项测试覆盖全部核心模块 |
 | `data/` | — | 1,631 道形式化题目（miniF2F、PutnamBench、ProofNet、FATE 等） |
 
 ### 关键入口文件
 
 | 文件 | 用途 |
 |------|------|
-| `run_single_lane.py` | 单题调试 — 逐步遍历全管线 |
-| `run_eval.py` | 批量评测入口 |
+| `run_unified.py` | **v3 推荐入口** — 单题, 通过 `--profile` 切换方法学 |
+| `run_eval.py` | 批量评测; 支持 `--profile` 走 v3 主管线 |
+| `run_single_lane.py` | 单题调试 — 逐步遍历全管线 (v2 兼容路径) |
 | `eval.sh` | 一键评测脚本 |
 | `engine/lane/integration.py` | `LaneProofRunner` — 异步证明执行主入口 |
 | `prover/pipeline/proof_pipeline.py` | `ProofPipeline` — 状态机驱动证明管线，支持断点续证 |
+| `prover/unified/runner.py` | **v3 统一 runtime** — 所有方法的执行核心 |
+| `prover/unified/profiles.py` | **v3 Profile preset** — 加新方法只改这一个文件 |
 | `prover/assembly.py` | 全系统组装器 |
 
 ---

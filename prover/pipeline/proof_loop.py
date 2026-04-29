@@ -1,187 +1,143 @@
-"""prover/pipeline/proof_loop.py — 单次证明循环: sketch → codegen → verify → repair
+"""prover/pipeline/proof_loop.py — DEPRECATED 兼容 shim
 
-After initial verification fails, the loop invokes the repair pipeline:
-  1. Diagnose errors (error_diagnostor)
-  2. Try rule-based quick fixes
-  3. If quick fix fails, generate LLM-based repairs
-  4. Re-verify each repair candidate
+v3 起, ``ProofLoop.single_attempt()`` 内部直接走 ``UnifiedProofRunner`` +
+``whole_proof_repair`` profile。本文件保留外部 API 仅为不破坏:
+
+  - ``verification/run_full_verification.py`` 中的烟测
+  - ``prover.pipeline.sequential_engine`` / ``rollout_engine`` 旧管线
+  - 历史测试
+
+新代码应直接使用::
+
+    from prover.unified import UnifiedProofRunner, get_profile
+    runner = UnifiedProofRunner(llm=async_llm, lean_pool=pool)
+    result = await runner.run(problem, profile_name="whole_proof_repair")
+
+或通过 ``ProofPipeline`` 的 config 切换 profile::
+
+    pipeline = ProofPipeline(comp, config={"profile": "whole_proof_repair"})
+
+老 API 行为
+==========
+- ``single_attempt(problem, memory, temperature, attempt_num) -> ProofAttempt``
+  仍然返回 ProofAttempt; 内部委托给 ``UnifiedProofRunner.run`` 后用
+  ``unified_to_attempt`` 翻译。
+
+- ``self.max_repair_rounds`` 映射到 profile 的 ``max_turns``。
 """
 from __future__ import annotations
+
+import asyncio
 import logging
-import time
+
+from dataclasses import replace
 from prover.models import ProofAttempt, AttemptStatus
-from common.prompt_builder import build_prompt
-from common.response_parser import extract_lean_code
-from common.roles import AgentRole, ROLE_PROMPTS
 
 logger = logging.getLogger(__name__)
 
 
 class ProofLoop:
+    """Deprecated thin shim over ``UnifiedProofRunner``.
+
+    保留构造签名 ``ProofLoop(lean_env, llm, retriever=None, config=None)``
+    以兼容 ``SequentialEngine`` / ``RolloutEngine`` / verification scripts。
+    """
+
     def __init__(self, lean_env, llm, retriever=None, config=None):
         self.lean = lean_env
         self.llm = llm
         self.retriever = retriever
         self.config = config or {}
         self.max_repair_rounds = self.config.get("max_repair_rounds", 2)
+        # 翻译到 unified profile 的 max_turns
+        # max_repair_rounds 是"修复轮数", profile.max_turns 是"总轮数 (含初始)"
+        self._max_turns = max(1, int(self.max_repair_rounds) + 1)
 
-    def single_attempt(self, problem, memory, temperature=0.7,
-                       attempt_num=1) -> ProofAttempt:
-        attempt = ProofAttempt(attempt_number=attempt_num)
-        premises = (self.retriever.retrieve(problem.theorem_statement)
-                    if self.retriever else [])
-        attempt.retrieved_premises = premises
+    def single_attempt(
+        self,
+        problem,
+        memory,
+        temperature: float = 0.7,
+        attempt_num: int = 1,
+    ) -> ProofAttempt:
+        """委托给 UnifiedProofRunner; 用 whole_proof_repair profile。
 
-        # Build banked lemma context, filtered for relevance
-        banked = ""
-        if memory.banked_lemmas:
-            banked = "\n".join(
-                f"-- {l.get('name','')}: {l.get('statement','')}"
-                for l in memory.banked_lemmas[:10]
-            )
-
-        # Include last failed proof for context in retries
-        last_failed_proof = ""
-        last_error_analysis = ""
-        if memory.attempt_history:
-            last = memory.attempt_history[-1]
-            last_failed_proof = last.get("generated_proof", "")
-            if last.get("errors"):
-                last_error_analysis = "; ".join(
-                    e.get("message", "")[:100] for e in last.get("errors", [])[:5]
-                )
-
-        prompt = build_prompt(
-            theorem_statement=problem.theorem_statement,
-            premises=premises,
-            banked_lemmas=banked,
-            error_analysis=last_error_analysis if last_error_analysis else "",
-            failed_proof=last_failed_proof if last_error_analysis else "")
-
-        # ── Step 1: Generate initial proof ──
+        失败时回退到 legacy 实现, 确保 verification 烟测路径不挂。
+        """
         try:
-            resp = self.llm.generate(
-                system=ROLE_PROMPTS[AgentRole.PROOF_GENERATOR],
-                user=prompt, temperature=temperature)
-            proof = extract_lean_code(resp.content)
-            attempt.generated_proof = proof
-            attempt.llm_model = resp.model
-            attempt.llm_tokens_in = resp.tokens_in
-            attempt.llm_tokens_out = resp.tokens_out
-            attempt.llm_latency_ms = resp.latency_ms
+            return self._run_via_unified(
+                problem, memory, temperature, attempt_num)
         except Exception as e:
-            attempt.lean_result = AttemptStatus.LLM_ERROR
-            attempt.lean_stderr = str(e)
-            return attempt
+            logger.warning(
+                f"UnifiedProofRunner path failed in ProofLoop "
+                f"({type(e).__name__}: {e}); falling back to legacy")
+            try:
+                from prover.pipeline.proof_loop_legacy import (
+                    ProofLoop as LegacyLoop)
+                legacy = LegacyLoop(self.lean, self.llm,
+                                    self.retriever, self.config)
+                return legacy.single_attempt(
+                    problem, memory, temperature, attempt_num)
+            except Exception as e2:
+                logger.error(f"Legacy fallback also failed: {e2}")
+                attempt = ProofAttempt(attempt_number=attempt_num)
+                attempt.lean_result = AttemptStatus.LLM_ERROR
+                attempt.lean_stderr = f"both unified and legacy failed: {e2}"
+                return attempt
 
-        if not proof.strip():
-            attempt.lean_result = AttemptStatus.LLM_ERROR
-            attempt.lean_stderr = "Empty proof"
-            return attempt
+    # ── internal ──────────────────────────────────────────────────
 
-        # ── Step 2: Verify ──
-        status, errors, stderr, check_ms = self._verify(
-            problem.theorem_statement, proof)
-        attempt.lean_result = status
-        attempt.lean_errors = errors
-        attempt.lean_stderr = stderr
-        attempt.lean_check_ms = check_ms
+    def _run_via_unified(self, problem, memory, temperature, attempt_num):
+        from prover.unified import UnifiedProofRunner, get_profile
+        from prover.unified.adapters import unified_to_attempt
 
-        if status == AttemptStatus.SUCCESS:
-            # Extract reusable lemmas from successful proof
-            self._extract_lemmas(proof, memory)
-            return attempt
+        # 选 profile + override
+        if self.max_repair_rounds == 0:
+            base = get_profile("whole_proof")
+        else:
+            base = get_profile("whole_proof_repair")
+        profile = replace(
+            base, temperature=temperature, max_turns=self._max_turns)
 
-        # ── Step 3: Repair loop ──
-        if errors and self.max_repair_rounds > 0:
-            repaired = self._repair_loop(
-                problem.theorem_statement, proof, errors, attempt)
-            if repaired is not None:
-                self._extract_lemmas(repaired.generated_proof, memory)
-                return repaired
+        # 适配 LLM (sync 或 async 都 OK; 内部会自动 wrap)
+        llm = self._coerce_async_llm(self.llm)
 
+        runner = UnifiedProofRunner(
+            llm=llm,
+            lean_pool=getattr(self.lean, "pool", None) or self.lean,
+            knowledge_store=None,
+            retriever=self.retriever,
+            broadcast_bus=None,
+        )
+
+        # 同步入口 → 起一个事件循环
+        try:
+            loop = asyncio.get_event_loop()
+            running = loop.is_running()
+        except RuntimeError:
+            running = False
+
+        if running:
+            # 在异步 caller 中调 sync API — 不推荐, 但兜底
+            future = asyncio.ensure_future(
+                runner.run(problem, profile=profile))
+            ur = loop.run_until_complete(future)
+        else:
+            ur = asyncio.run(runner.run(problem, profile=profile))
+
+        attempt = unified_to_attempt(ur, attempt_number=attempt_num)
         return attempt
 
-    def _extract_lemmas(self, proof: str, memory):
-        """Extract 'have' steps from successful proofs as reusable lemmas."""
-        import re
-        have_pattern = re.compile(
-            r'have\s+(\w+)\s*:\s*(.+?)\s*:=\s*by\s+(.*?)(?=\n\s*(?:have|exact|show|apply|$))',
-            re.DOTALL)
-        for match in have_pattern.finditer(proof):
-            name, stmt, prf = match.group(1), match.group(2).strip(), match.group(3).strip()
-            if "sorry" not in prf:
-                lemma = {"name": name, "statement": stmt, "proof": prf}
-                if lemma not in memory.banked_lemmas:
-                    memory.banked_lemmas.append(lemma)
-
-    def _verify(self, theorem: str, proof: str):
-        """Run Lean verification. Returns (status, errors, stderr, ms)."""
-        try:
-            from prover.verifier.lean_checker import LeanChecker
-            checker = LeanChecker(self.lean)
-            return checker.check(theorem, proof)
-        except Exception as e:
-            return AttemptStatus.LEAN_ERROR, [], str(e), 0
-
-    def _repair_loop(self, theorem: str, failed_proof: str,
-                     errors, attempt: ProofAttempt):
-        """Try to repair a failed proof.
-
-        Returns a successful ProofAttempt, or None if repair fails.
-        """
-        from prover.repair.error_diagnostor import diagnose
-        from prover.repair.repair_generator import RepairGenerator
-
-        repairer = RepairGenerator(self.llm)
-        current_proof = failed_proof
-        current_errors = errors
-
-        for round_idx in range(self.max_repair_rounds):
-            # Diagnose errors
-            error_analysis = diagnose(current_errors)
-            logger.debug(f"Repair round {round_idx + 1}: {error_analysis[:200]}")
-
-            # Try rule-based quick fix first
-            quick_fixed = repairer.quick_fix(
-                theorem, current_proof, current_errors)
-            if quick_fixed != current_proof:
-                status, new_errors, stderr, ms = self._verify(
-                    theorem, quick_fixed)
-                if status == AttemptStatus.SUCCESS:
-                    attempt.generated_proof = quick_fixed
-                    attempt.lean_result = status
-                    attempt.lean_errors = new_errors
-                    attempt.lean_stderr = stderr
-                    attempt.lean_check_ms += ms
-                    return attempt
-
-            # LLM-based repair
-            try:
-                repair_candidates = repairer.generate_repair(
-                    theorem, current_proof, current_errors,
-                    error_analysis, max_repairs=2, temperature=0.5)
-            except Exception as e:
-                logger.debug(f"Repair generation failed: {e}")
-                break
-
-            # Try each candidate
-            for candidate in repair_candidates:
-                if not candidate.strip():
-                    continue
-                status, new_errors, stderr, ms = self._verify(
-                    theorem, candidate)
-                if status == AttemptStatus.SUCCESS:
-                    attempt.generated_proof = candidate
-                    attempt.lean_result = status
-                    attempt.lean_errors = new_errors
-                    attempt.lean_stderr = stderr
-                    attempt.lean_check_ms += ms
-                    return attempt
-
-                # If this candidate has fewer errors, adopt it for next round
-                if len(new_errors) < len(current_errors):
-                    current_proof = candidate
-                    current_errors = new_errors
-
-        return None
+    @staticmethod
+    def _coerce_async_llm(llm):
+        """如果 llm 是 sync, 用 _SyncToAsyncAdapter 包一层。"""
+        if llm is None:
+            return None
+        import inspect
+        gen = getattr(llm, "generate", None)
+        chat = getattr(llm, "chat", None)
+        if (gen and inspect.iscoroutinefunction(gen)) or \
+           (chat and inspect.iscoroutinefunction(chat)):
+            return llm
+        from prover.pipeline.heterogeneous_engine import _SyncToAsyncAdapter
+        return _SyncToAsyncAdapter(llm)
