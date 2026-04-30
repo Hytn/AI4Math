@@ -217,6 +217,40 @@ python run_single.py --builtin nat_add_comm --provider anthropic
 python run_single.py --theorem "theorem test (n : Nat) : n + 0 = n" --provider anthropic
 ```
 
+### Community-infrastructure backends
+
+AI4Math integrates four open-source Lean 4 infrastructure projects as opt-in backends. Pick one with `--backend` and an aligned profile:
+
+| Backend         | Source                       | What it adds                                            |
+| --------------- | ---------------------------- | ------------------------------------------------------- |
+| `local` (default) | `lean4-repl` subprocess     | Standard Lean 4 REPL via stdio                         |
+| `kimina`        | Kimina Lean Server (Numina) | REST API · multi-process REPL pool · LRU import cache · batch verify |
+| `pantograph`    | Pantograph (Numina/Stanford/CMU) | Metavariable coupling · DSP-native drafting · S-expression proof terms |
+| `lookeng`       | LooKeng (Seed-Prover 1.5)   | Stateless REPL · running-context lemma cache · ~40% I/O reduction on long proofs |
+
+```bash
+# Kimina Lean Server: large pass@k with REST batch verify
+docker run -p 8000:8000 projectnumina/kimina-lean-server:2.0.0
+python run_unified.py --builtin nat_add_comm \
+    --profile kimina_batch --backend kimina
+
+# Pantograph: mvar focus + drafting for DSP-style proving
+python run_unified.py --builtin nat_add_comm \
+    --profile pantograph_dsp --backend pantograph
+
+# LooKeng: lemma-by-lemma proving for long proofs
+python run_unified.py --builtin nat_add_comm \
+    --profile lookeng_lemma --backend lookeng
+
+# NFL hybrid mode + NuminaMath-LEAN dataset
+huggingface-cli download AI-MO/NuminaMath-LEAN \
+    --repo-type dataset --local-dir data/NuminaMath-LEAN
+python run_eval.py --benchmark numinamath_lean \
+    --profile nfl_hybrid --max-samples 8
+```
+
+When the backend isn't reachable (server down, library missing) every component fails soft — the corresponding tools register in fallback mode and return structured "unavailable" errors rather than crashing the agent loop. See `INFRA_MERGE_REPORT.md` for the full design.
+
 ---
 
 ## Benchmarks
@@ -610,8 +644,10 @@ Areas where help is especially welcome: Lean 4 tactic integration, new benchmark
 AI4Math builds upon and is inspired by:
 
 - [Lean 4](https://lean-lang.org) and [Mathlib](https://leanprover-community.github.io/) — the formal verification foundation
-- [miniF2F](https://github.com/openai/miniF2F), [PutnamBench](https://github.com/trishullab/PutnamBench), [ProofNet](https://github.com/zhangir-azerbayev/ProofNet), [FATE](https://github.com/fate-ubw), [FormalMATH](https://github.com/FormalMATH) — benchmark datasets
+- [miniF2F](https://github.com/openai/miniF2F), [PutnamBench](https://github.com/trishullab/PutnamBench), [ProofNet](https://github.com/zhangir-azerbayev/ProofNet), [FATE](https://github.com/fate-ubw), [FormalMATH](https://github.com/FormalMATH), [NuminaMath-LEAN](https://huggingface.co/datasets/AI-MO/NuminaMath-LEAN) — benchmark datasets
 - [DeepSeek-Prover](https://github.com/deepseek-ai/DeepSeek-Prover-V2), [Goedel-Prover](https://github.com/Goedel-LM/Goedel-Prover), [Kimina-Prover](https://github.com/MoonshotAI/Kimina) — pioneering proof generation work
+- [Lean REPL](https://github.com/leanprover-community/repl) (leanprover-community), [Kimina Lean Server](https://github.com/project-numina/kimina-lean-server) (Numina/Kimi), [Pantograph / pypantograph](https://github.com/lenianiva/PyPantograph) (Aniva et al., Numina/Stanford/CMU), and the LooKeng interface from Seed-Prover 1.5 (Tongyi DeepResearch) — Lean 4 verification infrastructure that AI4Math integrates as pluggable backends. See `INFRA_MERGE_REPORT.md`.
+- [NFL-HR](https://aclanthology.org/2025.emnlp-main) (Yao et al., EMNLP 2025) — natural-formal hybrid reasoning paradigm
 
 ---
 

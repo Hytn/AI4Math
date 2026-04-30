@@ -9,6 +9,7 @@ See ``docs/UNIFIED_TRAJECTORY_FORMAT.md`` for the schema.
 """
 from agent.persistence.dialog_format import (
     SCHEMA_VERSION,
+    SUPPORTED_SCHEMA_VERSIONS,
     DIALOG_FILENAME,
     CONTEXT_SPLIT_ROLE,
     DEFAULT_SERVER_MAP,
@@ -22,6 +23,8 @@ from agent.persistence.dialog_format import (
     messages_of,
     meta_of,
     result_of,
+    search_tree_of,
+    solved_path_of,
     split_dialog_at_markers,
     is_tool_response_user_msg,
     strip_tool_response_wrapper,
@@ -55,11 +58,13 @@ from agent.persistence.unified_storage import (
 
 __all__ = [
     # dialog_format
-    "SCHEMA_VERSION", "DIALOG_FILENAME", "CONTEXT_SPLIT_ROLE",
+    "SCHEMA_VERSION", "SUPPORTED_SCHEMA_VERSIONS",
+    "DIALOG_FILENAME", "CONTEXT_SPLIT_ROLE",
     "DEFAULT_SERVER_MAP",
     "DialogBuilder", "Message", "ToolCall", "ValidationIssue",
     "save_dialog", "load_dialog", "validate_dialog",
     "messages_of", "meta_of", "result_of",
+    "search_tree_of", "solved_path_of",
     "split_dialog_at_markers",
     "is_tool_response_user_msg", "strip_tool_response_wrapper",
     # adapters

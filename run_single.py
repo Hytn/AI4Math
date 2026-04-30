@@ -41,9 +41,10 @@ def main():
     p_cfg = config.get("prover", {}).get("pipeline", {})
     orc = Orchestrator(lean, llm, retriever, p_cfg)
     trace = orc.prove(problem)
-    # Unified AgentCPM-style layout: results/traces/<id>/{dialog,result,
-    # meta_config,trace}.json. The legacy trace.json is kept inside the
-    # directory for backward compatibility with downstream readers.
+    # Single canonical on-disk format: results/traces/<id>/dialog.json.
+    # Per the unified-storage contract (agent.persistence.unified_storage),
+    # there is NO separate result.json / meta_config.json / trace.json —
+    # the wrapped Dialog dict carries everything inline.
     trace.save_unified(
         Path("results/traces") / problem.problem_id,
         model=getattr(llm, "model_name", ""),

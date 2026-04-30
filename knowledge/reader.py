@@ -18,6 +18,11 @@ Usage::
 
     # 直接获取 prompt 注入文本
     text = await reader.render_for_prompt(goal="⊢ n + 0 = n", theorem="...")
+
+    # v5 cross-problem dialog retrieval (closes REFACTOR_REPORT §九.4)
+    reader.attach_dialog_index(idx)              # auto-populates from store
+    similar = await reader.find_similar_dialogs("theorem foo …")
+    text   = await reader.render_similar_dialogs("theorem foo …", max_chars=2000)
 """
 from __future__ import annotations
 
@@ -39,8 +44,14 @@ logger = logging.getLogger(__name__)
 class KnowledgeReader:
     """统一知识检索 — 从四层知识金字塔中检索相关知识"""
 
-    def __init__(self, store: UnifiedKnowledgeStore):
+    def __init__(self, store: UnifiedKnowledgeStore,
+                 dialog_index: Optional["DialogIndex"] = None):  # type: ignore[name-defined]
         self.store = store
+        # v5 cross-problem retrieval: optional DialogIndex. When attached,
+        # ``find_similar_dialogs`` / ``render_similar_dialogs`` query it.
+        # The index is otherwise inert — no method on this class
+        # silently mutates it, so callers stay in control of ingest.
+        self._dialog_index = dialog_index
 
     async def suggest_tactics(
             self, goal: str, domain: str = "",
@@ -203,3 +214,68 @@ class KnowledgeReader:
         briefing = await self.get_domain_briefing(domain, goal, theorem)
         text = briefing.render(max_chars=max_chars)
         return text
+
+    # ── v5: cross-problem dialog retrieval ──────────────────────────────
+
+    def attach_dialog_index(
+            self, dialog_index: "DialogIndex",  # type: ignore[name-defined]
+            *, populate_from_store: bool = True) -> int:
+        """Hook a DialogIndex into this reader.
+
+        Args:
+          dialog_index: A ``DialogIndex`` instance (possibly already
+            populated). The reader does not take ownership; the caller
+            keeps the right to add more dialogs later.
+          populate_from_store: If True (default) and the index is empty,
+            we ingest every row from the underlying ``proof_contexts``
+            table so the new reader has retrieval power on day one.
+
+        Returns the number of dialogs ingested (0 if no auto-populate
+        happened).
+        """
+        self._dialog_index = dialog_index
+        if not populate_from_store or dialog_index.size:
+            return 0
+        try:
+            return dialog_index.index_from_proof_context_store(self.store)
+        except Exception as e:
+            logger.debug(f"attach_dialog_index: store ingest skipped: {e}")
+            return 0
+
+    @property
+    def dialog_index(self) -> Optional["DialogIndex"]:  # type: ignore[name-defined]
+        """The currently attached :class:`DialogIndex` (or ``None``)."""
+        return self._dialog_index
+
+    async def find_similar_dialogs(
+            self, theorem: str, *,
+            top_k: int = 3,
+            solved_only: bool = True) -> list:
+        """Return up to ``top_k`` similar past dialogs as
+        :class:`SimilarDialogMatch` objects.
+
+        Returns an empty list when no DialogIndex is attached. The
+        method is async for symmetry with the other reader methods,
+        but the underlying retrieval is in-memory and non-blocking.
+        """
+        idx = self._dialog_index
+        if idx is None:
+            return []
+        return idx.find_similar(
+            theorem, top_k=top_k, solved_only=solved_only)
+
+    async def render_similar_dialogs(
+            self, theorem: str, *,
+            top_k: int = 3,
+            max_chars: int = 2000,
+            solved_only: bool = True) -> str:
+        """Render a markdown block of similar past dialogs for prompt
+        injection. Returns ``""`` when no DialogIndex is attached or
+        no matches survive filtering.
+        """
+        idx = self._dialog_index
+        if idx is None:
+            return ""
+        return idx.render_for_prompt(
+            theorem, top_k=top_k, max_chars=max_chars,
+            solved_only=solved_only)

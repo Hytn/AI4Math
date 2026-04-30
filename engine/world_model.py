@@ -27,10 +27,13 @@ Usage::
 """
 from __future__ import annotations
 
+import logging
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -191,31 +194,91 @@ class MockWorldModel(WorldModelPredictor):
 
 
 class TrainedWorldModel(WorldModelPredictor):
-    """基于训练数据的世界模型 (占位实现)
+    """基于训练数据的世界模型 — v4 起真正可加载.
 
-    训练数据来自 ProofContextStore.export_rich_trajectories(),
-    格式为 (state, action, next_state, error, goal_diff) 五元组。
+    现在直接代理到 ``SklearnWorldModel`` (在 ``engine.world_model_trainer``
+    中定义). 没传路径或加载失败时, 内部 fallback 到 ``MockWorldModel``,
+    使行为与之前的占位实现兼容.
 
-    未来实现方案:
-      1. 简单方案: goal embedding + tactic embedding → MLP 分类器
-      2. 完整方案: Transformer encoder 处理 (goal, hypotheses, tactic)
-         → 预测 (success, new_goals, error_category)
+    训练流程:
+      ``python scripts/train_world_model.py --db proofs.db --output world_model.pkl``
+
+    使用:
+      ``model = TrainedWorldModel("world_model.pkl")``
+      或工厂 (推荐): ``model = make_world_model("world_model.pkl")``
     """
 
     def __init__(self, model_path: str = ""):
         self._model_path = model_path
         self._fallback = MockWorldModel()
+        self._impl = None
+        self._loaded = False
         if model_path:
-            self._load_model(model_path)
+            self._loaded = self._load_model(model_path)
 
-    def _load_model(self, path: str):
-        """加载训练好的模型权重。"""
-        # TODO: 实际加载 PyTorch/ONNX 模型
-        pass
+    def _load_model(self, path: str) -> bool:
+        """Load a trained .pkl via SklearnWorldModel.
+
+        Returns True on success, False if the file is missing /
+        unreadable / produced by an incompatible trainer version.
+        Failure is logged and ``predict()`` then transparently
+        delegates to the Mock fallback.
+        """
+        import os as _os
+        if not _os.path.exists(path):
+            logger.info(
+                f"TrainedWorldModel: no model at {path!r}, "
+                f"falling back to MockWorldModel")
+            return False
+        try:
+            # Lazy import — sklearn / scipy are optional deps.
+            from engine.world_model_trainer import SklearnWorldModel
+            impl = SklearnWorldModel(path)
+            if not getattr(impl, "is_trained", False):
+                logger.warning(
+                    f"TrainedWorldModel: pkl at {path!r} did not "
+                    f"yield a trained model; falling back to Mock")
+                return False
+            self._impl = impl
+            return True
+        except Exception as e:
+            logger.warning(
+                f"TrainedWorldModel: failed to load {path!r}: {e}; "
+                f"falling back to Mock")
+            return False
+
+    @property
+    def is_trained(self) -> bool:
+        return bool(self._loaded and self._impl is not None)
 
     def predict(self, goal_state: str, tactic: str,
                 hypotheses: list[str] = None,
                 context: dict = None) -> WorldModelPrediction:
-        # 目前降级到 MockWorldModel
+        if self._loaded and self._impl is not None:
+            try:
+                return self._impl.predict(
+                    goal_state, tactic, hypotheses, context)
+            except Exception as e:
+                logger.debug(
+                    f"TrainedWorldModel.predict failed, falling "
+                    f"back to Mock: {e}")
         return self._fallback.predict(
             goal_state, tactic, hypotheses, context)
+
+
+def make_world_model(model_path: Optional[str] = None) -> WorldModelPredictor:
+    """Return the right WorldModelPredictor for this environment.
+
+    * ``model_path`` set and file exists & loadable → ``TrainedWorldModel``
+      (wrapping the sklearn impl).
+    * Anything else                                 → ``MockWorldModel``.
+
+    This is the canonical entry point for callers that just want "a
+    world model" — they don't need to know about Mock vs Sklearn.
+    Backends/runners use it instead of conditional imports.
+    """
+    if model_path:
+        m = TrainedWorldModel(model_path)
+        if m.is_trained:
+            return m
+    return MockWorldModel()

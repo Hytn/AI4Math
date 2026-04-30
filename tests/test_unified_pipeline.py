@@ -69,33 +69,45 @@ class TestUnifiedAPI:
         assert UnifiedProofRunner is not None
         assert PRESETS is not EXPERIMENTAL_PRESETS
 
-    def test_active_presets_no_mcts(self):
-        """v3: MCTS / beam / best_first 默认不在 active PRESETS."""
+    def test_active_presets_include_tree_search(self):
+        """v4: MCTS / beam / best_first 已合流到 active PRESETS.
+
+        合流契约: dialog.json schema 3.0 的 ``meta.search_tree`` 块
+        让树搜索的元数据原生进主存储, 三个 profile 因此不再需要
+        explicit opt-in。EXPERIMENTAL_PRESETS 仍保留作为未来的扩展点,
+        但当前应为空。
+        """
         from prover.unified import PRESETS, EXPERIMENTAL_PRESETS
-        for forbidden in ("mcts", "beam", "best_first"):
-            assert forbidden not in PRESETS, \
-                f"{forbidden} 不应在 active PRESETS 中"
-            assert forbidden in EXPERIMENTAL_PRESETS, \
-                f"{forbidden} 应在 EXPERIMENTAL_PRESETS 中"
+        for required in ("mcts", "beam", "best_first"):
+            assert required in PRESETS, \
+                f"v4 起 {required} 必须在 active PRESETS 中"
+        assert EXPERIMENTAL_PRESETS == {}, \
+            "v4: EXPERIMENTAL_PRESETS 当前应为空"
 
     def test_active_presets_complete(self):
-        """v3 大一统的 5 + 1 个 active preset 必须全部在。"""
+        """v4 大一统的 9 个 active preset 必须全部在。"""
         from prover.unified import PRESETS
         required = {
+            # v3 family
             "whole_proof", "whole_proof_repair", "dsp",
             "reprover", "leandojo", "heterogeneous",
+            # v4: tree-search merged
+            "mcts", "beam", "best_first",
         }
         assert required.issubset(set(PRESETS)), \
             f"缺失 active preset: {required - set(PRESETS)}"
 
-    def test_enable_experimental(self):
-        """opt-in 后实验性 preset 可见。"""
+    def test_enable_experimental_is_noop_in_v4(self):
+        """v4 起 enable_experimental_search_presets 是 no-op shim;
+        旧脚本调用它仍然工作但不产生新效果。"""
         from prover.unified import (
             PRESETS, enable_experimental_search_presets, get_profile,
         )
-        # 副作用 — 注意全局状态
-        enable_experimental_search_presets()
-        assert "mcts" in PRESETS
+        snapshot = set(PRESETS)
+        enable_experimental_search_presets()  # 应该是 no-op
+        assert set(PRESETS) == snapshot, \
+            "enable_experimental_search_presets 不应改变 PRESETS"
+        # mcts 已经在了, 直接拿
         prof = get_profile("mcts")
         assert prof.search.kind == "ucb"
 

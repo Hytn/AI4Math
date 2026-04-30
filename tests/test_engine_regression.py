@@ -553,8 +553,21 @@ class TestIntegrityCheckerV2:
 # ═══════════════════════════════════════════════════════════════
 
 class TestExpandedPremises:
+    # The three tests below depend on data/premises/*.jsonl being checked in.
+    # If the data directory is absent (for instance, on a slim CI image that
+    # only pulls source) we skip rather than fail — the same pattern
+    # ``test_external_jsonl_format`` below already uses.
+    @staticmethod
+    def _skip_if_no_premises():
+        premises_dir = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "data", "premises")
+        if not os.path.isdir(premises_dir) or not any(
+                f.endswith(".jsonl") for f in os.listdir(premises_dir)):
+            pytest.skip("data/premises/*.jsonl not present in this checkout")
+
     def test_external_premises_loaded(self):
         """PremiseSelector should load from data/premises/*.jsonl."""
+        self._skip_if_no_premises()
         from prover.premise.selector import PremiseSelector
 
         selector = PremiseSelector({"mode": "hybrid"})
@@ -563,6 +576,7 @@ class TestExpandedPremises:
 
     def test_retrieve_nat_subtraction(self):
         """Should retrieve ℕ subtraction lemmas for subtraction queries."""
+        self._skip_if_no_premises()
         from prover.premise.selector import PremiseSelector
 
         selector = PremiseSelector({"mode": "bm25"})
@@ -574,6 +588,7 @@ class TestExpandedPremises:
 
     def test_retrieve_group_lemmas(self):
         """Should retrieve group theory lemmas for group queries."""
+        self._skip_if_no_premises()
         from prover.premise.selector import PremiseSelector
 
         selector = PremiseSelector({"mode": "bm25"})

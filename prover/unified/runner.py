@@ -59,21 +59,35 @@ class UnifiedResult:
     sub_results: list = field(default_factory=list)  # for parallel mode
     search_summary: dict = field(default_factory=dict)
     total_duration_ms: int = 0
+    # v3.0: full search-tree payload for tree-search profiles. None for
+    # linear / parallel runs; rendered into ``meta.search_tree`` in dialog.json.
+    search_tree: Optional[dict] = None
 
     def save_unified(self, task_dir: str, *, problem_id: str = "",
                      model: str = "", provider: str = "",
                      system_prompt: str = "",
                      tools: list = None,
                      initial_task: str = ""):
-        """Save dialog.json — standard project format."""
+        """Save dialog.json — standard project format.
+
+        For tree-search runs (mcts / best_first / beam), the search tree
+        is attached to ``meta.search_tree`` *in addition to* the linear
+        ``messages`` list (which carries the solved or best-explored path).
+        Linear / parallel runs save unchanged from v2.0 behaviour.
+        """
         if self.loop_result is None:
             logger.warning("No loop_result to save")
             return
-        return self.loop_result.save_unified(
-            task_dir, problem_id=problem_id, model=model,
-            provider=provider, system_prompt=system_prompt,
-            tools=tools, initial_task=initial_task,
+        # Build the dialog through to_dialog so we can post-attach the tree.
+        dialog = self.loop_result.to_dialog(
+            problem_id=problem_id, model=model, provider=provider,
+            system_prompt=system_prompt, tools=tools,
+            initial_task=initial_task,
         )
+        if self.search_tree is not None:
+            dialog.setdefault("meta", {})["search_tree"] = self.search_tree
+        from agent.persistence.unified_storage import save_task
+        return save_task(task_dir, dialog)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -85,13 +99,43 @@ class UnifiedProofRunner:
 
     def __init__(self, *, llm, lean_pool=None,
                   knowledge_store=None,
+                  knowledge_writer=None,
+                  world_model=None,
                   retriever=None,
-                  broadcast_bus=None):
+                  broadcast_bus=None,
+                  kimina_backend=None,
+                  pantograph_backend=None,
+                  lookeng_backend=None,
+                  dialog_index=None):
         self.llm = llm
         self.lean_pool = lean_pool
         self.knowledge_store = knowledge_store
+        # v4: optional KnowledgeWriter — feeds Layer 1 from every tactic
+        # application made by step-level profiles. Defaults to
+        # knowledge_store.writer when the store exposes one.
+        if knowledge_writer is None and knowledge_store is not None:
+            knowledge_writer = getattr(knowledge_store, "writer", None)
+        self.knowledge_writer = knowledge_writer
+        # v4: optional WorldModel — short-circuits high-confidence
+        # tactic-failure predictions before the Lean call. None disables
+        # the gate. Use ``engine.world_model.make_world_model(path)`` to
+        # build the right impl (Trained if .pkl exists, Mock otherwise).
+        self.world_model = world_model
         self.retriever = retriever
         self.broadcast_bus = broadcast_bus
+        # Optional infrastructure backends — when present, the matching
+        # ToolKit (BATCH_VERIFY / MVAR_FOCUS / DRAFT_HOLE / LEMMA_BY_LEMMA)
+        # gets a wired-up tool; when absent, those tools register in
+        # fallback mode and return a structured "unavailable" error.
+        self.kimina_backend = kimina_backend
+        self.pantograph_backend = pantograph_backend
+        self.lookeng_backend = lookeng_backend
+        # v5: optional DialogIndex for cross-problem demonstration
+        # injection. When present and the active profile has
+        # ``observation.inject_similar_dialogs=True``, similar past
+        # solved dialogs get prepended to the initial user message
+        # as in-context demos. None disables the feature.
+        self.dialog_index = dialog_index
 
     # ──────────────────────────────────────────────────────────────────
     # Public API
@@ -131,9 +175,14 @@ class UnifiedProofRunner:
             profile,
             lean_pool=self.lean_pool,
             knowledge_store=self.knowledge_store,
+            knowledge_writer=self.knowledge_writer,
+            world_model=self.world_model,
             retriever=self.retriever,
             broadcast_bus=self.broadcast_bus,
             search_state=None,
+            kimina_backend=self.kimina_backend,
+            pantograph_backend=self.pantograph_backend,
+            lookeng_backend=self.lookeng_backend,
         )
 
         # Optional knowledge briefing (ReProver 风格还会通过 tool 查; 这里
@@ -152,6 +201,24 @@ class UnifiedProofRunner:
             agent_name=f"unified.{profile.name}",
             theorem_statement=problem.theorem_statement,
         )
+
+        # ── LooKeng: pre-bootstrap a session so the LLM never has to
+        # invent a session_id. The id is threaded through ToolContext.
+        # The bootstrap is best-effort: if the backend is unavailable
+        # we leave shared_state empty and the LemmaByLemmaTool will
+        # report a structured error on the LLM's first call.
+        if self.lookeng_backend is not None and any(
+                t == ToolKit.LEMMA_BY_LEMMA for t in profile.tools):
+            try:
+                sid = await self.lookeng_backend.begin_session(
+                    theorem=problem.theorem_statement)
+                tool_ctx.shared_state["lookeng_session_id"] = sid
+                logger.info(
+                    f"[unified] LooKeng session pre-bootstrapped: {sid}")
+            except Exception as e:
+                logger.warning(
+                    f"LooKeng begin_session failed (will retry on first "
+                    f"tool call): {e}")
 
         config = LoopConfig(
             max_turns=profile.max_turns,
@@ -210,9 +277,14 @@ class UnifiedProofRunner:
             profile,
             lean_pool=self.lean_pool,
             knowledge_store=self.knowledge_store,
+            knowledge_writer=self.knowledge_writer,
+            world_model=self.world_model,
             retriever=self.retriever,
             broadcast_bus=self.broadcast_bus,
             search_state=state,        # ← 关键: tools 持有同一 state
+            kimina_backend=self.kimina_backend,
+            pantograph_backend=self.pantograph_backend,
+            lookeng_backend=self.lookeng_backend,
         )
 
         sc: SearchConfig = profile.search
@@ -263,6 +335,19 @@ class UnifiedProofRunner:
                 tool_ctx=tool_ctx,
             )
             all_loop_results.append(lr)
+            # v3.0: stash this expansion's messages on the node so the
+            # final dialog.json can reproduce the search tree faithfully.
+            try:
+                msgs_dicts = self._loop_messages_to_dicts(lr)
+            except Exception as e:
+                logger.debug(f"loop→dict conversion failed: {e}")
+                msgs_dicts = []
+            target_node = state.nodes.get(node_id)
+            if target_node is not None:
+                # Any new children created during this expansion belong
+                # to *this* expansion's transcript; record on the parent
+                # since they share the same LLM turn(s).
+                target_node.messages.extend(msgs_dicts)
 
         await driver.run(expand_one_node=expand_one_node)
 
@@ -278,14 +363,19 @@ class UnifiedProofRunner:
                 problem.theorem_statement, tactics)
             success = True
 
-        # Merge dialogs from per-node loops into a single LoopResult-shaped view
-        merged = self._merge_loops(all_loop_results, proof_code, success)
+        # Build the linear "best path" view into a LoopResult; the full
+        # tree rides separately on UnifiedResult.search_tree and lands
+        # under meta.search_tree at save time.
+        merged = self._merge_loops_with_tree(
+            state, profile, all_loop_results, proof_code, success)
+        tree_dict = state.to_search_tree_dict(kind=profile.search.kind)
 
         return UnifiedResult(
             profile_name=profile.name,
             success=success,
             proof_code=proof_code,
             loop_result=merged,
+            search_tree=tree_dict,
             search_summary={
                 "kind": profile.search.kind,
                 "total_nodes": len(state.nodes),
@@ -423,6 +513,91 @@ class UnifiedProofRunner:
             stopped_reason=("proof_found" if success else "search_exhausted"),
         )
 
+    # ── v3.0: tree-aware merge — only the solved path lands in `messages`,
+    # the rest of the tree rides under meta.search_tree. ─────────────────
+
+    def _loop_messages_to_dicts(self, lr: LoopResult) -> list[dict]:
+        """Convert a LoopResult's messages (LoopMessage objects) into
+        plain dialog message dicts for storage on a TreeNode."""
+        out: list[dict] = []
+        for m in (lr.messages or []):
+            # LoopMessage might already be dict-like; tolerate both.
+            if isinstance(m, dict):
+                out.append(dict(m))
+                continue
+            d: dict = {"role": getattr(m, "role", "assistant")}
+            content = getattr(m, "content", "")
+            if content:
+                d["content"] = content
+            thought = getattr(m, "thought", None)
+            if thought:
+                d["thought"] = thought
+            tcs = getattr(m, "tool_calls", None)
+            if tcs:
+                d["tool_calls"] = [
+                    tc if isinstance(tc, dict) else (
+                        tc.to_dict() if hasattr(tc, "to_dict")
+                        else {"id": getattr(tc, "id", ""),
+                              "function": {
+                                "name": getattr(tc, "name", ""),
+                                "arguments": getattr(tc, "arguments", "")},
+                              "server_id": getattr(tc, "server_id",
+                                                    "default")})
+                    for tc in tcs
+                ]
+            tcid = getattr(m, "tool_call_id", None)
+            if tcid:
+                d["tool_call_id"] = tcid
+            name = getattr(m, "name", None)
+            if name:
+                d["name"] = name
+            sid = getattr(m, "server_id", None)
+            if sid:
+                d["server_id"] = sid
+            out.append(d)
+        return out
+
+    def _merge_loops_with_tree(self, state, profile,
+                                  loops: list[LoopResult],
+                                  proof_code: str,
+                                  success: bool) -> LoopResult:
+        """For tree-search profiles, the linear ``messages`` list holds
+        the solved-or-best path only. Aggregate stats across all loops.
+
+        Compare with ``_merge_loops`` (used by `parallel`): there we
+        concatenate every sub-loop's messages because each is a real
+        independent attempt; here we don't, because a sibling branch
+        is *not* a path the agent committed to."""
+        if not loops:
+            return LoopResult(
+                content="",
+                proof_code=proof_code,
+                stopped_reason=("proof_found" if success
+                                  else "search_exhausted"),
+            )
+
+        # Linear messages = solved-path messages from the tree state.
+        solved_path = state.solved_path_messages()
+
+        # Aggregate stats across every expansion.
+        total_tokens = sum(lr.total_tokens for lr in loops)
+        total_latency = sum(lr.total_latency_ms for lr in loops)
+        all_tools: list = []
+        for lr in loops:
+            all_tools.extend(lr.tools_called or [])
+
+        return LoopResult(
+            content=loops[-1].content,
+            proof_code=proof_code,
+            messages=solved_path,
+            turns_used=sum(lr.turns_used for lr in loops),
+            total_tokens=total_tokens,
+            total_latency_ms=total_latency,
+            tools_called=all_tools,
+            stopped_reason=("proof_found" if success
+                            else "search_exhausted"),
+        )
+
     async def _build_briefing(self, problem) -> str:
         try:
             from knowledge.reader import KnowledgeReader
@@ -465,6 +640,20 @@ class UnifiedProofRunner:
                 parts.append(f"\n{FEW_SHOT_EXAMPLES}")
             except Exception as e:
                 logger.debug(f"few-shot skipped: {e}")
+
+        # v5: similar past dialogs (cross-problem demo retrieval)
+        if profile.observation.inject_similar_dialogs \
+                and self.dialog_index is not None:
+            try:
+                similar_block = self.dialog_index.render_for_prompt(
+                    problem.theorem_statement,
+                    top_k=profile.observation.n_similar_dialogs,
+                    max_chars=profile.observation.similar_dialogs_max_chars,
+                    solved_only=True)
+                if similar_block:
+                    parts.append("\n" + similar_block.rstrip())
+            except Exception as e:
+                logger.debug(f"similar-dialog injection skipped: {e}")
 
         # Retrieved premises
         if profile.observation.inject_premises_in_prompt and self.retriever:

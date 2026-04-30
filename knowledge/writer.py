@@ -97,6 +97,86 @@ class KnowledgeWriter:
                 goal_pattern=goal_pattern,
                 tactic=step.tactic.strip())
 
+    async def deposit_kimina_trace(
+            self,
+            tactic_trace,
+            theorem: str = "",
+            domain: str = "",
+            trace_id: int = 0,
+            base_env_id: int = 0) -> int:
+        """Deposit a Kimina infotree-extracted tactic trace into the pyramid.
+
+        Closes the loop on the Kimina backend's ``/api/extract_tactics``
+        capability. After a proof verifies successfully, the server hands
+        back a per-tactic trace with goals before/after; we feed each
+        entry through ``ingest_step`` so the existing Layer 1 effectiveness
+        and Layer 0 trace machinery picks them up uniformly.
+
+        This means every successful proof on the Kimina backend silently
+        teaches the rest of the knowledge system, with no caller-side
+        bookkeeping.
+
+        Args:
+            tactic_trace: list of ``engine.backends.kimina_server.TacticTrace``
+                objects, or a list of dicts with the same shape — accepts
+                both so callers can use the dataclass or the wire form.
+            theorem: the theorem the trace belongs to (for domain inference).
+            domain: explicit domain tag; auto-inferred if empty.
+            trace_id: parent ProofTrace id, for back-linking.
+            base_env_id: env_id to use as the starting envelope; subsequent
+                tactics get sequential synthetic env_ids derived from this.
+
+        Returns:
+            The number of trace entries successfully ingested. Entries
+            that lack a tactic or a goal_before are skipped.
+        """
+        if not tactic_trace:
+            return 0
+
+        ingested = 0
+        for i, entry in enumerate(tactic_trace):
+            # Accept both TacticTrace dataclass and a wire dict.
+            if isinstance(entry, dict):
+                tactic = (entry.get("tactic") or "").strip()
+                goal_before = entry.get("goal_before", "") or ""
+                goals_after = list(entry.get("goals_after", []) or [])
+                is_complete = bool(entry.get("is_proof_complete", False))
+            else:
+                tactic = (getattr(entry, "tactic", "") or "").strip()
+                goal_before = getattr(entry, "goal_before", "") or ""
+                goals_after = list(getattr(entry, "goals_after", []) or [])
+                is_complete = bool(getattr(entry, "is_proof_complete", False))
+
+            if not tactic or not goal_before:
+                continue
+
+            step = StepDetail(
+                step_index=i,
+                tactic=tactic,
+                env_id_before=base_env_id + i,
+                env_id_after=base_env_id + i + 1,  # success implied
+                goals_before=[goal_before],
+                goals_after=goals_after,
+                error_message="",
+                error_category="",
+                elapsed_ms=0.0,
+                is_proof_complete=is_complete,
+            )
+            try:
+                await self.ingest_step(
+                    step, theorem=theorem, domain=domain, trace_id=trace_id)
+                ingested += 1
+            except Exception as e:
+                # Trace deposit must never crash the prover loop.
+                logger.debug(
+                    f"deposit_kimina_trace: skipping entry {i}: {e}")
+
+        if ingested:
+            logger.info(
+                f"deposit_kimina_trace: ingested {ingested}/{len(tactic_trace)} "
+                f"tactic entries into knowledge pyramid")
+        return ingested
+
     async def ingest_proof_result(
             self, context_id: int,
             steps: list[StepDetail],

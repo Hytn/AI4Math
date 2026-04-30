@@ -63,7 +63,10 @@ def prove_single(problem: BenchmarkProblem, llm, premise_selector,
                  knowledge_writer: KnowledgeWriter = None,
                  multi_role: bool = False,
                  early_stop: bool = False,
-                 profile: str = None) -> ProofTrace:
+                 profile: str = None,
+                 kimina_backend=None,
+                 pantograph_backend=None,
+                 lookeng_backend=None) -> ProofTrace:
     """对单道题进行证明尝试。
 
     v3 改进:
@@ -74,6 +77,11 @@ def prove_single(problem: BenchmarkProblem, llm, premise_selector,
       - 验证标注: lean_mode=skip 时 stderr 明确标注 [unverified] (Fix #5)
       - profile (v3 新增): 不为 None 时走 prover.unified 主管线;
         每个 sample 是一次 UnifiedProofRunner.run(profile)。
+
+    Infrastructure-merge (新增):
+      kimina_backend / pantograph_backend / lookeng_backend 可在外层构建后
+      传入, 让 unified profile 使用对应的社区基建. 留 None 即按默认 Lean
+      REPL 路径走, 同时各对应工具会以 fallback 模式注册.
 
     温度调度模式:
       - "fixed": 所有样本使用相同温度 (默认 0.8), 满足 pass@k i.i.d. 假设
@@ -88,6 +96,9 @@ def prove_single(problem: BenchmarkProblem, llm, premise_selector,
             knowledge_reader=knowledge_reader,
             knowledge_writer=knowledge_writer,
             profile_name=profile,
+            kimina_backend=kimina_backend,
+            pantograph_backend=pantograph_backend,
+            lookeng_backend=lookeng_backend,
         )
     trace = ProofTrace(
         problem_id=problem.problem_id,
@@ -328,11 +339,18 @@ def _prove_single_unified(
     knowledge_reader,
     knowledge_writer,
     profile_name: str,
+    kimina_backend=None,
+    pantograph_backend=None,
+    lookeng_backend=None,
 ) -> ProofTrace:
     """v3 unified 主管线路径: 每个 sample = 一次 UnifiedProofRunner.run。
 
     每次 run 根据 profile 决定方法学 (whole_proof / repair / reprover / ...);
     sample 之间是独立的 i.i.d. 调用 (满足 pass@k 假设)。
+
+    Infrastructure-merge: 三个可选 backend (kimina/pantograph/lookeng) 由调
+    用方在外层构建好后注入; 这里仅透传给 UnifiedProofRunner. None 时对应工具
+    自动降级为 fallback.
     """
     from prover.unified import (
         UnifiedProofRunner, get_profile, unified_to_attempt,
@@ -378,6 +396,9 @@ def _prove_single_unified(
         knowledge_store=knowledge_store,
         retriever=premise_selector,
         broadcast_bus=None,
+        kimina_backend=kimina_backend,
+        pantograph_backend=pantograph_backend,
+        lookeng_backend=lookeng_backend,
     )
 
     # 跑 max_samples 次 (pass@k 兼容)
@@ -448,9 +469,23 @@ def main():
         help=(
             "走统一管线 (prover.unified) 的 profile 名. "
             "可选: whole_proof, whole_proof_repair, dsp, reprover, "
-            "leandojo, heterogeneous. "
+            "leandojo, heterogeneous, kimina_batch, pantograph_dsp, "
+            "lookeng_lemma, nfl_hybrid. "
             "不指定 = 使用 v2 旧 prove_single 路径 (兼容)."
         ))
+    parser.add_argument(
+        "--backend", default="auto",
+        choices=["auto", "local", "socket", "http", "kimina",
+                  "pantograph", "lookeng", "mock", "fallback"],
+        help=(
+            "Lean 4 verification backend. 默认 auto. "
+            "kimina_batch profile 自动选 kimina; pantograph_dsp 自动选 "
+            "pantograph; lookeng_lemma 自动选 lookeng. "
+            "显式 --backend 覆盖 profile 默认。"))
+    parser.add_argument("--backend-url", default=None,
+                          help="HTTP/Kimina backend URL.")
+    parser.add_argument("--backend-api-key", default=None,
+                          help="HTTP/Kimina backend API key.")
     args = parser.parse_args()
 
     if args.no_early_stop:
@@ -488,6 +523,38 @@ def main():
         except Exception as e:
             logger.warning(f"无法初始化 Lean 环境: {e}, 回退到 skip 模式")
             args.lean_mode = "skip"
+
+    # Infrastructure-merge: 构建可选 backend.
+    # 与 run_unified.py 同样的策略 — profile 隐含 backend, 显式 --backend 覆盖.
+    profile_backend_hint = {
+        "kimina_batch":   "kimina",
+        "pantograph_dsp": "pantograph",
+        "lookeng_lemma":  "lookeng",
+    }
+    chosen_backend = args.backend
+    if chosen_backend == "auto" and args.profile in profile_backend_hint:
+        chosen_backend = profile_backend_hint[args.profile]
+        logger.info(
+            f"  profile '{args.profile}' implies backend "
+            f"'{chosen_backend}', using it")
+
+    kimina_backend = pantograph_backend = lookeng_backend = None
+    if chosen_backend in ("kimina", "http"):
+        from engine.backends.kimina_server import KiminaServerBackend
+        kimina_backend = KiminaServerBackend(
+            base_url=args.backend_url, api_key=args.backend_api_key)
+        asyncio.run(kimina_backend.start())
+        logger.info(f"  Kimina backend (fallback={kimina_backend.is_fallback})")
+    elif chosen_backend == "pantograph":
+        from engine.backends.pantograph import PantographBackend
+        pantograph_backend = PantographBackend()
+        asyncio.run(pantograph_backend.start())
+        logger.info(f"  Pantograph backend (mode={pantograph_backend.mode})")
+    elif chosen_backend == "lookeng":
+        from engine.backends.lookeng import LooKengBackend
+        lookeng_backend = LooKengBackend()
+        asyncio.run(lookeng_backend.start())
+        logger.info("  LooKeng backend started")
 
     # Fix #5: 未验证模式警告
     if args.lean_mode == "skip":
@@ -549,6 +616,9 @@ def main():
                 multi_role=args.multi_role,
                 early_stop=args.early_stop,
                 profile=args.profile,
+                kimina_backend=kimina_backend,
+                pantograph_backend=pantograph_backend,
+                lookeng_backend=lookeng_backend,
             )
 
             status = ("✓ 通过" if trace.solved
@@ -557,8 +627,9 @@ def main():
                 status += f" [correct={trace.correct_count}/{trace.total_attempts}]"
             logger.info(f"           {status}")
 
-            # 增量保存: 使用统一的 AgentCPM 风格目录布局
-            # results/traces/<problem_id>/{dialog,result,meta_config,trace}.json
+            # 增量保存: 单文件 dialog.json (v3.0 schema, agent.persistence.unified_storage).
+            # 没有 result.json / meta_config.json / trace.json 这些副产物 ——
+            # 所有 meta + result 全部内联进 dialog.json 的 wrapped object.
             trace.save_unified(
                 trace_dir / problem.problem_id,
                 model=getattr(llm, "model_name", ""),

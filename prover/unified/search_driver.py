@@ -42,6 +42,10 @@ class TreeNode:
     score: float = 0.0
     failed_tactics: set = field(default_factory=set)  # 在此节点已失败的 tactic
     status: str = "open"               # open | solved | failed | pruned
+    # v3.0: messages produced by the LLM during this node's expansion.
+    # The list is dialog-message dicts (role/content/tool_calls/...) so
+    # it embeds straight into ``meta.search_tree.nodes[i].messages``.
+    messages: list = field(default_factory=list)
 
 
 class SharedSearchState:
@@ -157,6 +161,65 @@ class SharedSearchState:
             ],
             "failed_at_this_node": sorted(node.failed_tactics),
         }
+
+    # ── v3.0 dialog-format integration ──────────────────────────────────
+
+    def to_search_tree_dict(self, *, kind: str) -> dict:
+        """Serialize the whole tree into the ``meta.search_tree`` shape.
+
+        ``kind`` is the driver name ("ucb" | "best_first" | "beam") and
+        is propagated so consumers don't have to re-derive it.
+        """
+        nodes_out = []
+        for nid in sorted(self.nodes):
+            n = self.nodes[nid]
+            nodes_out.append({
+                "node_id": n.id,
+                "parent_id": n.parent_id,
+                "tactic": n.tactic,
+                "depth": n.depth,
+                "status": n.status,
+                "visit_count": n.visit_count,
+                "success_count": n.success_count,
+                "score": float(n.score),
+                "num_goals": len(n.goals),
+                "is_complete": bool(n.is_complete),
+                "failed_tactics": sorted(n.failed_tactics),
+                "messages": list(n.messages),
+            })
+        max_depth = max((n.depth for n in self.nodes.values()),
+                          default=0)
+        return {
+            "kind": kind,
+            "root_node_id": 0,
+            "solved_node_id": self.solved_node_id,
+            "total_nodes": len(self.nodes),
+            "max_depth": max_depth,
+            "nodes": nodes_out,
+        }
+
+    def solved_path_messages(self) -> list[dict]:
+        """Concatenate per-node messages along the root→solved path.
+
+        Returns the flattened message list that should land in
+        ``dialog["messages"]`` for tree-search profiles. Falls back to
+        the longest explored path if the search never solved.
+        """
+        target = self.solved_node_id
+        if target is None:
+            # Best-effort: the deepest node we have, biased toward
+            # the highest-scoring one so the dialog still showcases
+            # the search's most committed branch even on failure.
+            if not self.nodes:
+                return []
+            target = max(
+                self.nodes,
+                key=lambda i: (self.nodes[i].depth,
+                                self.nodes[i].score))
+        out: list[dict] = []
+        for n in self.ancestors(target):
+            out.extend(n.messages)
+        return out
 
 
 # ═══════════════════════════════════════════════════════════════════════

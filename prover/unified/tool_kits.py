@@ -26,13 +26,33 @@ logger = logging.getLogger(__name__)
 def build_tool_registry(profile: Profile, *,
                           lean_pool=None,
                           knowledge_store=None,
+                          knowledge_writer=None,
+                          world_model=None,
                           retriever=None,
                           broadcast_bus=None,
-                          search_state=None) -> ToolRegistry:
+                          search_state=None,
+                          kimina_backend=None,
+                          pantograph_backend=None,
+                          lookeng_backend=None) -> ToolRegistry:
     """根据 profile.tools 组装一个 ToolRegistry.
 
     `search_state` 仅在 profile.search.kind != "none" 时由 runner 注入,
     用来让 LLM 通过 tree_view / tree_select 工具看到/操作搜索树。
+
+    `knowledge_writer` 是 v4 新参数 — 当 profile 含 TACTIC_APPLY 时,
+    每次 tactic 应用都会自动 deposit 到 Layer 1. 不传也能跑, 缺省走
+    knowledge_store.writer (如果该属性存在).
+
+    `world_model` 是 v4 新参数 — 当 profile 含 TACTIC_APPLY 时,
+    每次 tactic 应用前先问 world model "这个 tactic 大概率会失败吗?",
+    高置信度 (默认 ≥ 0.85) 预测失败的会被 short-circuit, 不发给 Lean.
+    传 ``MockWorldModel`` 就是启发式; 传 ``TrainedWorldModel("x.pkl")``
+    就用训练过的 sklearn 分类器; 不传则不做 gating.
+
+    `kimina_backend` / `pantograph_backend` / `lookeng_backend` 由 runner
+    在选择对应 backend 时注入, 启用基础设施大一统的工具. 当对应 backend
+    未配置时, 工具会以 fallback 模式注册 — 其 execute() 返回结构化错误,
+    不会破坏 agent loop。
     """
     registry = ToolRegistry()
 
@@ -41,9 +61,14 @@ def build_tool_registry(profile: Profile, *,
             tool = _build_tool(kit,
                                lean_pool=lean_pool,
                                knowledge_store=knowledge_store,
+                               knowledge_writer=knowledge_writer,
+                               world_model=world_model,
                                retriever=retriever,
                                broadcast_bus=broadcast_bus,
-                               search_state=search_state)
+                               search_state=search_state,
+                               kimina_backend=kimina_backend,
+                               pantograph_backend=pantograph_backend,
+                               lookeng_backend=lookeng_backend)
             if tool is not None:
                 registry.register(tool)
         except Exception as e:
@@ -55,7 +80,11 @@ def build_tool_registry(profile: Profile, *,
 
 
 def _build_tool(kit: ToolKit, *, lean_pool, knowledge_store,
-                retriever, broadcast_bus, search_state):
+                retriever, broadcast_bus, search_state,
+                knowledge_writer=None,
+                world_model=None,
+                kimina_backend=None, pantograph_backend=None,
+                lookeng_backend=None):
     """单个 ToolKit → 单个 Tool 实例."""
 
     if kit == ToolKit.LEAN_VERIFY:
@@ -64,7 +93,17 @@ def _build_tool(kit: ToolKit, *, lean_pool, knowledge_store,
     if kit == ToolKit.TACTIC_APPLY:
         # 现有项目里没有这个工具 —— 我们在 builtin 下新增了 tactic_apply.py
         from agent.tools.builtin.tactic_apply import TacticApplyTool
-        return TacticApplyTool(lean_pool=lean_pool, search_state=search_state)
+        # v4: 连上 KnowledgeWriter, 让步级 profile (reprover/leandojo/mcts/
+        # best_first/beam) 也参与知识飞轮 —— 每次 tactic 应用都自动落 Layer 1.
+        # 取 writer 的两条来源: (a) 调用方显式传入 (RL/eval 路径常用)
+        #                       (b) knowledge_store 自己暴露 .writer 属性
+        kw = knowledge_writer
+        if kw is None and knowledge_store is not None:
+            kw = getattr(knowledge_store, "writer", None)
+        return TacticApplyTool(lean_pool=lean_pool,
+                                search_state=search_state,
+                                knowledge_writer=kw,
+                                world_model=world_model)
 
     if kit == ToolKit.GOAL_INSPECT:
         return GoalInspectTool(lean_pool=lean_pool)
@@ -106,5 +145,27 @@ def _build_tool(kit: ToolKit, *, lean_pool, knowledge_store,
     if kit == ToolKit.TREE_SELECT:
         from prover.unified.tools_extra import TreeSelectTool
         return TreeSelectTool(search_state=search_state)
+
+    # ─ 基础设施大一统: 社区配套基建工具 ───────────────────
+    if kit == ToolKit.BATCH_VERIFY:
+        from prover.unified.tools_infra import BatchVerifyTool
+        return BatchVerifyTool(kimina_backend=kimina_backend,
+                                knowledge_store=knowledge_store)
+
+    if kit == ToolKit.MVAR_FOCUS:
+        from prover.unified.tools_infra import MVarFocusTool
+        return MVarFocusTool(pantograph_backend=pantograph_backend)
+
+    if kit == ToolKit.DRAFT_HOLE:
+        from prover.unified.tools_infra import DraftHoleTool
+        return DraftHoleTool(pantograph_backend=pantograph_backend)
+
+    if kit == ToolKit.LEMMA_BY_LEMMA:
+        from prover.unified.tools_infra import LemmaByLemmaTool
+        return LemmaByLemmaTool(lookeng_backend=lookeng_backend)
+
+    if kit == ToolKit.NL_EXISTENCE:
+        from prover.unified.tools_infra import NLExistenceBridgeTool
+        return NLExistenceBridgeTool()
 
     raise ValueError(f"Unknown ToolKit: {kit}")

@@ -107,8 +107,15 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ───────────────────────────────────────────────────────────
 
-SCHEMA_VERSION = "2.0"
+SCHEMA_VERSION = "3.0"
 DIALOG_FILENAME = "dialog.json"   # the only file we produce
+
+# v3.0 adds an optional ``meta.search_tree`` block describing the search
+# DAG when the run used a tree-search profile (mcts / best_first / beam).
+# When present, ``messages`` carries the *solved path* (or the best
+# explored path if unsolved) — same shape and SFT semantics as v2.0.
+# All v2.0 files are valid v3.0 files (search_tree absent).
+SUPPORTED_SCHEMA_VERSIONS = ("1.0", "2.0", "3.0")
 
 # AgentCPM context-split marker. Long sessions can be split into per-window
 # dialogs at points marked by this role. See ``split_dialog_at_markers``.
@@ -283,6 +290,36 @@ class DialogBuilder:
         """Merge fields into ``meta.extra``."""
         extra = self._meta.setdefault("extra", {})
         extra.update(fields)
+        return self
+
+    def set_search_tree(self, tree: dict) -> "DialogBuilder":
+        """Attach a search-tree summary to ``meta.search_tree``.
+
+        The tree describes the explored DAG when the run used a tree-search
+        profile (mcts / best_first / beam). Schema:
+
+            {"kind":   "ucb" | "best_first" | "beam",
+             "root_node_id":   0,
+             "solved_node_id": int | None,
+             "total_nodes":    int,
+             "max_depth":      int,
+             "nodes": [
+                {"node_id":      int,
+                 "parent_id":    int | None,
+                 "tactic":       str | None,
+                 "depth":        int,
+                 "status":       "open" | "solved" | "failed" | "pruned",
+                 "visit_count":  int,
+                 "success_count":int,
+                 "score":        float,
+                 "messages":     list[dict]   # per-node expansion turns
+                }, ...
+             ]}
+
+        ``messages`` on the top level still carries the solved-path
+        flattening; this block is purely an additional view.
+        """
+        self._meta["search_tree"] = dict(tree)
         return self
 
     # ── Result ──
@@ -494,6 +531,29 @@ def result_of(dialog: Any) -> dict:
     return {}
 
 
+def search_tree_of(dialog: Any) -> Optional[dict]:
+    """Return ``meta.search_tree`` if present, else None.
+
+    Only set when the run used a tree-search profile. v2.0 files
+    (linear / parallel / single-loop) never carry this block.
+    """
+    if isinstance(dialog, dict):
+        meta = dialog.get("meta") or {}
+        tree = meta.get("search_tree")
+        return dict(tree) if isinstance(tree, dict) else None
+    return None
+
+
+def solved_path_of(dialog: Any) -> list[dict]:
+    """Return the path-to-solution: the dialog's main ``messages`` list.
+
+    For tree-search dialogs this is the flattened solved path (same as
+    what an SFT loader sees). For linear dialogs this is just every
+    message. The accessor exists so downstream code can be explicit
+    about wanting the success path rather than the full tree."""
+    return messages_of(dialog)
+
+
 # ── Validation ──────────────────────────────────────────────────────────
 
 @dataclass
@@ -564,6 +624,63 @@ def validate_dialog(dialog: Any) -> list[ValidationIssue]:
             f"{len(pending)} unanswered tool_call(s): "
             f"{', '.join(n for _, n in pending)}"))
 
+    # Optional v3.0: structural check on meta.search_tree if present.
+    tree = search_tree_of(dialog)
+    if tree is not None:
+        issues.extend(_validate_search_tree(tree))
+
+    return issues
+
+
+def _validate_search_tree(tree: dict) -> list[ValidationIssue]:
+    """Structural checks on a meta.search_tree block.
+
+    The tree is *informational* — its absence is fine. When present we
+    insist:
+      • ``kind`` is one of the supported drivers
+      • every node references an existing parent (or has parent_id None)
+      • ``solved_node_id``, when set, names a real node
+      • ``per-node messages`` (if present) are themselves valid dialog
+        message dicts — they have a known role
+    """
+    issues: list[ValidationIssue] = []
+    kind = tree.get("kind")
+    if kind not in (None, "best_first", "ucb", "beam"):
+        issues.append(ValidationIssue(
+            -1, "search_tree_kind_unknown",
+            f"meta.search_tree.kind={kind!r}"))
+    nodes = tree.get("nodes") or []
+    by_id: dict[int, dict] = {}
+    for n in nodes:
+        if not isinstance(n, dict):
+            continue
+        nid = n.get("node_id")
+        if isinstance(nid, int):
+            by_id[nid] = n
+    for n in nodes:
+        if not isinstance(n, dict):
+            issues.append(ValidationIssue(
+                -1, "search_tree_node_not_dict",
+                f"node entry {n!r} is not a dict"))
+            continue
+        pid = n.get("parent_id")
+        if pid is not None and pid not in by_id:
+            issues.append(ValidationIssue(
+                -1, "search_tree_orphan",
+                f"node {n.get('node_id')} parent_id={pid} not in tree"))
+        # Per-node messages are optional but must be well-formed if there.
+        for m in (n.get("messages") or []):
+            if not isinstance(m, dict) or m.get("role") not in (
+                    "user", "assistant", "tool"):
+                issues.append(ValidationIssue(
+                    -1, "search_tree_node_message_invalid",
+                    f"bad message inside node {n.get('node_id')}"))
+                break
+    solved = tree.get("solved_node_id")
+    if solved is not None and solved not in by_id:
+        issues.append(ValidationIssue(
+            -1, "search_tree_solved_dangling",
+            f"solved_node_id={solved} not present in tree.nodes"))
     return issues
 
 
@@ -641,11 +758,13 @@ def _normalize_tool_spec(t: Any) -> dict:
 
 
 __all__ = [
-    "SCHEMA_VERSION", "DIALOG_FILENAME", "CONTEXT_SPLIT_ROLE",
+    "SCHEMA_VERSION", "SUPPORTED_SCHEMA_VERSIONS",
+    "DIALOG_FILENAME", "CONTEXT_SPLIT_ROLE",
     "DEFAULT_SERVER_MAP",
     "ToolCall", "Message", "DialogBuilder", "ValidationIssue",
     "save_dialog", "load_dialog", "validate_dialog",
     "messages_of", "meta_of", "result_of",
+    "search_tree_of", "solved_path_of",
     "is_tool_response_user_msg", "strip_tool_response_wrapper",
     "split_dialog_at_markers",
 ]

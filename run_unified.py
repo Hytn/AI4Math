@@ -66,6 +66,28 @@ def parse_args():
                     help="Override model")
     p.add_argument("--lean", action="store_true",
                     help="Connect to a real Lean 4 REPL pool (else mock)")
+
+    # ── Backend selection (infrastructure-merge feature) ────────────────
+    p.add_argument(
+        "--backend", type=str, default="auto",
+        choices=["auto", "local", "socket", "http", "kimina",
+                  "pantograph", "lookeng", "mock", "fallback"],
+        help=("Which Lean 4 verification backend to use. 'auto' probes "
+              "local→socket→http and falls through to fallback. "
+              "'kimina'/'http' uses the Kimina Lean Server REST API; "
+              "'pantograph' enables mvar focus + DSP drafting; "
+              "'lookeng' enables stateless lemma-by-lemma proving. "
+              "Some profiles imply a backend (kimina_batch → kimina, "
+              "pantograph_dsp → pantograph, lookeng_lemma → lookeng) "
+              "and will auto-select if you pass 'auto'."))
+    p.add_argument(
+        "--backend-url", type=str, default=None,
+        help=("URL for HTTP/Kimina backend "
+              "(default: $KIMINA_SERVER_URL or http://localhost:8000)."))
+    p.add_argument(
+        "--backend-api-key", type=str, default=None,
+        help="API key for HTTP/Kimina backend (default: $KIMINA_API_KEY).")
+
     p.add_argument("--out", type=str, default="results/unified",
                     help="Output dir for dialog.json")
     p.add_argument("-v", "--verbose", action="store_true")
@@ -123,6 +145,48 @@ def build_lean_pool(args):
         return None
 
 
+async def _build_infra_backends(kind: str,
+                                 url: str = None,
+                                 api_key: str = None):
+    """Construct the optional backend trio (kimina, pantograph, lookeng).
+
+    Returns ``(kimina, pantograph, lookeng)`` — any can be None. Each is
+    only built when ``kind`` requests it, so a default ``--backend auto``
+    run pays no cost for backends it doesn't use.
+
+    The runner's tools tolerate any of these being None or in fallback —
+    they register in fallback mode and return a structured "unavailable"
+    error if the LLM tries to call them, rather than crashing the loop.
+    """
+    kimina = pantograph = lookeng = None
+
+    if kind in ("kimina", "http"):
+        from engine.backends.kimina_server import KiminaServerBackend
+        kimina = KiminaServerBackend(base_url=url, api_key=api_key)
+        await kimina.start()
+        logger.info(f"Kimina backend started "
+                    f"(fallback={kimina.is_fallback})")
+
+    elif kind == "pantograph":
+        from engine.backends.pantograph import PantographBackend
+        pantograph = PantographBackend()
+        await pantograph.start()
+        logger.info(f"Pantograph backend started "
+                    f"(mode={pantograph.mode})")
+
+    elif kind == "lookeng":
+        from engine.backends.lookeng import LooKengBackend
+        lookeng = LooKengBackend()
+        await lookeng.start()
+        logger.info("LooKeng backend started")
+
+    # 'local', 'socket', 'mock', 'fallback', 'auto' don't need
+    # any of the infrastructure backends; they're handled by the
+    # standard lean_pool path.
+
+    return kimina, pantograph, lookeng
+
+
 async def main():
     args = parse_args()
     logging.basicConfig(
@@ -145,11 +209,33 @@ async def main():
     llm = build_llm(args)
     lean_pool = build_lean_pool(args)
 
+    # ── Build infrastructure backends per --backend / per profile ───────
+    #
+    # Some profiles imply a specific backend (e.g. kimina_batch wants
+    # the Kimina server). When --backend=auto we honour that implicit
+    # preference; an explicit --backend overrides it.
+    profile_backend_hint = {
+        "kimina_batch":   "kimina",
+        "pantograph_dsp": "pantograph",
+        "lookeng_lemma":  "lookeng",
+    }
+    chosen = args.backend
+    if chosen == "auto" and args.profile in profile_backend_hint:
+        chosen = profile_backend_hint[args.profile]
+        logger.info(
+            f"profile '{args.profile}' implies backend '{chosen}', using it")
+
+    kimina_backend, pantograph_backend, lookeng_backend = await _build_infra_backends(
+        chosen, args.backend_url, args.backend_api_key)
+
     runner = UnifiedProofRunner(
         llm=llm,
         lean_pool=lean_pool,
         knowledge_store=None,
         retriever=None,
+        kimina_backend=kimina_backend,
+        pantograph_backend=pantograph_backend,
+        lookeng_backend=lookeng_backend,
     )
     result = await runner.run(problem, profile_name=args.profile)
 

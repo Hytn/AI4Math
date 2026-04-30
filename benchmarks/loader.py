@@ -1,14 +1,15 @@
 """benchmarks/loader.py — 统一数据集加载入口
 
 真实基准:
-  builtin      — 内置冒烟测试 (5 题)
-  minif2f      — miniF2F (488 题, yangky11/miniF2F-lean4)
-  putnambench  — PutnamBench (672 题, trishullab/PutnamBench)
-  proofnet     — ProofNet (371 题, rahul3613/ProofNet-lean4)
-  fate-m       — FATE-M (150 题, 本科代数, frenzymath/FATE-M)
-  fate-h       — FATE-H (100 题, 研究生级代数, frenzymath/FATE-H)
-  fate-x       — FATE-X (100 题, 博士级代数, frenzymath/FATE-X)
-  formalmath   — FormalMATH (5560 题, Sphere-AI-Lab/FormalMATH-Bench)
+  builtin         — 内置冒烟测试 (5 题)
+  minif2f         — miniF2F (488 题, yangky11/miniF2F-lean4)
+  putnambench     — PutnamBench (672 题, trishullab/PutnamBench)
+  proofnet        — ProofNet (371 题, rahul3613/ProofNet-lean4)
+  fate-m          — FATE-M (150 题, 本科代数, frenzymath/FATE-M)
+  fate-h          — FATE-H (100 题, 研究生级代数, frenzymath/FATE-H)
+  fate-x          — FATE-X (100 题, 博士级代数, frenzymath/FATE-X)
+  formalmath      — FormalMATH (5560 题, Sphere-AI-Lab/FormalMATH-Bench)
+  numinamath_lean — NuminaMath-LEAN (100K, AI-MO/NuminaMath-LEAN, Kimina-Prover 训练集)
 """
 from __future__ import annotations
 import logging
@@ -18,14 +19,15 @@ logger = logging.getLogger(__name__)
 
 # 默认数据路径
 _DEFAULT_PATHS = {
-    "builtin":     "",
-    "minif2f":     "data/miniF2F",
-    "putnambench": "data/PutnamBench",
-    "proofnet":    "data/ProofNet",
-    "fate-m":      "data/FATE-M",
-    "fate-h":      "data/FATE-H",
-    "fate-x":      "data/FATE-X",
-    "formalmath":  "data/FormalMATH",
+    "builtin":         "",
+    "minif2f":         "data/miniF2F",
+    "putnambench":     "data/PutnamBench",
+    "proofnet":        "data/ProofNet",
+    "fate-m":          "data/FATE-M",
+    "fate-h":          "data/FATE-H",
+    "fate-x":          "data/FATE-X",
+    "formalmath":      "data/FormalMATH",
+    "numinamath_lean": "data/NuminaMath-LEAN",
 }
 
 
@@ -91,6 +93,16 @@ def load_benchmark(benchmark: str, split: str = "test",
             logger.error(
                 f"{repo}: 未找到数据。请先下载:\n"
                 f"  git clone https://github.com/frenzymath/{repo} {data_path}\n"
+                f"或指定 --path 参数。")
+    elif b in ("numinamathlean", "numinamath", "numina"):
+        from benchmarks.datasets.numinamath_lean.loader import (
+            load, hf_download_hint)
+        data_path = path or _DEFAULT_PATHS["numinamath_lean"]
+        problems = load(data_path, split)
+        if not problems:
+            logger.error(
+                f"NuminaMath-LEAN: 未找到数据。请先下载:\n"
+                f"  {hf_download_hint()}\n"
                 f"或指定 --path 参数。")
     else:
         available = list(_DEFAULT_PATHS.keys())

@@ -8,11 +8,22 @@ It takes a single tactic string, applies it via the Lean4 REPL pool, and
 returns the resulting goal state as a JSON observation. It transparently
 updates a `search_state` object (if provided) so the outer SearchDriver
 can track tree expansion.
+
+v4: every successful or failed tactic application is also deposited
+into the KnowledgeWriter (if one is wired in), giving step-level
+profiles (reprover / leandojo / mcts / best_first / beam) the same
+auto-teach pipeline that whole-proof profiles already have via
+Kimina's batch_verify. The deposit is best-effort — any exception
+inside the writer is swallowed so a misbehaving knowledge store can
+never crash the proof loop.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
+from typing import Optional
 from agent.tools.base import Tool, ToolContext, ToolResult, ToolPermission
 
 logger = logging.getLogger(__name__)
@@ -57,9 +68,24 @@ class TacticApplyTool(Tool):
         "required": ["tactic"],
     }
 
-    def __init__(self, lean_pool=None, search_state=None):
+    def __init__(self, lean_pool=None, search_state=None,
+                 knowledge_writer=None, world_model=None,
+                 wm_min_confidence: float = 0.85):
         self._pool = lean_pool
         self._search_state = search_state  # may be None in non-search mode
+        # v4: optional KnowledgeWriter — when present, every step is
+        # auto-deposited (Layer 1 tactic effectiveness + error patterns).
+        self._kw = knowledge_writer
+        # v4: optional WorldModelPredictor — when present, the tool asks
+        # "is this tactic likely to fail?" before sending to Lean. Only
+        # high-confidence failures (≥ wm_min_confidence) are gated; we
+        # never block a tactic the model is uncertain about.
+        self._wm = world_model
+        self._wm_min_conf = float(wm_min_confidence)
+        # Per-tool monotonic step counter. Step indices in deposits are
+        # only meaningful relative to a single TacticApplyTool instance,
+        # which matches the natural "one tool per agent run" model.
+        self._step_index = 0
 
     async def execute(self, input: dict, ctx: ToolContext) -> ToolResult:
         tactic = input["tactic"].strip()
@@ -73,11 +99,54 @@ class TacticApplyTool(Tool):
         # Decide which env_id to apply in
         env_id = self._resolve_env_id(node_id)
 
+        # Capture goals_before from the search state (if available)
+        # for the step deposit. Without a search_state we have to leave
+        # this empty — Layer 1 deposit then becomes a noop (no
+        # goal_pattern), which is the correct behaviour.
+        goals_before = self._capture_goals_before(node_id)
+
+        # v4: optional WorldModel gate — short-circuit a tactic the
+        # model is highly confident will fail. Only fires when both a
+        # world model is wired AND we have a goal_state to feed it.
+        gate = self._wm_gate(tactic, goals_before)
+        if gate is not None:
+            # Predicted failure with high confidence — synthesize the
+            # observation Lean would have produced and skip the call.
+            obs = {
+                "tactic": tactic,
+                "success": False,
+                "is_proof_complete": False,
+                "remaining_goals": list(goals_before),
+                "num_goals": len(goals_before),
+                "error_category": "world_model_blocked",
+                "error_message": (
+                    f"WorldModel rejected (p_success={1.0 - gate:.3f}); "
+                    f"Lean call skipped"),
+                "world_model_blocked": True,
+            }
+            await self._deposit_step_safe(
+                tactic=tactic, env_id_before=env_id, env_id_after=-1,
+                goals_before=goals_before, goals_after=[],
+                error_message=obs["error_message"],
+                error_category="world_model_blocked",
+                elapsed_ms=0.0, is_proof_complete=False, ctx=ctx)
+            return ToolResult.success(json.dumps(obs, ensure_ascii=False))
+
+        t0 = time.monotonic()
         try:
             r = await self._try_tactic_async(env_id, tactic)
         except Exception as e:
             logger.warning(f"tactic_apply failed: {e}")
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            # Even infrastructure-level failures get deposited as a step
+            # so the Layer 1 error pattern table reflects reality.
+            await self._deposit_step_safe(
+                tactic=tactic, env_id_before=env_id, env_id_after=-1,
+                goals_before=goals_before, goals_after=[],
+                error_message=str(e), error_category="repl_error",
+                elapsed_ms=elapsed_ms, is_proof_complete=False, ctx=ctx)
             return ToolResult.error(f"REPL error: {e}")
+        elapsed_ms = (time.monotonic() - t0) * 1000
 
         # Build observation
         obs = {
@@ -104,6 +173,21 @@ class TacticApplyTool(Tool):
             )
             obs["new_node_id"] = new_node_id
 
+        # ── v4: deposit the step into the knowledge pyramid ─────────────
+        # This is fail-soft — _deposit_step_safe swallows every exception.
+        await self._deposit_step_safe(
+            tactic=tactic,
+            env_id_before=env_id,
+            env_id_after=getattr(r, "new_env_id", -1) if obs["success"] else -1,
+            goals_before=goals_before,
+            goals_after=obs["remaining_goals"] if obs["success"] else [],
+            error_message=obs.get("error_message", "") if not obs["success"] else "",
+            error_category=obs.get("error_category", "") if not obs["success"] else "",
+            elapsed_ms=elapsed_ms,
+            is_proof_complete=obs["is_proof_complete"],
+            ctx=ctx,
+        )
+
         return ToolResult.success(json.dumps(obs, ensure_ascii=False))
 
     # ── helpers ────────────────────────────────────────────────────────
@@ -117,9 +201,47 @@ class TacticApplyTool(Tool):
         # no search driver — use the pool's base env
         return getattr(self._pool, "base_env_id", 0)
 
+    def _capture_goals_before(self, node_id) -> list[str]:
+        """Best-effort lookup of the goals at the node we're about to act on."""
+        if self._search_state is None:
+            return []
+        try:
+            cur = node_id
+            if cur is None:
+                cur = self._search_state.current_node_id
+            node = self._search_state.nodes.get(cur)
+            return list(node.goals) if node else []
+        except Exception:
+            return []
+
+    def _wm_gate(self, tactic: str,
+                  goals_before: list[str]) -> Optional[float]:
+        """If the world model is loaded and predicts this tactic is
+        very likely to fail, return ``1 - p_success`` (the rejection
+        confidence). Otherwise return None to mean "let it run".
+
+        Conservative: blocks only when *both*
+          (a) the model says ``likely_success=False`` AND
+          (b) ``confidence >= wm_min_confidence`` (default 0.85).
+
+        Anything below the threshold runs normally so the agent can
+        explore tactics the model is uncertain about — that's how
+        the model improves.
+        """
+        if self._wm is None or not goals_before:
+            return None
+        try:
+            goal = goals_before[0]
+            pred = self._wm.predict(goal, tactic)
+            if (not pred.likely_success
+                    and pred.confidence >= self._wm_min_conf):
+                return float(pred.confidence)
+        except Exception as e:
+            logger.debug(f"world_model.predict failed: {e}")
+        return None
+
     async def _try_tactic_async(self, env_id, tactic):
         """Pool may be sync or async; handle both."""
-        import asyncio
         if hasattr(self._pool, "try_tactic"):
             fn = self._pool.try_tactic
             if asyncio.iscoroutinefunction(fn):
@@ -127,3 +249,39 @@ class TacticApplyTool(Tool):
             loop = asyncio.get_event_loop()
             return await loop.run_in_executor(None, fn, env_id, tactic)
         raise RuntimeError("lean_pool has no try_tactic method")
+
+    async def _deposit_step_safe(
+            self, *, tactic: str,
+            env_id_before: int, env_id_after: int,
+            goals_before: list[str], goals_after: list[str],
+            error_message: str, error_category: str,
+            elapsed_ms: float, is_proof_complete: bool,
+            ctx: ToolContext) -> None:
+        """Fire-and-forget step-level deposit into the knowledge writer.
+
+        Any exception is logged at DEBUG and swallowed — we never let a
+        knowledge problem break the proof loop. If no writer is wired,
+        this is a fast noop.
+        """
+        if self._kw is None:
+            return
+        try:
+            from engine.proof_context_store import StepDetail
+            step = StepDetail(
+                step_index=self._step_index,
+                tactic=tactic,
+                env_id_before=env_id_before,
+                env_id_after=env_id_after,
+                goals_before=list(goals_before),
+                goals_after=list(goals_after),
+                error_message=error_message or "",
+                error_category=error_category or "",
+                elapsed_ms=elapsed_ms,
+                is_proof_complete=bool(is_proof_complete),
+            )
+            self._step_index += 1
+            theorem = getattr(ctx, "theorem_statement", "") or ""
+            await self._kw.ingest_step(step, theorem=theorem)
+        except Exception as e:
+            logger.debug(
+                f"tactic_apply step deposit skipped (writer error): {e}")

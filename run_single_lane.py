@@ -73,8 +73,16 @@ def main():
         help=(
             "走统一管线 (prover.unified) 的 profile 名. "
             "可选: whole_proof, whole_proof_repair, dsp, reprover, "
-            "leandojo, heterogeneous. 不指定则走原 Lane 路径."
+            "leandojo, heterogeneous, kimina_batch, pantograph_dsp, "
+            "lookeng_lemma, nfl_hybrid. 不指定则走原 Lane 路径."
         ))
+    parser.add_argument(
+        "--backend", default="auto",
+        choices=["auto", "local", "socket", "http", "kimina",
+                  "pantograph", "lookeng", "mock", "fallback"],
+        help="Lean 4 verification backend (single-lane mode).")
+    parser.add_argument("--backend-url", default=None)
+    parser.add_argument("--backend-api-key", default=None)
     args = parser.parse_args()
 
     if args.verbose:

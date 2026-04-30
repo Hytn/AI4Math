@@ -41,6 +41,13 @@ class ToolKit(str, Enum):
     TREE_VIEW       = "tree_view"         # 看当前搜索树状态
     TREE_SELECT     = "tree_select"       # 选下一个要展开的节点 (LLM-driven 才用)
 
+    # ─ 基础设施大一统: 来自社区配套工作的新工具 ─
+    BATCH_VERIFY    = "batch_verify"      # Kimina Lean Server: 批量编译多个 proof
+    MVAR_FOCUS      = "mvar_focus"        # Pantograph: 旋转 goal 列表到指定 mvar
+    DRAFT_HOLE      = "draft_hole"        # Pantograph: 插入 sorry-hole (DSP 原生)
+    LEMMA_BY_LEMMA  = "lemma_by_lemma"    # LooKeng: 一次提交一个 lemma 而非整证
+    NL_EXISTENCE    = "nl_existence"      # NFL-HR: NL→FL existence-theorem 桥接
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # Search Driver Config — 外部搜索算法 (可选)
@@ -87,6 +94,12 @@ class ObservationPolicy:
     inject_premises_in_prompt —— 初始 user message 是否预先粘上检索到的引理 (top-N).
     n_premises —— 初始注入的引理条数上限.
     inject_few_shot —— 初始 user message 是否附上 few-shot 示例.
+    inject_similar_dialogs —— v5: 初始 user message 是否预先粘上相似的过往对话 demo
+                              (来自 KnowledgeReader/DialogIndex). 默认 False —
+                              opt-in 以避免对未配置 DialogIndex 的 caller 产生
+                              意外上下文长度增长.
+    n_similar_dialogs —— v5: 注入相似对话的条数上限.
+    similar_dialogs_max_chars —— v5: 注入相似对话块的字符上限.
     """
     auto_inject_lean_compile: bool = True
     auto_inject_goal_state: bool = False
@@ -97,6 +110,10 @@ class ObservationPolicy:
     inject_premises_in_prompt: bool = True        # v3 新增: 检索引理预注入
     n_premises: int = 10                           # v3 新增
     inject_few_shot: bool = True                   # v3 新增: few-shot 注入
+    # v5 — 跨问题对话检索
+    inject_similar_dialogs: bool = False           # opt-in: 默认关
+    n_similar_dialogs: int = 3
+    similar_dialogs_max_chars: int = 2000
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -236,68 +253,172 @@ PRESETS: dict[str, Profile] = {
             ],
         ),
     ),
-}
 
+    # ─ Family 6: 基础设施大一统 (社区配套基建对应的 profile) ───────────
+    #
+    # 每个 profile 都映射到一个具体的社区基建工作:
+    #   kimina_batch    ↔ Kimina Lean Server (Numina/Kimi)
+    #   pantograph_dsp  ↔ Pantograph (Numina/Stanford/CMU)
+    #   lookeng_lemma   ↔ LooKeng (Seed-Prover 1.5)
+    #   nfl_hybrid      ↔ NFL-HR (Yao et al., EMNLP 2025)
+    #
+    # 它们的公共契约: 每个都是 "推理范式 × 具体基建后端" 的笛卡尔积. 把
+    # backend 选择从 verifier 层解耦到 profile 层后, 切基建就和切推理范式
+    # 一样, 都只动一个 --profile 旗.
 
-# ═══════════════════════════════════════════════════════════════════════
-# Experimental: 树搜索范式 (best_first / mcts / beam) — v3 暂搁置
-# ═══════════════════════════════════════════════════════════════════════
-#
-# 这些 preset 依赖 ``search_driver.py`` 的 SharedSearchState + driver 实现,
-# 整套机制完整但与"线性 dialog 主管线"还没合流。v3 主管线先把 5 个非搜索
-# 范式 (whole_proof / repair / dsp / reprover / leandojo / heterogeneous)
-# 大一统; MCTS 系列下个版本再抬升到 dialog-tree 之上。
-#
-# 用户可显式 opt-in: ``register_profile`` + EXPERIMENTAL_PRESETS[name]。
-EXPERIMENTAL_PRESETS: dict[str, Profile] = {
-
-    "best_first": Profile(
-        name="best_first",
-        description="(实验) 外部 best-first driver 选节点, 每节点唤起 max_turns=1 的 agent expansion",
-        tools=[ToolKit.TACTIC_APPLY],
-        max_turns=1,
-        framing="step_level_pure",
-        search=SearchConfig(
-            kind="best_first",
-            max_nodes=200, max_depth=25,
-            expansion_max_turns=1,
+    "kimina_batch": Profile(
+        name="kimina_batch",
+        description=(
+            "Kimina Lean Server 路线: 大批量 pass@k 通过 REST 一次提交. "
+            "适合 RL roll-out / benchmark sweep. 推理仍是 whole-proof 风格."
         ),
-        observation=ObservationPolicy(auto_inject_goal_state=True),
+        tools=[ToolKit.LEAN_VERIFY, ToolKit.BATCH_VERIFY],
+        max_turns=2,
+        framing="whole_proof_repair",
+        observation=ObservationPolicy(
+            auto_inject_lean_compile=True,
+            inject_premises_in_prompt=True,
+            inject_few_shot=True,
+        ),
     ),
 
-    "mcts": Profile(
-        name="mcts",
-        description="(实验) UCB1 selection + backprop, agent 只做 expansion",
-        tools=[ToolKit.TACTIC_APPLY],
-        max_turns=1,
-        framing="step_level_pure",
-        search=SearchConfig(
-            kind="ucb", ucb_c=1.414,
-            max_nodes=400, max_depth=30,
-            expansion_max_turns=1,
+    "pantograph_dsp": Profile(
+        name="pantograph_dsp",
+        description=(
+            "Pantograph 路线: 显式 mvar coupling + DSP 原生 drafting. "
+            "对多 conjunct/case-split goal 收益最大."
         ),
+        tools=[ToolKit.DECOMPOSE, ToolKit.PREMISE_SEARCH,
+                ToolKit.DRAFT_HOLE, ToolKit.MVAR_FOCUS,
+                ToolKit.TACTIC_APPLY, ToolKit.GOAL_INSPECT,
+                ToolKit.LEAN_VERIFY],
+        max_turns=20,
+        framing="pantograph_dsp",
         observation=ObservationPolicy(
             auto_inject_goal_state=True,
-            include_search_state_in_prompt=True,  # 让 LLM 看到祖先链 + 兄弟分支
+            auto_inject_lean_compile=True,
         ),
     ),
 
-    "beam": Profile(
-        name="beam",
-        description="(实验) 每深度保留 top-K 节点的 best-first 变体",
-        tools=[ToolKit.TACTIC_APPLY],
-        max_turns=1,
-        framing="step_level_pure",
-        search=SearchConfig(kind="beam", beam_width=8, max_depth=20),
+    "lookeng_lemma": Profile(
+        name="lookeng_lemma",
+        description=(
+            "LooKeng 路线: stateless REPL + 一次提交一个 lemma. "
+            "长证明/PutnamBench/FATE-X 上 I/O 减约 40%."
+        ),
+        tools=[ToolKit.LEMMA_BY_LEMMA, ToolKit.PREMISE_SEARCH,
+                ToolKit.LEMMA_BANK],
+        max_turns=40,
+        framing="lookeng_lemma",
+        observation=ObservationPolicy(
+            auto_inject_lean_compile=False,  # lemma_by_lemma 自带验证
+            auto_inject_goal_state=False,
+            inject_premises_in_prompt=False, # 通过 tool 按需检索
+            inject_few_shot=True,
+        ),
+    ),
+
+    "nfl_hybrid": Profile(
+        name="nfl_hybrid",
+        description=(
+            "NFL-HR 路线: NL-FL hybrid reasoning. NL→FL existence-theorem "
+            "桥接, FL prover 在 Long-CoT 里同时回答 NL + 证明 FL."
+        ),
+        tools=[ToolKit.NL_EXISTENCE, ToolKit.LEAN_VERIFY,
+                ToolKit.PREMISE_SEARCH, ToolKit.CAS],
+        max_turns=8,
+        framing="nfl_hybrid",
+        observation=ObservationPolicy(
+            auto_inject_lean_compile=True,
+            inject_premises_in_prompt=True,
+            inject_few_shot=True,
+        ),
     ),
 }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Family 7: Tree-search profiles (mcts / best_first / beam) — v4 合流
+# ═══════════════════════════════════════════════════════════════════════
+#
+# v3 把这三个 preset 隔离在 EXPERIMENTAL_PRESETS 中, 因为搜索结构与
+# dialog-linear 主管线不兼容. v4 在 dialog.json schema 3.0 中加了
+# meta.search_tree 块, 把树状探索元数据原生写入主存储格式 ——
+# 既保持线性 messages 兼容下游 SFT, 又保留完整的搜索 DAG 供分析/replay。
+#
+# 现在它们与其他 9 个 profile 完全平等: 同一份 PRESETS, 同一个
+# UnifiedProofRunner.run() 入口, 同一份 dialog.json 输出. 切换还是只
+# 改 --profile 一个旗.
+
+PRESETS["best_first"] = Profile(
+    name="best_first",
+    description=(
+        "Best-first search: 外部 driver 选启发式分最高的开放叶子, "
+        "每个节点用 max_turns=1 的 agent expansion. v4 起进入 PRESETS, "
+        "search_tree 写入 meta.search_tree."
+    ),
+    tools=[ToolKit.TACTIC_APPLY],
+    max_turns=1,
+    framing="step_level_pure",
+    search=SearchConfig(
+        kind="best_first",
+        max_nodes=200, max_depth=25,
+        expansion_max_turns=1,
+    ),
+    observation=ObservationPolicy(auto_inject_goal_state=True),
+)
+
+PRESETS["mcts"] = Profile(
+    name="mcts",
+    description=(
+        "MCTS-UCB1 search: selection + backprop 由 driver 完成, "
+        "agent 只做 expansion. 树结构进 dialog.json 的 meta.search_tree. "
+        "(v4 起从 EXPERIMENTAL_PRESETS 升正)"
+    ),
+    tools=[ToolKit.TACTIC_APPLY],
+    max_turns=1,
+    framing="step_level_pure",
+    search=SearchConfig(
+        kind="ucb", ucb_c=1.414,
+        max_nodes=400, max_depth=30,
+        expansion_max_turns=1,
+    ),
+    observation=ObservationPolicy(
+        auto_inject_goal_state=True,
+        include_search_state_in_prompt=True,  # LLM 看到祖先链 + 兄弟分支
+    ),
+)
+
+PRESETS["beam"] = Profile(
+    name="beam",
+    description=(
+        "Beam search: 每深度保留 top-W 节点的 best-first 变体. "
+        "search_tree 写入 meta.search_tree."
+    ),
+    tools=[ToolKit.TACTIC_APPLY],
+    max_turns=1,
+    framing="step_level_pure",
+    search=SearchConfig(kind="beam", beam_width=8, max_depth=20),
+    observation=ObservationPolicy(auto_inject_goal_state=True),
+)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Experimental: 留作未来不确定方向; 当前为空, 但保留 API.
+# ═══════════════════════════════════════════════════════════════════════
+
+EXPERIMENTAL_PRESETS: dict[str, Profile] = {}
 
 
 def enable_experimental_search_presets() -> None:
-    """显式注册实验性树搜索 preset (best_first / mcts / beam)。
+    """Back-compat shim: tree-search presets (best_first / mcts / beam)
+    are now in PRESETS by default thanks to v4's dialog.json schema 3.0
+    merge. This function used to opt-in three EXPERIMENTAL_PRESETS into
+    PRESETS; it is kept callable so older scripts don't break, but it
+    has no effect now and will be removed in a later version.
 
-    主管线默认不暴露这些, 因为它们与 dialog-linear 主路径还没合流。
-    需要做 MCTS 实验时调用本函数; 之后 ``get_profile("mcts")`` 可用。
+    EXPERIMENTAL_PRESETS itself remains as an extension point for any
+    *future* presets we want to gate behind explicit opt-in.
     """
     for name, prof in EXPERIMENTAL_PRESETS.items():
         PRESETS[name] = prof
