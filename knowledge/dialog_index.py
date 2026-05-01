@@ -70,14 +70,129 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sqlite3
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Optional, Union
+from typing import Any, Iterable, Iterator, Optional, Union
 
 from knowledge.tfidf_retriever import KnowledgeTFIDFRetriever
 
 logger = logging.getLogger(__name__)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# SQLite persistence — V6 close of INFRA_MERGE_V5_REPORT.md V6+ item #1.
+#
+# In-memory rebuild from on-disk dialog.json files is fast (<200ms for
+# 10k dialogs) but a long-running process that has already ingested
+# 50k+ entries doesn't want to redo the directory scan on every
+# subprocess restart. SQLite is the natural store: it's already what
+# UnifiedKnowledgeStore uses, the rest of the project assumes WAL is
+# available, and the entry shape is flat enough to fit two tables.
+#
+# Design choices:
+#
+#   * Snapshot semantics by default — persist_to_sqlite() takes the
+#     in-memory entries and writes them; load_from_sqlite() pulls them
+#     back. This avoids the "every add hits the disk" cost; the caller
+#     decides when to flush.
+#
+#   * Idempotent re-persistence — UPSERT by (theorem, source) means
+#     calling persist_to_sqlite() twice in a row doesn't double the
+#     row count. Tests pin this.
+#
+#   * No new schema-version field — SCHEMA_VERSION lives in the
+#     dialog_index_meta table; if the file is from a future version
+#     load_from_sqlite() refuses cleanly rather than silently
+#     misreading.
+#
+#   * Connection isolation per-call — we don't keep a long-lived
+#     connection on the DialogIndex object. Tests, in-memory ":memory:"
+#     fixtures, and concurrent processes all behave more predictably
+#     when each persist/load opens its own connection.
+# ─────────────────────────────────────────────────────────────────────
+
+_SQLITE_SCHEMA_VERSION = "1"
+
+_SQLITE_DDL = """
+CREATE TABLE IF NOT EXISTS dialog_entries (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  theorem           TEXT    NOT NULL,
+  solved            INTEGER NOT NULL,
+  final_proof       TEXT    NOT NULL DEFAULT '',
+  used_tactics_json TEXT    NOT NULL DEFAULT '[]',
+  source            TEXT    NOT NULL DEFAULT '',
+  timestamp         REAL    NOT NULL DEFAULT 0,
+  UNIQUE(theorem, source)
+);
+CREATE INDEX IF NOT EXISTS idx_dialog_entries_theorem
+  ON dialog_entries(theorem);
+CREATE INDEX IF NOT EXISTS idx_dialog_entries_solved
+  ON dialog_entries(solved);
+
+CREATE TABLE IF NOT EXISTS dialog_index_meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+"""
+
+
+@contextmanager
+def _connect_sqlite(path: Union[str, Path]) -> Iterator[sqlite3.Connection]:
+    """Open a SQLite connection with WAL + foreign keys; yield then close.
+
+    Mirrors the connection pragmas used in :mod:`engine.proof_context_store`
+    so a DialogIndex SQLite file is operationally identical to the
+    project's other SQLite stores.
+    """
+    conn = sqlite3.connect(str(path), timeout=30.0)
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        yield conn
+    finally:
+        conn.close()
+
+
+def _ensure_schema(conn: sqlite3.Connection) -> None:
+    """Create tables and write the schema version. Idempotent."""
+    conn.executescript(_SQLITE_DDL)
+    conn.execute(
+        "INSERT OR REPLACE INTO dialog_index_meta(key, value) VALUES (?, ?)",
+        ("schema_version", _SQLITE_SCHEMA_VERSION),
+    )
+    conn.commit()
+
+
+def _check_schema_compat(conn: sqlite3.Connection) -> Optional[str]:
+    """Return the schema version stored in the file, or None if absent.
+
+    Raises RuntimeError if the file is from a *newer* schema than this
+    code understands — silently misreading would be worse than failing.
+    """
+    try:
+        row = conn.execute(
+            "SELECT value FROM dialog_index_meta WHERE key='schema_version'"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        # Table doesn't exist yet — fresh file, caller will _ensure_schema.
+        return None
+    if row is None:
+        return None
+    found = str(row["value"])
+    if found != _SQLITE_SCHEMA_VERSION:
+        # Forwards-compat: future versions can land a migration here.
+        # For now, refuse newer; accept older (none exist yet).
+        if found > _SQLITE_SCHEMA_VERSION:
+            raise RuntimeError(
+                f"DialogIndex SQLite file at schema {found!r} is newer "
+                f"than this code (knows {_SQLITE_SCHEMA_VERSION!r}); "
+                "upgrade the AI4Math package to read this file.")
+    return found
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -558,6 +673,148 @@ class DialogIndex:
             rendered = rendered[:cut].rstrip() + (
                 "\n\n_… (truncated for length)_\n")
         return rendered
+
+    # ── SQLite persistence (V6 — closes V5 V6+ #1) ─────────────────
+
+    def persist_to_sqlite(
+            self, db_path: Union[str, Path], *,
+            replace: bool = False) -> int:
+        """Flush all in-memory entries to a SQLite file.
+
+        The file is created if absent. Schema is created idempotently.
+        Each entry is UPSERTed by ``(theorem, source)`` so calling
+        ``persist_to_sqlite`` twice in a row writes each entry once,
+        not twice — re-running ``index_from_directory(...) +
+        persist_to_sqlite(...)`` after a partial sweep is safe.
+
+        Args:
+          db_path:  SQLite file path. ``":memory:"`` works for tests.
+          replace:  If True, ``DELETE FROM dialog_entries`` before
+                    inserting. Use this when the in-memory state is
+                    the new authoritative snapshot.
+
+        Returns:
+          Number of rows written (== number of entries persisted).
+
+        Errors are logged and re-raised — persistence failures are
+        loud because a silent failure here causes confusing staleness
+        bugs in the next process.
+        """
+        path = str(db_path)
+        try:
+            with _connect_sqlite(path) as conn:
+                _check_schema_compat(conn)
+                _ensure_schema(conn)
+                if replace:
+                    conn.execute("DELETE FROM dialog_entries")
+                rows = [
+                    (
+                        e.theorem,
+                        1 if e.solved else 0,
+                        e.final_proof or "",
+                        json.dumps(e.used_tactics, ensure_ascii=False),
+                        e.source or "",
+                        float(e.timestamp or 0.0),
+                    )
+                    for e in self._entries
+                ]
+                conn.executemany(
+                    "INSERT INTO dialog_entries"
+                    "  (theorem, solved, final_proof, used_tactics_json, "
+                    "   source, timestamp) "
+                    "VALUES (?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(theorem, source) DO UPDATE SET "
+                    "  solved=excluded.solved, "
+                    "  final_proof=excluded.final_proof, "
+                    "  used_tactics_json=excluded.used_tactics_json, "
+                    "  timestamp=excluded.timestamp",
+                    rows,
+                )
+                conn.commit()
+        except sqlite3.Error as e:
+            logger.error(f"DialogIndex.persist_to_sqlite({path!r}): {e}")
+            raise
+        logger.info(
+            f"DialogIndex: persisted {len(self._entries)} entries to {path}")
+        return len(self._entries)
+
+    def load_from_sqlite(self, db_path: Union[str, Path]) -> int:
+        """Read entries from a SQLite file and append them in-memory.
+
+        Does NOT clear existing entries — call :meth:`clear` first or
+        use :meth:`replace_from_sqlite` for snapshot semantics.
+
+        Returns the number of entries successfully loaded. Missing or
+        malformed files yield 0 with a debug log; the caller can treat
+        first-run-with-no-store as a clean empty index.
+        """
+        path = str(db_path)
+        if not os.path.exists(path) and path != ":memory:":
+            logger.debug(f"DialogIndex.load_from_sqlite: {path} absent")
+            return 0
+        try:
+            with _connect_sqlite(path) as conn:
+                _check_schema_compat(conn)
+                # Schema may not exist yet on a fresh ":memory:" file —
+                # ensure it so SELECT below doesn't OperationalError.
+                _ensure_schema(conn)
+                rows = conn.execute(
+                    "SELECT theorem, solved, final_proof, "
+                    "       used_tactics_json, source, timestamp "
+                    "FROM dialog_entries "
+                    "ORDER BY id ASC"
+                ).fetchall()
+        except sqlite3.Error as e:
+            logger.warning(f"DialogIndex.load_from_sqlite({path!r}): {e}")
+            return 0
+
+        added = 0
+        for row in rows:
+            try:
+                tactics = json.loads(row["used_tactics_json"] or "[]")
+                if not isinstance(tactics, list):
+                    tactics = []
+                tactics = [str(t) for t in tactics if t]
+            except (TypeError, ValueError, json.JSONDecodeError):
+                tactics = []
+            theorem = (row["theorem"] or "").strip()
+            if not theorem:
+                continue
+            self._entries.append(_DialogEntry(
+                theorem=theorem,
+                solved=bool(row["solved"]),
+                final_proof=row["final_proof"] or "",
+                used_tactics=tactics,
+                source=row["source"] or "",
+                timestamp=float(row["timestamp"] or 0.0),
+            ))
+            self._dirty = True
+            added += 1
+        if added:
+            logger.info(
+                f"DialogIndex: loaded {added} entries from {path}")
+        return added
+
+    def replace_from_sqlite(self, db_path: Union[str, Path]) -> int:
+        """Snapshot semantics: ``clear() + load_from_sqlite()``.
+
+        Returns the number of entries loaded. The previous in-memory
+        state is dropped on success. On load failure, the in-memory
+        state is *also* dropped (it's stale by definition once we've
+        decided to reload).
+        """
+        self.clear()
+        return self.load_from_sqlite(db_path)
+
+    @staticmethod
+    def sqlite_file_size(db_path: Union[str, Path]) -> Optional[int]:
+        """Convenience: return the persisted file size in bytes, or None
+        if the file doesn't exist. Used by callers that want to decide
+        between rebuilding from directory vs. loading from SQLite."""
+        try:
+            return os.path.getsize(str(db_path))
+        except OSError:
+            return None
 
     # ── Internal ────────────────────────────────────────────────────
 

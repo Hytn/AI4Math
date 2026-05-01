@@ -62,6 +62,20 @@ class UnifiedResult:
     # v3.0: full search-tree payload for tree-search profiles. None for
     # linear / parallel runs; rendered into ``meta.search_tree`` in dialog.json.
     search_tree: Optional[dict] = None
+    # v6: structured backend-status block. Populated by the runner before
+    # return; rendered into ``meta.backends`` by ``save_unified``. Tells
+    # downstream consumers which backend actually serviced the run vs
+    # which was *requested* — silently degraded "is_fallback=True"
+    # configurations are now first-class data instead of a debug-log line.
+    # Shape::
+    #   {"kimina":     {"present": bool, "is_fallback": bool, ...},
+    #    "pantograph": {"present": bool, "is_fallback": bool, "mode": str},
+    #    "lookeng":    {"present": bool, "is_fallback": bool},
+    #    "lean_pool":  {"present": bool, "kind": str}}
+    # An empty dict means "no backend introspection data captured" —
+    # legacy callers / direct UnifiedResult construction without the
+    # runner.
+    backends_status: dict = field(default_factory=dict)
 
     def save_unified(self, task_dir: str, *, problem_id: str = "",
                      model: str = "", provider: str = "",
@@ -74,6 +88,10 @@ class UnifiedResult:
         is attached to ``meta.search_tree`` *in addition to* the linear
         ``messages`` list (which carries the solved or best-explored path).
         Linear / parallel runs save unchanged from v2.0 behaviour.
+
+        v6: Backend status (which backend was used, whether it was a
+        silent fallback) attaches to ``meta.backends``. Absent when
+        ``backends_status`` is empty (e.g. legacy direct construction).
         """
         if self.loop_result is None:
             logger.warning("No loop_result to save")
@@ -84,8 +102,11 @@ class UnifiedResult:
             system_prompt=system_prompt, tools=tools,
             initial_task=initial_task,
         )
+        meta = dialog.setdefault("meta", {})
         if self.search_tree is not None:
-            dialog.setdefault("meta", {})["search_tree"] = self.search_tree
+            meta["search_tree"] = self.search_tree
+        if self.backends_status:
+            meta["backends"] = self.backends_status
         from agent.persistence.unified_storage import save_task
         return save_task(task_dir, dialog)
 
@@ -106,7 +127,8 @@ class UnifiedProofRunner:
                   kimina_backend=None,
                   pantograph_backend=None,
                   lookeng_backend=None,
-                  dialog_index=None):
+                  dialog_index=None,
+                  auto_register_llm_autoformalizer: bool = True):
         self.llm = llm
         self.lean_pool = lean_pool
         self.knowledge_store = knowledge_store
@@ -137,6 +159,80 @@ class UnifiedProofRunner:
         # as in-context demos. None disables the feature.
         self.dialog_index = dialog_index
 
+        # v6: by default, if the runner has an LLM and no autoformalizer
+        # has been registered yet, plug the LLM in as the default NL→FL
+        # translator for ``NLExistenceBridgeTool``. This closes the
+        # "5-pattern heuristic is silly when an LLM is on the bench"
+        # gap by making the LLM path the *default* instead of opt-in.
+        #
+        # Three guardrails:
+        #
+        #   1. We never overwrite an explicit prior registration. If
+        #      the user already called ``register_autoformalizer(...)``
+        #      or ``register_llm_autoformalizer(...)`` before
+        #      constructing the runner, we leave that callable in place.
+        #   2. Pass ``auto_register_llm_autoformalizer=False`` to
+        #      preserve the V5-and-earlier behaviour (heuristic until
+        #      the user explicitly registers).
+        #   3. Registration failures are swallowed — autoformalization
+        #      is a best-effort path, not a precondition for proof.
+        self._auto_registered_autoformalizer = False
+        if auto_register_llm_autoformalizer and llm is not None:
+            self._maybe_auto_register_autoformalizer()
+
+    def _maybe_auto_register_autoformalizer(self) -> None:
+        """Register the LLM as the default NL→FL translator iff none set.
+
+        Safe to call multiple times — only the first call (in any
+        process) actually registers. Subsequent runners observe a
+        non-None registry and leave it alone, so two runners
+        constructed back-to-back don't fight over the registration.
+
+        Behaviour:
+          * already-set registry → no-op
+          * import failure (tools_infra/llm_autoformalizer) → log
+            debug, no-op (the heuristic path still works)
+          * llm doesn't expose ``.generate`` or ``.agenerate`` →
+            no-op (autoformalizer factory would reject it anyway)
+          * happy path → register, set
+            ``_auto_registered_autoformalizer = True``
+
+        We deliberately do not touch the heuristic registration path:
+        the autoformalizer registry is module-level, so a single
+        successful registration affects every NLExistenceBridgeTool
+        in the process — but the heuristic remains the documented
+        fallback when the registered callable raises.
+        """
+        try:
+            from prover.unified.tools_infra import (
+                _get_autoformalizer, register_autoformalizer)
+            from prover.unified.llm_autoformalizer import (
+                make_llm_autoformalizer)
+        except ImportError as e:
+            logger.debug(
+                f"[unified] auto-register autoformalizer skipped: {e}")
+            return
+
+        if _get_autoformalizer() is not None:
+            # Caller already set up an autoformalizer (LLM or otherwise).
+            # Do not clobber.
+            return
+
+        # ``make_llm_autoformalizer`` validates the LLM shape and
+        # raises if .generate is missing — wrap the whole thing in a
+        # broad except so a non-conforming LLM doesn't break runner
+        # construction.
+        try:
+            fn = make_llm_autoformalizer(self.llm)
+            register_autoformalizer(fn)
+            self._auto_registered_autoformalizer = True
+            logger.debug(
+                "[unified] auto-registered LLM autoformalizer "
+                "(default NL→FL translator now uses runner.llm)")
+        except Exception as e:  # noqa: BLE001
+            logger.debug(
+                f"[unified] LLM autoformalizer registration failed: {e}")
+
     # ──────────────────────────────────────────────────────────────────
     # Public API
     # ──────────────────────────────────────────────────────────────────
@@ -163,7 +259,109 @@ class UnifiedProofRunner:
             raise ValueError(f"unknown search.kind: {prof.search.kind}")
 
         ur.total_duration_ms = int((time.time() - start) * 1000)
+        # v6: capture backend introspection so the dialog records which
+        # backend actually serviced the run (vs which was requested).
+        # Done after dispatch so the data reflects post-run state
+        # (e.g. a backend that started healthy but degraded mid-run).
+        ur.backends_status = self._collect_backend_status()
         return ur
+
+    def _collect_backend_status(self) -> dict:
+        """Snapshot the four backend slots into a structured dict.
+
+        Returns a dict whose top-level keys are the four backend slots
+        the runner knows about (``kimina``, ``pantograph``, ``lookeng``,
+        ``lean_pool``). Each value is a sub-dict with at least:
+
+          * ``present`` — whether the runner has a backend object in
+            this slot at all
+          * ``is_fallback`` — for community backends, whether the
+            backend silently degraded (e.g. pypantograph not installed,
+            Kimina server unreachable). Always ``False`` for ``lean_pool``
+            since the local Lean pool has no fallback concept.
+
+        Plus per-backend extras (``mode`` for pantograph, ``kind`` for
+        lean_pool, etc.) when the backend exposes them. Missing
+        attributes are tolerated — older or third-party backend
+        implementations that don't expose ``is_fallback`` get
+        ``"is_fallback": None`` so callers can distinguish "definitely
+        not fallback" (False) from "we don't know" (None).
+
+        Returns ``{}`` (empty dict) only on a complete introspection
+        failure — never raises. The contract is "best-effort, fail-soft":
+        the dialog still writes even if introspection blows up.
+        """
+        status: dict = {}
+
+        def _peek(slot_name: str, backend, *,
+                   want_attrs: tuple = ("is_fallback",),
+                   want_method: tuple = ()) -> dict:
+            """Read attributes from a backend object, tolerating any failure."""
+            entry: dict = {"present": backend is not None}
+            if backend is None:
+                return entry
+            for attr in want_attrs:
+                try:
+                    val = getattr(backend, attr, None)
+                    # Properties may compute things; coerce to plain bool/str
+                    if val is True or val is False:
+                        entry[attr] = bool(val)
+                    elif val is None:
+                        entry[attr] = None
+                    else:
+                        entry[attr] = str(val)
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(
+                        f"_collect_backend_status: {slot_name}.{attr} "
+                        f"raised {type(e).__name__}: {e}")
+                    entry[attr] = None
+            for meth in want_method:
+                try:
+                    fn = getattr(backend, meth, None)
+                    if callable(fn):
+                        entry[meth] = fn()
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(
+                        f"_collect_backend_status: {slot_name}.{meth}() "
+                        f"raised {type(e).__name__}: {e}")
+            return entry
+
+        try:
+            status["kimina"] = _peek(
+                "kimina", self.kimina_backend,
+                want_attrs=("is_fallback", "is_alive"))
+            status["pantograph"] = _peek(
+                "pantograph", self.pantograph_backend,
+                want_attrs=("is_fallback", "mode"))
+            status["lookeng"] = _peek(
+                "lookeng", self.lookeng_backend,
+                want_attrs=("is_fallback",))
+            # lean_pool has a different shape — it's the local
+            # AsyncLeanPool, not a community REPLTransport. No
+            # fallback concept; we record only its class name as
+            # ``kind`` so the dialog shows whether the run used the
+            # real pool, a Mock pool, or a custom pool.
+            lean_entry: dict = {"present": self.lean_pool is not None}
+            if self.lean_pool is not None:
+                lean_entry["kind"] = type(self.lean_pool).__name__
+                # Optional: many pool implementations expose ``size``
+                # or ``alive`` — record if present, ignore if not.
+                for opt in ("size", "is_alive"):
+                    val = getattr(self.lean_pool, opt, None)
+                    if val is True or val is False:
+                        lean_entry[opt] = bool(val)
+                    elif isinstance(val, int):
+                        lean_entry[opt] = val
+            status["lean_pool"] = lean_entry
+        except Exception as e:  # noqa: BLE001
+            # Hard fail-soft: any unexpected failure during
+            # introspection yields an empty dict. The dialog still
+            # saves; downstream consumers see no backends block and
+            # treat that as "no introspection data".
+            logger.warning(
+                f"[unified] backend status collection failed: {e}")
+            return {}
+        return status
 
     # ──────────────────────────────────────────────────────────────────
     # Mode A: single AgentLoop, no outer search

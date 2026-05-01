@@ -33,7 +33,8 @@ def build_tool_registry(profile: Profile, *,
                           search_state=None,
                           kimina_backend=None,
                           pantograph_backend=None,
-                          lookeng_backend=None) -> ToolRegistry:
+                          lookeng_backend=None,
+                          llm=None) -> ToolRegistry:
     """根据 profile.tools 组装一个 ToolRegistry.
 
     `search_state` 仅在 profile.search.kind != "none" 时由 runner 注入,
@@ -53,6 +54,10 @@ def build_tool_registry(profile: Profile, *,
     在选择对应 backend 时注入, 启用基础设施大一统的工具. 当对应 backend
     未配置时, 工具会以 fallback 模式注册 — 其 execute() 返回结构化错误,
     不会破坏 agent loop。
+
+    `llm` 是 v6 新参数 — 当 profile 含 CONJECTURE_PROPOSE 时, 工具需要
+    LLM 调用做猜想生成. 不传也能跑 (执行时会从 ctx.shared_state['llm']
+    兜底获取); 显式传入则路径更直接.
     """
     registry = ToolRegistry()
 
@@ -68,7 +73,8 @@ def build_tool_registry(profile: Profile, *,
                                search_state=search_state,
                                kimina_backend=kimina_backend,
                                pantograph_backend=pantograph_backend,
-                               lookeng_backend=lookeng_backend)
+                               lookeng_backend=lookeng_backend,
+                               llm=llm)
             if tool is not None:
                 registry.register(tool)
         except Exception as e:
@@ -84,7 +90,8 @@ def _build_tool(kit: ToolKit, *, lean_pool, knowledge_store,
                 knowledge_writer=None,
                 world_model=None,
                 kimina_backend=None, pantograph_backend=None,
-                lookeng_backend=None):
+                lookeng_backend=None,
+                llm=None):
     """单个 ToolKit → 单个 Tool 实例."""
 
     if kit == ToolKit.LEAN_VERIFY:
@@ -167,5 +174,14 @@ def _build_tool(kit: ToolKit, *, lean_pool, knowledge_store,
     if kit == ToolKit.NL_EXISTENCE:
         from prover.unified.tools_infra import NLExistenceBridgeTool
         return NLExistenceBridgeTool()
+
+    # ─ v6: 猜想驱动 ──────────────────────────────────────────
+    if kit == ToolKit.CONJECTURE_PROPOSE:
+        from prover.unified.tools_extra import ConjectureProposeTool
+        # If the runner threaded its LLM through, bind it directly to
+        # the tool — that's the cleanest path. If it didn't (older
+        # callers, tests), the tool's execute() will pull from ctx
+        # metadata at call time.
+        return ConjectureProposeTool(llm=llm)
 
     raise ValueError(f"Unknown ToolKit: {kit}")

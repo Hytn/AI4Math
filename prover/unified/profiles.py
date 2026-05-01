@@ -48,6 +48,9 @@ class ToolKit(str, Enum):
     LEMMA_BY_LEMMA  = "lemma_by_lemma"    # LooKeng: 一次提交一个 lemma 而非整证
     NL_EXISTENCE    = "nl_existence"      # NFL-HR: NL→FL existence-theorem 桥接
 
+    # ─ v6: 猜想驱动证明 (主动提出辅助引理) ─
+    CONJECTURE_PROPOSE = "conjecture_propose"  # propose auxiliary lemmas via LLM
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # Search Driver Config — 外部搜索算法 (可选)
@@ -328,6 +331,39 @@ PRESETS: dict[str, Profile] = {
                 ToolKit.PREMISE_SEARCH, ToolKit.CAS],
         max_turns=8,
         framing="nfl_hybrid",
+        observation=ObservationPolicy(
+            auto_inject_lean_compile=True,
+            inject_premises_in_prompt=True,
+            inject_few_shot=True,
+        ),
+    ),
+
+    # ─ Family 8 (v6): Conjecture-driven proving ──────────────────────
+    #
+    # 主动提出辅助引理 → 验证 → 用作 main proof 的 stepping stone.
+    # 与 dsp 的区别: dsp 是把目标"切下去"(decomposition); conjecture_driven
+    # 是把可能有用的辅助命题"猜上来"(generation). 二者正交, 一个 profile
+    # 也可以同时启用 (在 tools 里加 DECOMPOSE).
+    #
+    # 这条 profile 终于把 ``prover/conjecture/`` 包接上了主管线 ——
+    # V6 之前 ConjectureProposer/ConjectureVerifier 只能由测试代码/示例
+    # 脚本直接 import, 没有 Profile 把它当作可调用的 tool 暴露给 LLM.
+    "conjecture_driven": Profile(
+        name="conjecture_driven",
+        description=(
+            "猜想驱动: LLM 主动提出辅助引理 → 验证 → 作为 stepping "
+            "stone 完成主证明. 适合 PutnamBench/FATE-X 等需要非平凡 "
+            "中间结论的题目."
+        ),
+        tools=[
+            ToolKit.CONJECTURE_PROPOSE,
+            ToolKit.LEAN_VERIFY,
+            ToolKit.PREMISE_SEARCH,
+            ToolKit.LEMMA_BANK,        # store proved conjectures here
+            ToolKit.DECOMPOSE,          # cooperates well with subgoal split
+        ],
+        max_turns=15,
+        framing="conjecture_driven",
         observation=ObservationPolicy(
             auto_inject_lean_compile=True,
             inject_premises_in_prompt=True,

@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://python.org)
 [![Lean 4](https://img.shields.io/badge/Lean-4.24.0-orange.svg)](https://lean-lang.org)
-[![Tests](https://img.shields.io/badge/Tests-797%20passed-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/Tests-1429%20passed-brightgreen.svg)](#testing)
 [![Problems](https://img.shields.io/badge/Benchmarks-6%2C826%20problems-purple.svg)](#benchmarks)
 
 <br>
@@ -251,6 +251,317 @@ python run_eval.py --benchmark numinamath_lean \
 
 When the backend isn't reachable (server down, library missing) every component fails soft — the corresponding tools register in fallback mode and return structured "unavailable" errors rather than crashing the agent loop. See `INFRA_MERGE_REPORT.md` for the full design.
 
+> **v6 visibility note**: every run records which backend actually serviced it in `dialog.json` at `meta.backends`. If you set `--backend pantograph` but forgot to install `pypantograph`, the dialog will explicitly show `pantograph.is_fallback: true` so silent degradation can't hide. See *Verifying which backend actually ran* below.
+
+---
+
+## Setting up optional integrations
+
+The four backends above (`kimina`, `pantograph`, `lookeng`) and several training-side capabilities (RL trainer, vLLM/SGLang serving, GPU autoformalizer) require external installations that AI4Math does **not** bundle, because each has its own CUDA/Docker/Python-version constraints. AI4Math reports `is_fallback: true` rather than crashing when these are missing — but you'll get the real performance only after setting them up. This section is the dummy-proof walkthrough.
+
+If you want to skip ahead: every section below is **independent**. You can install just the one you need.
+
+### Quick reference — what each integration buys you
+
+| Integration | What it gives you | Install effort | When to bother |
+|---|---|---|---|
+| **Kimina Lean Server** | 50–100× faster batch `lean_verify` for `--profile kimina_batch` and any RL roll-out | ~5 min (Docker) | RL training, large benchmark sweeps |
+| **Pantograph (`pypantograph`)** | Real metavariable coupling, drafting, S-expression proof terms for `--profile pantograph_dsp` | ~10 min | DSP-style proving, training data extraction |
+| **LooKeng backend** | Stateless REPL + lemma cache for `--profile lookeng_lemma` | ~5 min (it's bundled in the lookeng repo) | PutnamBench / FATE-X long proofs |
+| **vLLM / SGLang server** | High-throughput LLM inference (10–50× over single-call API) | ~30 min (CUDA + model weights) | RL roll-out, parallel `--profile heterogeneous` |
+| **RL trainer (TRL / verl / slime)** | Trains the LLM on collected trajectories — Stage 4 of `scripts/rl_pipeline.py` | varies (1 hour to 1 day) | Closing the RL flywheel end-to-end |
+| **Sentence-transformers** | Replaces TF-IDF/BM25 retriever with dense embeddings for `--profile reprover` | ~5 min | If TF-IDF retrieval misses on your domain |
+
+### 1. Kimina Lean Server (Docker)
+
+The fastest way. Kimina is `projectnumina/kimina-lean-server` on Docker Hub.
+
+```bash
+# Pull and run (first pull ~3 GB; subsequent runs are instant)
+docker pull projectnumina/kimina-lean-server:2.0.0
+docker run -d --name kimina-lean \
+    -p 8000:8000 \
+    -e MAX_WORKERS=4 \
+    projectnumina/kimina-lean-server:2.0.0
+
+# Verify it's responding
+curl http://localhost:8000/health
+# Expected: {"status":"ok"}
+
+# Smoke-test through AI4Math
+python run_unified.py --builtin nat_add_comm \
+    --profile kimina_batch \
+    --backend kimina \
+    --backend-url http://localhost:8000
+
+# Read the dialog.json — meta.backends.kimina should show is_fallback=false
+cat results/traces/*/dialog.json | python -m json.tool | grep -A 5 backends
+```
+
+**Configuration options**:
+
+| Env var | Purpose | Default |
+|---|---|---|
+| `MAX_WORKERS` | Parallel REPL workers in the container | 4 |
+| `IMPORT_CACHE_SIZE` | LRU size for compiled-import reuse | 256 |
+| `KIMINA_API_KEY` | Optional bearer token (set on both server and client) | unset |
+
+**Common issues**:
+
+- *"Connection refused"* on the smoke test → the container takes 30–60 s to compile its Mathlib cache on first start. `docker logs kimina-lean -f` to watch progress.
+- *Out of memory* with `MAX_WORKERS=4` → reduce to 2; each worker holds ~3 GB.
+- *Different machine* → set `--backend-url http://<host>:8000` and (if behind auth) `--backend-api-key $TOKEN` or `KIMINA_API_KEY=$TOKEN`.
+
+### 2. Pantograph (pypantograph)
+
+Pantograph requires its Python bindings. Two install paths — pick one:
+
+**Path A: pypantograph (Python bindings, recommended)**
+
+```bash
+# Requires Python 3.10+, Lean 4 already installed (Step 2 of main install).
+pip install pypantograph
+
+# Verify
+python -c "import pantograph; s = pantograph.Server(imports=['Mathlib']); print('ok')"
+# First run compiles Mathlib bindings — takes 5–10 min; cached after.
+
+# Smoke-test through AI4Math
+python run_unified.py --builtin nat_add_comm \
+    --profile pantograph_dsp --backend pantograph
+
+# Confirm it's not in fallback
+cat results/traces/*/dialog.json | python -m json.tool | grep -A 3 pantograph
+# Expected: "mode": "pypantograph", "is_fallback": false
+```
+
+**Path B: Pantograph binary (when pip install fails)**
+
+```bash
+# Clone and build the standalone binary
+git clone https://github.com/lenianiva/PyPantograph.git
+cd PyPantograph
+lake build pantograph
+
+# Add to PATH
+export PATH="$PWD/build/bin:$PATH"
+which pantograph     # must resolve
+
+# AI4Math auto-detects the binary mode if pypantograph isn't installed
+python run_unified.py --builtin nat_add_comm \
+    --profile pantograph_dsp --backend pantograph
+# meta.backends.pantograph.mode will show "binary" instead of "pypantograph"
+```
+
+**Common issues**:
+
+- *`ImportError: pantograph`* after `pip install pypantograph` → check your virtualenv. The package only registers under the active interpreter.
+- *`lake: command not found`* during binary build → Lean 4 not on PATH; re-source `~/.elan/env` or `~/.profile`.
+- *First `pantograph.Server()` call hangs* → it's compiling Mathlib bindings. Wait 5–10 min. Subsequent calls are instant.
+
+### 3. LooKeng backend
+
+LooKeng is shipped with `seed-prover-1.5`. Install its Python client:
+
+```bash
+# Currently distributed via the Seed-Prover 1.5 repo
+git clone https://github.com/Tongyi-DeepResearch/seed-prover.git
+cd seed-prover
+pip install -e ".[lookeng]"
+
+# Smoke-test
+python -c "from lookeng import LooKengSession; s = LooKengSession.start(); print('ok')"
+
+# Through AI4Math (LocalTransport is wrapped, no separate server)
+python run_unified.py --builtin nat_add_comm \
+    --profile lookeng_lemma --backend lookeng
+
+# Verify
+cat results/traces/*/dialog.json | python -m json.tool | grep -A 2 lookeng
+# Expected: "is_fallback": false
+```
+
+**Common issues**:
+
+- *Module not found after `pip install -e`* → the `[lookeng]` extras only install the wrapper; the backing Lean 4 setup needs Mathlib already built (Step 2 of main install).
+- *Lemma cache not hit* → the cache key is `(running_context_hash, lemma_statement)`. Identical lemma statements proved in different contexts won't share the cache. This is by design.
+
+### 4. vLLM / SGLang for high-throughput inference
+
+The Anthropic API is fine for single-problem demos but caps your throughput. For RL roll-outs or parallel `--profile heterogeneous`, run a local LLM server.
+
+**Option A: vLLM**
+
+```bash
+# Requires CUDA 11.8+, ~24 GB VRAM for 7B models, ~80 GB for 70B
+pip install vllm
+
+# Serve a model that's been fine-tuned on Lean (recommended starting points:
+# DeepSeek-Prover-V2-7B, Goedel-Prover-7B, Kimina-Prover-Distill-7B)
+vllm serve deepseek-ai/DeepSeek-Prover-V2-7B \
+    --port 8001 --max-model-len 4096
+
+# Health check
+curl http://localhost:8001/v1/models
+
+# Point AI4Math at it via the OpenAI-compatible interface
+export OPENAI_BASE_URL=http://localhost:8001/v1
+export OPENAI_API_KEY=dummy
+python run_unified.py --builtin nat_add_comm \
+    --profile whole_proof --provider openai
+```
+
+**Option B: SGLang (faster for short-context proving)**
+
+```bash
+pip install "sglang[all]"
+
+python -m sglang.launch_server \
+    --model-path deepseek-ai/DeepSeek-Prover-V2-7B \
+    --port 8002
+
+# Same OpenAI-compatible interface
+export OPENAI_BASE_URL=http://localhost:8002/v1
+export OPENAI_API_KEY=dummy
+python run_unified.py --builtin nat_add_comm --provider openai
+```
+
+**Common issues**:
+
+- *CUDA OOM* → reduce `--max-model-len`, use a smaller model, or pass `--quantization awq` / `--quantization gptq` if quantized weights are available.
+- *Slow first request* → both vLLM and SGLang JIT-compile their CUDA kernels on first request. Warm up with one dummy call before benchmarking.
+- *Different GPU layout* → for multi-GPU, vLLM takes `--tensor-parallel-size N`; SGLang takes `--tp-size N`.
+
+### 5. RL trainer (Stage 4 of the RL flywheel)
+
+`scripts/rl_pipeline.py` runs four stages: **eval → collect trajectories → format SFT JSONL → train**. The first three are fully automated; Stage 4 (training) is delegated because trainer choice matters more than framework opinion. Pick one:
+
+**Option A: TRL (HuggingFace, simplest)**
+
+```bash
+pip install trl peft accelerate bitsandbytes
+
+# Save this as scripts/sft_trl.sh
+cat > scripts/sft_trl.sh <<'EOF'
+#!/bin/bash
+trl sft \
+    --model_name_or_path deepseek-ai/DeepSeek-Prover-V2-7B \
+    --dataset_name "$1" \
+    --dataset_text_field "text" \
+    --max_seq_length 4096 \
+    --output_dir "$2" \
+    --num_train_epochs 1 \
+    --per_device_train_batch_size 1 \
+    --gradient_accumulation_steps 8 \
+    --learning_rate 1e-5 \
+    --logging_steps 10 \
+    --save_steps 200 \
+    --bf16
+EOF
+chmod +x scripts/sft_trl.sh
+
+# Run the full pipeline
+bash scripts/rl_loop.sh \
+    --benchmark minif2f \
+    --profile whole_proof_repair \
+    --train-cmd 'bash scripts/sft_trl.sh {sft_jsonl} {model_out}'
+```
+
+**Option B: verl (Volcano-Engine RL, recommended for PPO/GRPO)**
+
+```bash
+git clone https://github.com/volcengine/verl.git
+cd verl && pip install -e .
+
+# verl uses YAML configs — write one for your run
+cat > configs/ai4math_grpo.yaml <<'EOF'
+data:
+  train_files: ["{sft_jsonl}"]
+  max_prompt_length: 2048
+  max_response_length: 2048
+algorithm:
+  algo: grpo
+trainer:
+  total_epochs: 1
+  default_local_dir: "{model_out}"
+EOF
+
+# Then point rl_pipeline at it
+bash scripts/rl_loop.sh \
+    --benchmark minif2f \
+    --train-cmd 'python -m verl.trainer.main_ppo --config configs/ai4math_grpo.yaml'
+```
+
+**Option C: slime (Tongyi-DeepResearch, lightweight)**
+
+```bash
+pip install slime-trainer
+slime sft --data {sft_jsonl} --output {model_out} --epochs 1
+```
+
+**Common issues**:
+
+- *Stage 4 prints `no --train-cmd provided; SFT JSONL ready at ...`* → that's the correct skip behaviour when you didn't pass `--train-cmd`. The JSONL is on disk; you can train offline at your leisure.
+- *Trainer crashes with OOM* → reduce `--per_device_train_batch_size` to 1, increase `--gradient_accumulation_steps`. For 7B model, 24 GB VRAM is the realistic minimum.
+- *Trained model's pass@k worse than the base* → check the JSONL: it should contain only solved trajectories. `jq '.result.success' results/traces/*/dialog.json | sort | uniq -c` to spot-check the success ratio.
+
+### 6. Sentence-transformers (better retrieval)
+
+The default retriever uses TF-IDF + BM25 over Mathlib lemma names and statements. For domain-specific runs (e.g. number theory benchmarks), dense embeddings often retrieve better:
+
+```bash
+pip install "sentence-transformers>=2.0" torch
+
+# AI4Math's PremiseSelector auto-detects sentence-transformers if installed:
+python -c "
+from prover.premise.premise_selector import PremiseSelector
+sel = PremiseSelector(mode='dense')
+print(sel.backend_kind)  # should print 'sentence_transformers'
+"
+
+python run_unified.py --builtin nat_add_comm \
+    --profile reprover \
+    --retriever-mode dense
+```
+
+**Common issues**:
+
+- *Slow first call* → the embedding model (default: `all-MiniLM-L6-v2`) downloads ~80 MB on first import. Cached after.
+- *CPU-only too slow* → set `--retriever-mode hybrid` to use dense + TF-IDF together; dense candidates re-ranked by TF-IDF gives ~80% of dense quality at TF-IDF speed.
+
+### Verifying which backend actually ran
+
+After **any** run, check `dialog.json`:
+
+```bash
+cat results/traces/<problem_id>/dialog.json | \
+    python -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d['meta'].get('backends', {}), indent=2))"
+```
+
+Expected output for a healthy Pantograph run:
+
+```json
+{
+  "kimina":     {"present": false},
+  "pantograph": {"present": true, "is_fallback": false, "mode": "pypantograph"},
+  "lookeng":    {"present": false},
+  "lean_pool":  {"present": true, "kind": "AsyncLeanPool", "size": 4}
+}
+```
+
+If you see `"is_fallback": true` for any backend you intended to use, the integration didn't take — re-check the corresponding section above.
+
+### What we deliberately do **not** do
+
+These are out of scope for AI4Math itself; we don't ship integrations because they're either separate domains or actively-changing landscapes:
+
+- **Coq / Isabelle / HOL Light backends** — AI4Math is Lean-4-specific by design. Adding another ITP means a new project, not a new backend.
+- **End-to-end RL trainer with GPU orchestration** — TRL/verl/slime/axolotl all want different GPU layouts and dataset formats. We provide the data, you pick the trainer.
+- **GFlowNet sampling, expert-iteration policy gradient, search-tree distillation** — these are training-side techniques; the framework provides the trajectory data, the technique is yours to pick.
+- **Production model serving (TGI, Triton)** — vLLM/SGLang above are dev/research-grade. Production deployments add their own ops constraints we can't predict for you.
+
+The `dialog.json` produced by AI4Math is the universal currency: any of the above techniques can consume it.
+
 ---
 
 ## Benchmarks
@@ -317,6 +628,8 @@ These three live in a single `Profile` dataclass executed by `UnifiedProofRunner
 
 ### Active presets
 
+V6 ships **14 active presets**. The six core families below are the most commonly invoked. The community-backend derivatives (`kimina_batch`, `pantograph_dsp`, `lookeng_lemma`, `nfl_hybrid`), tree-search profiles (`mcts`, `best_first`, `beam`), and V6's `conjecture_driven` are all in `prover/unified/profiles.py`. Every preset has a YAML template in `config/profiles/`.
+
 | Profile | Method | `max_turns` | `tools` | Status |
 |---|---|---|---|---|
 | `whole_proof` | DeepSeek-Prover · Kimina · Goedel | 1 | `[]` | ✅ complete |
@@ -325,6 +638,7 @@ These three live in a single `Profile` dataclass executed by `UnifiedProofRunner
 | `reprover` | ReProver (RAG + step-level) | 30 | `[premise_search, tactic_apply, goal_inspect]` | ✅ complete |
 | `leandojo` | LeanDojo (pure step-level) | 50 | `[tactic_apply, goal_inspect, lean_auto]` | ✅ complete |
 | `heterogeneous` | AI4Math 4-way parallel + broadcast | 4 | sub-profiles + `broadcast` | ✅ complete |
+| `conjecture_driven` (v6) | Active auxiliary-lemma proposal + stepping-stone proof | 15 | `[conjecture_propose, lean_verify, premise_search, lemma_bank, decompose]` | ✅ complete |
 
 ### How each algorithm is parameterised
 
@@ -475,10 +789,10 @@ python run_unified.py --builtin nat_add_comm --profile mcts
 
 ```bash
 $ python -m pytest tests/ -q
-1001 passed, 1 skipped in 7.84s
+1429 passed, 2 skipped in 9s
 ```
 
-See [`REFACTOR_REPORT.md`](REFACTOR_REPORT.md) for the full migration analysis.
+See [`REFACTOR_REPORT.md`](REFACTOR_REPORT.md) for the full migration analysis, and [`INFRA_MERGE_V6_REPORT.md`](INFRA_MERGE_V6_REPORT.md) for the most recent infrastructure pass.
 
 ---
 

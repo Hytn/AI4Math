@@ -62,7 +62,12 @@ class ProofLoop:
     ) -> ProofAttempt:
         """委托给 UnifiedProofRunner; 用 whole_proof_repair profile。
 
-        失败时回退到 legacy 实现, 确保 verification 烟测路径不挂。
+        失败时返回一个结构化的 ``ProofAttempt(LLM_ERROR)`` —— 调用方
+        看到的契约与 V5 之前完全一致 (一定能拿到 ProofAttempt 对象,
+        异常不会向上冒). v6 之前这条失败分支会再尝试一个 ``LegacyLoop``
+        实现作为兜底; 那个分支在 1400+ 测试套件中无任何覆盖, 且
+        ``proof_loop_legacy.py`` 自 V3 起就不再随项目演进, V6 把它删了
+        并把这条分支化简为干净的错误返回.
         """
         try:
             return self._run_via_unified(
@@ -70,20 +75,12 @@ class ProofLoop:
         except Exception as e:
             logger.warning(
                 f"UnifiedProofRunner path failed in ProofLoop "
-                f"({type(e).__name__}: {e}); falling back to legacy")
-            try:
-                from prover.pipeline.proof_loop_legacy import (
-                    ProofLoop as LegacyLoop)
-                legacy = LegacyLoop(self.lean, self.llm,
-                                    self.retriever, self.config)
-                return legacy.single_attempt(
-                    problem, memory, temperature, attempt_num)
-            except Exception as e2:
-                logger.error(f"Legacy fallback also failed: {e2}")
-                attempt = ProofAttempt(attempt_number=attempt_num)
-                attempt.lean_result = AttemptStatus.LLM_ERROR
-                attempt.lean_stderr = f"both unified and legacy failed: {e2}"
-                return attempt
+                f"({type(e).__name__}: {e}); returning LLM_ERROR attempt")
+            attempt = ProofAttempt(attempt_number=attempt_num)
+            attempt.lean_result = AttemptStatus.LLM_ERROR
+            attempt.lean_stderr = (
+                f"unified runner failed: {type(e).__name__}: {e}")
+            return attempt
 
     # ── internal ──────────────────────────────────────────────────
 

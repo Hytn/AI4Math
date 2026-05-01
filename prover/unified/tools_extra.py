@@ -237,3 +237,139 @@ class TreeSelectTool(Tool):
                 json.dumps({"current_node": input["node_id"]}))
         except Exception as e:
             return ToolResult.error(f"select failed: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# v6: Conjecture-driven proving — propose auxiliary lemmas
+# ═══════════════════════════════════════════════════════════════════════
+#
+# The ``prover/conjecture/`` package has been in the codebase since v2:
+# ``ConjectureProposer`` asks an LLM for plausible auxiliary lemmas and
+# ``ConjectureVerifier`` filters them by parse-ability and relevance.
+# Until v6 it had no first-class place in the agent loop — no Profile
+# advertised it as an action the LLM could take. This tool plugs the
+# proposer in as a regular Tool, which lets a ``conjecture_driven``
+# Profile invoke it from the unified runner the same way every other
+# method is invoked.
+#
+# Design note: the proposer needs an LLM. The Tool signature does NOT
+# take one in __init__ in the legacy code path because tools are
+# constructed by ``_build_tool`` from the ToolKit enum. v6 threads
+# ``llm`` through ``build_tool_registry`` for the clean path. As a
+# safety net the tool also reads ``ctx.shared_state['llm']`` at call
+# time, so older callers that build registries without the v6 kwarg
+# still work as long as the agent loop populates shared_state. If
+# neither is present, the tool returns a structured error — same
+# fallback contract as the infrastructure tools when their backend
+# is absent.
+class ConjectureProposeTool(Tool):
+    name = "conjecture_propose"
+    description = (
+        "Propose auxiliary lemma statements that might help prove the "
+        "current target theorem.\n"
+        "\n"
+        "Returns a JSON list of {statement, score} objects. Use this "
+        "when you suspect the target needs a non-obvious intermediate "
+        "lemma that isn't already in Mathlib. The statements are "
+        "filtered for parseability and relevance — but they are NOT "
+        "yet proved. After you receive them, prove each one with the "
+        "same agent loop (e.g. by writing `have helper : ... := by "
+        "...`) before using them in the main proof.\n"
+        "\n"
+        "DO NOT call this for goals that look provable by direct "
+        "tactics (omega/simp/ring/aesop) — conjecturing is expensive "
+        "and only pays off on structurally hard goals."
+    )
+    permission = ToolPermission.READ_ONLY
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "theorem": {
+                "type": "string",
+                "description": "The target theorem statement.",
+            },
+            "n": {
+                "type": "integer",
+                "default": 5,
+                "description": "Maximum number of conjectures to return.",
+            },
+            "existing_lemmas": {
+                "type": "array",
+                "items": {"type": "string"},
+                "default": [],
+                "description": (
+                    "Lemmas already known/proved in this run. Pass them "
+                    "so the proposer doesn't suggest duplicates."),
+            },
+        },
+        "required": ["theorem"],
+    }
+
+    def __init__(self, llm=None, lean_env=None):
+        # ``llm`` and ``lean_env`` are the two upstream dependencies of
+        # ``ConjectureProposer``. We accept them at construction so
+        # ``_build_tool`` can wire the runner's LLM in directly. They
+        # remain optional so existing code paths that build registries
+        # without an LLM (e.g. tests) still construct successfully.
+        self._llm = llm
+        self._lean_env = lean_env
+
+    async def execute(self, input: dict, ctx: ToolContext) -> ToolResult:
+        # Resolve LLM in priority order:
+        #   1. tool-bound (passed at construction by _build_tool)
+        #   2. ctx.shared_state['llm'] — the standard cross-tool wire
+        #      that ToolContext exposes via its ``shared_state`` dict
+        #   3. legacy ``ctx.llm`` attribute, kept for older callers
+        llm = self._llm
+        if llm is None:
+            ss = getattr(ctx, "shared_state", None) or {}
+            llm = ss.get("llm") if isinstance(ss, dict) else None
+        if llm is None:
+            llm = getattr(ctx, "llm", None)
+        if llm is None:
+            return ToolResult.error(
+                "conjecture_propose: no LLM available "
+                "(neither tool-bound nor in ctx.shared_state). "
+                "Check that the runner was constructed with `llm=...`.")
+
+        try:
+            from prover.conjecture.conjecture_proposer import (
+                ConjectureProposer)
+        except ImportError as e:
+            return ToolResult.error(
+                f"conjecture_propose: module unavailable: {e}")
+
+        theorem = input.get("theorem", "").strip()
+        if not theorem:
+            return ToolResult.error(
+                "conjecture_propose: empty 'theorem' input")
+        n = int(input.get("n", 5))
+        n = max(1, min(n, 20))  # clamp to a reasonable range
+        existing = input.get("existing_lemmas") or []
+        if not isinstance(existing, list):
+            existing = []
+        existing = [str(x) for x in existing if str(x).strip()]
+
+        try:
+            proposer = ConjectureProposer(llm=llm, lean_env=self._lean_env)
+            # We deliberately disable on-tool verification to avoid
+            # the proposer's verifier doing a Lean roundtrip — the
+            # runner has its own verification gate. We rely on the
+            # proposer's textual filtering only.
+            statements = proposer.propose(
+                theorem=theorem,
+                existing_lemmas=existing,
+                n=n,
+                verify=False,
+            )
+        except Exception as e:
+            return ToolResult.error(
+                f"conjecture_propose: proposer failed: {e}")
+
+        # The proposer returns a flat list of strings; package as
+        # objects so future extensions (e.g. relevance score) don't
+        # need a schema bump.
+        payload = [{"statement": s, "score": None}
+                   for s in statements if isinstance(s, str)]
+        return ToolResult.success(
+            json.dumps(payload, ensure_ascii=False))

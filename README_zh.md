@@ -124,6 +124,8 @@ AI4Math 分为四层，形成飞轮：
 
 ### Profile 全表 (active presets)
 
+V6 起共 14 个 active preset。下面这张表只列前六个核心 family;基建 backend 衍生 profile (`kimina_batch`/`pantograph_dsp`/`lookeng_lemma`/`nfl_hybrid`)、树搜索 profile (`mcts`/`best_first`/`beam`)、以及 V6 新增的 `conjecture_driven` 见 `prover/unified/profiles.py` 的 PRESETS 字典。所有 14 个都有 YAML 模板在 `config/profiles/`。
+
 | Profile | 对应方法 | `max_turns` | `tools` | `framing` | 状态 |
 |---|---|---|---|---|---|
 | `whole_proof` | DeepSeek-Prover · Kimina · Goedel | 1 | `[]` | `whole_proof` | ✅ 完整 |
@@ -132,6 +134,7 @@ AI4Math 分为四层，形成飞轮：
 | `reprover` | ReProver (RAG + step-level) | 30 | `[premise_search, tactic_apply, goal_inspect]` | `step_level_with_retrieval` | ✅ 完整 |
 | `leandojo` | LeanDojo (纯 step-level) | 50 | `[tactic_apply, goal_inspect, lean_auto]` | `step_level_pure` | ✅ 完整 |
 | `heterogeneous` | AI4Math 异构并行 (项目卖点) | 4 | 4 路 sub-profile + `broadcast` | `whole_proof_repair` | ✅ 完整 |
+| `conjecture_driven` (v6) | 主动猜想辅助引理 + stepping-stone 证明 | 15 | `[conjecture_propose, lean_verify, premise_search, lemma_bank, decompose]` | `conjecture_driven` | ✅ 完整 |
 
 ### 各算法对照如何被参数化复现
 
@@ -398,18 +401,12 @@ result.save_unified("results/traces/my_run", problem_id=problem.problem_id)
 
 ```bash
 $ python -m pytest tests/ -q
-1001 passed, 1 skipped in 7.84s
+1429 passed, 2 skipped in 9s
 ```
 
-包含 16 个专门的 unified-pipeline 测试用例验证：
-- 6 个 active preset 的字段约束
-- 3 个 experimental preset 的 opt-in 隔离
-- HeterogeneousEngine v3 的 legacy 构造兼容
-- ProofLoop shim 的语义保持
-- adapters 的 Dialog ↔ ProofAttempt 数据无损
-- 端到端 mock LLM 跑通 dialog.json 产出
+V1 → V6 累计 +428 测试,无回归。涵盖 14 个 active preset 的字段约束、4 个社区 backend 的 wire-format / fallback 路径、step-level 知识落库、WorldModel 训练管线、跨问题 dialog 检索、SQLite 持久化、猜想驱动 profile、`meta.backends` 可观测性。
 
-详细迁移说明见 [REFACTOR_REPORT.md](REFACTOR_REPORT.md)。
+详细迁移说明见 [REFACTOR_REPORT.md](REFACTOR_REPORT.md);最近一次基建合流见 [INFRA_MERGE_V6_REPORT.md](INFRA_MERGE_V6_REPORT.md)。
 
 ---
 
@@ -614,6 +611,315 @@ bash eval.sh --real --lean
 ```
 
 报告指标：**pass@k**（无偏估计）、总 token 数、总耗时、策略分布。
+
+---
+
+## 配置可选集成（B 桶 — 用户态傻瓜安装）
+
+主管线之外的四个社区 backend(`kimina` / `pantograph` / `lookeng`)、训练侧能力(RL trainer、vLLM/SGLang 推理服务、GPU autoformalizer)都需要外部环境配合 —— AI4Math **不**打包它们,因为每一项都有自己的 CUDA / Docker / Python 版本约束。这些没装时 AI4Math 不会崩,而是会报告 `is_fallback: true`(见末尾的"如何确认实际跑的是哪个 backend"); 但要拿到论文里的真实性能,就得装上。本节是傻瓜级安装走查。
+
+每一节都**互相独立**,只装你需要的那个就行。
+
+### 速查表 — 各项收益
+
+| 集成项 | 收益 | 安装时间 | 何时值得装 |
+|---|---|---|---|
+| **Kimina Lean Server** | `--profile kimina_batch` 和 RL roll-out 的 `lean_verify` 提速 50–100× | ~5 分钟 (Docker) | RL 训练、大批量基准 sweep |
+| **Pantograph (`pypantograph`)** | `--profile pantograph_dsp` 的真 mvar coupling、drafting、S-expression 证明项 | ~10 分钟 | DSP 风格证明、训练数据抽取 |
+| **LooKeng backend** | `--profile lookeng_lemma` 的 stateless REPL + lemma 缓存 | ~5 分钟 | PutnamBench / FATE-X 长证明 |
+| **vLLM / SGLang server** | 高吞吐 LLM 推理(单点 API 的 10–50×) | ~30 分钟 (CUDA + 模型权重) | RL roll-out、`--profile heterogeneous` 并行 |
+| **RL trainer (TRL / verl / slime)** | `scripts/rl_pipeline.py` 第 4 阶段:用收集到的 trajectory 训 LLM | 不一定(1 小时到 1 天) | 闭合 RL 飞轮端到端 |
+| **Sentence-transformers** | `--profile reprover` 把 TF-IDF/BM25 替换成 dense 检索 | ~5 分钟 | TF-IDF 检索在你的领域命中率不行时 |
+
+### 1. Kimina Lean Server (Docker)
+
+最快的一档。Docker Hub 上叫 `projectnumina/kimina-lean-server`。
+
+```bash
+# 拉镜像 + 跑(首次拉 ~3 GB; 之后秒起)
+docker pull projectnumina/kimina-lean-server:2.0.0
+docker run -d --name kimina-lean \
+    -p 8000:8000 \
+    -e MAX_WORKERS=4 \
+    projectnumina/kimina-lean-server:2.0.0
+
+# 验证起来了
+curl http://localhost:8000/health
+# 期望: {"status":"ok"}
+
+# 通过 AI4Math 烟测
+python run_unified.py --builtin nat_add_comm \
+    --profile kimina_batch \
+    --backend kimina \
+    --backend-url http://localhost:8000
+
+# 看 dialog.json — meta.backends.kimina 应该是 is_fallback=false
+cat results/traces/*/dialog.json | python -m json.tool | grep -A 5 backends
+```
+
+**配置项**:
+
+| 环境变量 | 作用 | 默认 |
+|---|---|---|
+| `MAX_WORKERS` | 容器内并行 REPL worker 数 | 4 |
+| `IMPORT_CACHE_SIZE` | LRU 已编译 import 复用上限 | 256 |
+| `KIMINA_API_KEY` | 可选 bearer token (server 和 client 都要设) | 不设 |
+
+**常见问题**:
+
+- 烟测时 *"Connection refused"* → 容器首次启动要 30–60 秒编译 Mathlib 缓存。`docker logs kimina-lean -f` 看进度。
+- `MAX_WORKERS=4` 时 *Out of memory* → 降到 2; 每个 worker 占 ~3 GB。
+- *跨机使用* → 设 `--backend-url http://<host>:8000`,带认证再加 `--backend-api-key $TOKEN` 或 `KIMINA_API_KEY=$TOKEN`。
+
+### 2. Pantograph (pypantograph)
+
+Pantograph 需要 Python 绑定。两条路,选一条:
+
+**路径 A:pypantograph (Python 绑定,推荐)**
+
+```bash
+# 需要 Python 3.10+, Lean 4 已装 (主安装第 2 步)
+pip install pypantograph
+
+# 验证
+python -c "import pantograph; s = pantograph.Server(imports=['Mathlib']); print('ok')"
+# 首次会编译 Mathlib 绑定 — 5–10 分钟; 之后缓存命中。
+
+# 通过 AI4Math 烟测
+python run_unified.py --builtin nat_add_comm \
+    --profile pantograph_dsp --backend pantograph
+
+# 确认不是 fallback
+cat results/traces/*/dialog.json | python -m json.tool | grep -A 3 pantograph
+# 期望: "mode": "pypantograph", "is_fallback": false
+```
+
+**路径 B:Pantograph 二进制 (pip install 失败时的替代)**
+
+```bash
+# clone + build 独立二进制
+git clone https://github.com/lenianiva/PyPantograph.git
+cd PyPantograph
+lake build pantograph
+
+# 加进 PATH
+export PATH="$PWD/build/bin:$PATH"
+which pantograph     # 必须能找到
+
+# 没装 pypantograph 时 AI4Math 自动降到 binary mode
+python run_unified.py --builtin nat_add_comm \
+    --profile pantograph_dsp --backend pantograph
+# meta.backends.pantograph.mode 会是 "binary" 而不是 "pypantograph"
+```
+
+**常见问题**:
+
+- `pip install pypantograph` 后 `ImportError: pantograph` → 检查 virtualenv,包只对当前 interpreter 注册。
+- 编译二进制时 `lake: command not found` → Lean 4 没在 PATH,`source ~/.elan/env` 或 `~/.profile`。
+- 第一次 `pantograph.Server()` 卡住 → 它在编译 Mathlib 绑定。等 5–10 分钟; 之后秒起。
+
+### 3. LooKeng backend
+
+LooKeng 跟 `seed-prover-1.5` 一起发。装它的 Python client:
+
+```bash
+# 当前从 Seed-Prover 1.5 仓库分发
+git clone https://github.com/Tongyi-DeepResearch/seed-prover.git
+cd seed-prover
+pip install -e ".[lookeng]"
+
+# 烟测
+python -c "from lookeng import LooKengSession; s = LooKengSession.start(); print('ok')"
+
+# 通过 AI4Math (LocalTransport 套一层,不需要单独 server)
+python run_unified.py --builtin nat_add_comm \
+    --profile lookeng_lemma --backend lookeng
+
+# 验证
+cat results/traces/*/dialog.json | python -m json.tool | grep -A 2 lookeng
+# 期望: "is_fallback": false
+```
+
+**常见问题**:
+
+- `pip install -e` 后找不到模块 → `[lookeng]` extras 只装 wrapper,底层 Lean 4 + Mathlib 还得已经构建好(主安装第 2 步)。
+- Lemma 缓存命中率低 → 缓存 key 是 `(running_context_hash, lemma_statement)`。同一个 lemma 在不同上下文下证不会共享缓存,这是设计如此。
+
+### 4. vLLM / SGLang 高吞吐推理
+
+Anthropic API 跑单题 demo 没问题,但吞吐受限。RL roll-out 或并行 `--profile heterogeneous` 时跑本地 LLM server。
+
+**选项 A:vLLM**
+
+```bash
+# 需要 CUDA 11.8+; 7B 模型 ~24 GB VRAM, 70B ~80 GB
+pip install vllm
+
+# 起一个 Lean 微调过的模型(推荐起点:
+# DeepSeek-Prover-V2-7B、Goedel-Prover-7B、Kimina-Prover-Distill-7B)
+vllm serve deepseek-ai/DeepSeek-Prover-V2-7B \
+    --port 8001 --max-model-len 4096
+
+# 健康检查
+curl http://localhost:8001/v1/models
+
+# 通过 OpenAI 兼容接口指给 AI4Math
+export OPENAI_BASE_URL=http://localhost:8001/v1
+export OPENAI_API_KEY=dummy
+python run_unified.py --builtin nat_add_comm \
+    --profile whole_proof --provider openai
+```
+
+**选项 B:SGLang (短上下文证明更快)**
+
+```bash
+pip install "sglang[all]"
+
+python -m sglang.launch_server \
+    --model-path deepseek-ai/DeepSeek-Prover-V2-7B \
+    --port 8002
+
+# 同样的 OpenAI 兼容接口
+export OPENAI_BASE_URL=http://localhost:8002/v1
+export OPENAI_API_KEY=dummy
+python run_unified.py --builtin nat_add_comm --provider openai
+```
+
+**常见问题**:
+
+- *CUDA OOM* → 调小 `--max-model-len`,或换更小模型,或加 `--quantization awq` / `--quantization gptq`(需要量化权重)。
+- 第一次请求慢 → vLLM 和 SGLang 都在首次请求时 JIT 编译 CUDA kernel。先跑一次 dummy 调用预热再 benchmark。
+- 多 GPU → vLLM 用 `--tensor-parallel-size N`,SGLang 用 `--tp-size N`。
+
+### 5. RL trainer (RL 飞轮第 4 阶段)
+
+`scripts/rl_pipeline.py` 跑 4 阶段:**eval → 收 trajectory → 转 SFT JSONL → 训练**。前 3 步全自动,第 4 步交给用户,因为训练框架的选择比框架的意见更重要。挑一个:
+
+**选项 A:TRL (HuggingFace,最简)**
+
+```bash
+pip install trl peft accelerate bitsandbytes
+
+# 存为 scripts/sft_trl.sh
+cat > scripts/sft_trl.sh <<'EOF'
+#!/bin/bash
+trl sft \
+    --model_name_or_path deepseek-ai/DeepSeek-Prover-V2-7B \
+    --dataset_name "$1" \
+    --dataset_text_field "text" \
+    --max_seq_length 4096 \
+    --output_dir "$2" \
+    --num_train_epochs 1 \
+    --per_device_train_batch_size 1 \
+    --gradient_accumulation_steps 8 \
+    --learning_rate 1e-5 \
+    --logging_steps 10 \
+    --save_steps 200 \
+    --bf16
+EOF
+chmod +x scripts/sft_trl.sh
+
+# 跑全管线
+bash scripts/rl_loop.sh \
+    --benchmark minif2f \
+    --profile whole_proof_repair \
+    --train-cmd 'bash scripts/sft_trl.sh {sft_jsonl} {model_out}'
+```
+
+**选项 B:verl (火山引擎 RL,推荐 PPO/GRPO)**
+
+```bash
+git clone https://github.com/volcengine/verl.git
+cd verl && pip install -e .
+
+# verl 用 YAML 配,写一份给你的 run
+cat > configs/ai4math_grpo.yaml <<'EOF'
+data:
+  train_files: ["{sft_jsonl}"]
+  max_prompt_length: 2048
+  max_response_length: 2048
+algorithm:
+  algo: grpo
+trainer:
+  total_epochs: 1
+  default_local_dir: "{model_out}"
+EOF
+
+# 然后让 rl_pipeline 调
+bash scripts/rl_loop.sh \
+    --benchmark minif2f \
+    --train-cmd 'python -m verl.trainer.main_ppo --config configs/ai4math_grpo.yaml'
+```
+
+**选项 C:slime (Tongyi-DeepResearch,轻量)**
+
+```bash
+pip install slime-trainer
+slime sft --data {sft_jsonl} --output {model_out} --epochs 1
+```
+
+**常见问题**:
+
+- 第 4 阶段打印 `no --train-cmd provided; SFT JSONL ready at ...` → 这是没传 `--train-cmd` 时的正常 skip。JSONL 已落盘,可以离线慢慢训。
+- Trainer OOM → `--per_device_train_batch_size` 降到 1,`--gradient_accumulation_steps` 加大。7B 模型 24 GB VRAM 是现实下限。
+- 训完模型 pass@k 反而比 base 差 → 检查 JSONL,应该只含 solved trajectory。`jq '.result.success' results/traces/*/dialog.json | sort | uniq -c` 抽查成功率。
+
+### 6. Sentence-transformers (更好的检索)
+
+默认 retriever 是 Mathlib lemma 名字 + statement 上的 TF-IDF + BM25。领域特定的 run(比如数论 benchmark)用 dense embedding 通常检索更好:
+
+```bash
+pip install "sentence-transformers>=2.0" torch
+
+# AI4Math 的 PremiseSelector 自动检测 sentence-transformers:
+python -c "
+from prover.premise.premise_selector import PremiseSelector
+sel = PremiseSelector(mode='dense')
+print(sel.backend_kind)  # 应该打印 'sentence_transformers'
+"
+
+python run_unified.py --builtin nat_add_comm \
+    --profile reprover \
+    --retriever-mode dense
+```
+
+**常见问题**:
+
+- 第一次调用慢 → 默认 embedding 模型(`all-MiniLM-L6-v2`)首次 import 时下载 ~80 MB。之后命中缓存。
+- CPU-only 太慢 → 设 `--retriever-mode hybrid` 同时用 dense + TF-IDF; dense 候选用 TF-IDF 重排,~80% dense 质量、TF-IDF 速度。
+
+### 如何确认实际跑的是哪个 backend
+
+任意一次 run 之后,看 `dialog.json`:
+
+```bash
+cat results/traces/<problem_id>/dialog.json | \
+    python -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d['meta'].get('backends', {}), indent=2, ensure_ascii=False))"
+```
+
+健康的 Pantograph run 期望输出:
+
+```json
+{
+  "kimina":     {"present": false},
+  "pantograph": {"present": true, "is_fallback": false, "mode": "pypantograph"},
+  "lookeng":    {"present": false},
+  "lean_pool":  {"present": true, "kind": "AsyncLeanPool", "size": 4}
+}
+```
+
+任何你想用的 backend 出现 `"is_fallback": true` 就说明集成没生效 —— 回到对应小节再核一遍。
+
+### 我们刻意**不**做的事
+
+下面这些不在 AI4Math 自己的 scope 内,我们不打包它们,要么是另一个领域,要么是变化太快的 landscape:
+
+- **Coq / Isabelle / HOL Light backend** —— AI4Math 设计上就是 Lean-4-specific。再加一个 ITP 等于一个新项目,不是一个新 backend。
+- **端到端 RL trainer 带 GPU 编排** —— TRL/verl/slime/axolotl 各自要不同 GPU 拓扑、不同数据格式。我们提供数据,你选 trainer。
+- **GFlowNet 采样、expert-iteration policy gradient、search-tree 蒸馏** —— 都是训练侧技术; 框架提供 trajectory 数据,具体技术是你的选择。
+- **生产级模型服务 (TGI, Triton)** —— 上面 vllm/SGLang 是 dev/research 级别的。生产部署的 ops 约束我们没法替你预判。
+
+AI4Math 产出的 `dialog.json` 是通用货币:上面所有技术都能消费它。
 
 ---
 
