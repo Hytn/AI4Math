@@ -1,19 +1,38 @@
-"""prover/premise/embedding_retriever.py — Hybrid n-gram + word embedding retriever
+"""prover/premise/embedding_retriever.py — Sparse TF-IDF + char-n-gram retriever
 
-Combines two complementary signals for Lean4 premise retrieval:
+⚠️  **Naming caveat (v15)**: this module is *not* a neural / dense
+    embedding retriever despite the legacy filename. It is **pure
+    sparse TF-IDF** over two parallel feature spaces:
 
-  1. **Word-level TF-IDF** — captures exact keyword matches
-     (e.g. "Nat.add_comm" matches query "add_comm")
+      1. **Word-level TF-IDF** — captures exact keyword matches
+         (e.g. "Nat.add_comm" matches query "add_comm")
+      2. **Character n-gram TF-IDF** (n=3,4) — captures sub-token
+         similarity (e.g. "comm" in "Nat.mul_comm" matches "commutative")
 
-  2. **Character n-gram TF-IDF** (n=3,4) — captures sub-token similarity
-     (e.g. "comm" in "Nat.mul_comm" matches "commutative")
+    The two scores are fused via weighted sum (configurable). This
+    significantly outperforms pure word TF-IDF on Lean identifiers
+    where camelCase, dot-notation, and abbreviations are common, but it
+    is **categorically not** what ReProver-style retrieval means in the
+    literature — that's dense neural retrieval (ColBERT / SBERT).
 
-The two scores are fused via weighted sum (configurable).
-This significantly outperforms pure word TF-IDF for Lean identifiers
-where camelCase, dot-notation, and abbreviations are common.
+    Effects on evaluation:
+      - The ``--profile reprover`` profile claims "ReProver-style RAG"
+        but with this module is missing ReProver's actual contribution
+        (a fine-tuned dense retriever over Mathlib). The retrieval
+        component is closer to a Lean-aware BM25 fork.
+      - On the bundled ``data/premises/mathlib_core.jsonl`` which has
+        only ~334 entries (Mathlib4 itself has ~10⁵), recall is
+        physically capped low regardless of which retriever is used.
+        Real eval should expand the premise pool first via
+        ``scripts/export_mathlib_premises.py``.
 
-For production, replace ``_vectorize`` with a proper dense embedding
-model (e.g. ``sentence-transformers/all-MiniLM-L6-v2``).
+    To plug in a real dense retriever, replace ``_vectorize`` /
+    ``_score`` with ``sentence-transformers/all-MiniLM-L6-v2`` (or
+    LeanDojo's BYTE5-finetuned retriever) and add ``sentence-transformers``
+    to ``requirements.txt`` — currently it's a commented-out optional dep.
+
+For backward compatibility ``EmbeddingRetriever`` keeps its name; the
+honest alias ``TfidfNgramRetriever`` is exported below.
 """
 from __future__ import annotations
 import math
@@ -190,3 +209,13 @@ class EmbeddingRetriever:
     @property
     def size(self) -> int:
         return len(self.documents)
+
+
+# v15: honest-name alias. New code should prefer ``TfidfNgramRetriever``
+# so the call site reads as "I'm using sparse TF-IDF, not a neural
+# embedding retriever". The old name is kept indefinitely for
+# backward compatibility — multiple callers in ``prover/premise/selector.py``
+# and tests still reference it.
+TfidfNgramRetriever = EmbeddingRetriever
+
+__all__ = ["EmbeddingRetriever", "TfidfNgramRetriever", "IndexedDoc"]

@@ -1,7 +1,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Lean-4.28.0-blue" alt="Lean 4" />
   <img src="https://img.shields.io/badge/Python-3.10+-3776ab" alt="Python" />
-  <img src="https://img.shields.io/badge/tests-760-green" alt="Tests" />
+  <img src="https://img.shields.io/badge/tests-822-green" alt="Tests" />
   <img src="https://img.shields.io/badge/problems-1631-orange" alt="Problems" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
 </p>

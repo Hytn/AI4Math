@@ -54,11 +54,16 @@ def prove_single(problem: BenchmarkProblem, llm, premise_selector,
                  pantograph_backend=None,
                  lookeng_backend=None,
                  world_model=None,
-                 dialog_index=None) -> ProofTrace:
+                 dialog_index=None,
+                 policy_engine=None,
+                 plugin_loader=None,
+                 persistent_lemma_bank=None) -> ProofTrace:
     """对单道题运行 ``UnifiedProofRunner.run(profile)``, 累积 pass@k。
 
     v9: profile-only。每次 sample = 一次独立 UnifiedProofRunner.run。
     v10: 新增 world_model / dialog_index 透传, 把基础设施真正接通到 CLI。
+    v15: 新增 policy_engine / plugin_loader / persistent_lemma_bank 透传 ——
+         v14 reservoir 之前只能从代码注入, 现在三处都从 CLI 走通。
 
     Args:
         profile: 必填。从 ``prover.unified.PRESETS`` 选择算法。
@@ -66,6 +71,9 @@ def prove_single(problem: BenchmarkProblem, llm, premise_selector,
             可选社区基建; None 时对应 ToolKit 进入 fallback 模式。
         world_model: 可选 sklearn world-model. 见 --world-model.
         dialog_index: 可选 DialogIndex. 见 --dialog-index.
+        policy_engine: 可选 PolicyEngine. 见 --policy-engine.
+        plugin_loader: 可选 PluginLoader. 见 --plugins-dir.
+        persistent_lemma_bank: 可选 PersistentLemmaBank. 见 --lemma-bank-db.
     """
     if not profile:
         raise SystemExit(
@@ -84,6 +92,9 @@ def prove_single(problem: BenchmarkProblem, llm, premise_selector,
         lookeng_backend=lookeng_backend,
         world_model=world_model,
         dialog_index=dialog_index,
+        policy_engine=policy_engine,
+        plugin_loader=plugin_loader,
+        persistent_lemma_bank=persistent_lemma_bank,
     )
 
 
@@ -123,6 +134,9 @@ def _prove_single_unified(
     lookeng_backend=None,
     world_model=None,
     dialog_index=None,
+    policy_engine=None,
+    plugin_loader=None,
+    persistent_lemma_bank=None,
 ) -> ProofTrace:
     """v3 unified 主管线路径: 每个 sample = 一次 UnifiedProofRunner.run。
 
@@ -195,6 +209,10 @@ def _prove_single_unified(
         lookeng_backend=lookeng_backend,
         world_model=world_model,
         dialog_index=dialog_index,
+        # v15 reservoirs
+        policy_engine=policy_engine,
+        plugin_loader=plugin_loader,
+        persistent_lemma_bank=persistent_lemma_bank,
     )
 
     # 跑 max_samples 次 (pass@k 兼容)
@@ -292,14 +310,56 @@ def main():
     parser.add_argument("--cache-all", action="store_true",
                           help="With --cache, cache responses at any temperature.")
 
+    # ── v15: factory-loaded v14 reservoirs (parity with run_unified.py) ──
+    parser.add_argument(
+        "--policy-engine", action="store_true",
+        help=("Enable engine.policy.PolicyEngine with the 5 default rules. "
+              "Off by default to preserve v13 hardcoded behaviour."))
+    parser.add_argument(
+        "--plugins-dir", default=None, metavar="DIR",
+        help=("Domain-plugin root(s), comma-separated. Each subdirectory "
+              "with a ``plugin.yaml`` is loaded; runner injects the "
+              "best-matching plugin's few-shot/premises/hint per problem. "
+              "Try ``--plugins-dir plugins/strategies``."))
+    parser.add_argument(
+        "--lemma-bank-db", default=None, metavar="DB_PATH",
+        help=("SQLite path for the cross-problem lemma bank (BM25). "
+              "Use a stable path across eval runs to accumulate."))
+    parser.add_argument(
+        "--lean-version", default=None, metavar="TAG",
+        help="Lean toolchain tag stamped on lemmas written to --lemma-bank-db.")
+    parser.add_argument(
+        "--mathlib-rev", default=None, metavar="HASH",
+        help="Mathlib commit stamped on lemmas written to --lemma-bank-db.")
+
+    # ── v15: OpenAI-compatible providers ──
+    parser.add_argument(
+        "--api-base", default=None, metavar="URL",
+        help=("OpenAI-compatible API base URL. Used by --provider="
+              "openai/deepseek/vllm/sglang/ollama/openai_compat."))
+
     args = parser.parse_args()
 
-    # 初始化 LLM (async)
-    llm = create_async_provider({
+    # 初始化 LLM (async, v15: 支持 anthropic / mock / openai-compatible)
+    llm_cfg = {
         "provider": args.provider,
         "model": args.model,
-        "api_key": os.environ.get("ANTHROPIC_API_KEY", ""),
-    })
+        "api_key": "",
+        "api_base": getattr(args, "api_base", None) or "",
+    }
+    # Per-provider api_key env-var lookup. Anthropic stays
+    # backward-compatible (auto-pick from env); OpenAI-family providers
+    # fall back to env vars inside create_async_provider itself.
+    if args.provider == "anthropic":
+        llm_cfg["api_key"] = os.environ.get("ANTHROPIC_API_KEY", "")
+    elif args.provider == "deepseek":
+        llm_cfg["api_key"] = os.environ.get("DEEPSEEK_API_KEY", "")
+    elif args.provider == "openai":
+        llm_cfg["api_key"] = os.environ.get("OPENAI_API_KEY", "")
+    try:
+        llm = create_async_provider(llm_cfg)
+    except ValueError as e:
+        raise SystemExit(str(e))
     if args.cache:
         from agent.brain.async_llm_provider import AsyncCachedProvider
         llm = AsyncCachedProvider(llm, cache_all=args.cache_all)
@@ -353,8 +413,19 @@ def main():
                      "所有 pass@k 指标标记为 [unverified]")
 
     # v10/v11: optional features (shared factory loaders)
+    # v15: same treatment for v14 reservoirs (policy / plugins / lemma bank).
+    from prover.unified.factory import (
+        load_policy_engine, load_plugin_loader, load_persistent_lemma_bank,
+    )
     world_model = load_world_model(args.world_model)
     dialog_index = load_dialog_index(args.dialog_index)
+    policy_engine = load_policy_engine(getattr(args, "policy_engine", False))
+    plugin_loader = load_plugin_loader(getattr(args, "plugins_dir", None))
+    persistent_lemma_bank = load_persistent_lemma_bank(
+        getattr(args, "lemma_bank_db", None),
+        lean_version=getattr(args, "lean_version", None),
+        mathlib_rev=getattr(args, "mathlib_rev", None),
+    )
 
     # 确定 benchmarks
     if args.benchmark == "all":
@@ -414,6 +485,10 @@ def main():
                 lookeng_backend=lookeng_backend,
                 world_model=world_model,
                 dialog_index=dialog_index,
+                # v15 reservoirs
+                policy_engine=policy_engine,
+                plugin_loader=plugin_loader,
+                persistent_lemma_bank=persistent_lemma_bank,
             )
 
             status = ("✓ 通过" if trace.solved

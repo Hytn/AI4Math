@@ -196,6 +196,275 @@ class AsyncMockProvider(AsyncLLMProvider):
             latency_ms=10, stop_reason="end_turn")
 
 
+# ─────────────────────────────────────────────────────────────────────
+# v15: OpenAI-compatible provider — one class, many backends
+# ─────────────────────────────────────────────────────────────────────
+
+class AsyncOpenAIProvider(AsyncLLMProvider):
+    """OpenAI Chat Completions-compatible async provider.
+
+    Designed to be the single Python class that talks to anything
+    speaking OpenAI's API shape — DeepSeek API, vLLM, sglang, ollama,
+    Together / Anyscale / Fireworks / Groq, plus OpenAI itself.
+
+    Why this matters for AI4Math:
+
+      1. ``--profile whole_proof`` claims "DeepSeek-Prover style" but
+         until v15 only Anthropic was wired in. Now you can A/B Claude
+         vs DeepSeek-Prover-V2 vs Kimina-Prover on the same harness.
+
+      2. The RL flywheel in ``sampler/`` is economically infeasible
+         when every rollout calls Anthropic. With vLLM via this
+         provider, a single H100 can serve thousands of rollouts/min.
+
+      3. Lets evaluators reproduce numbers without an Anthropic
+         account — point ``--api-base`` at any OpenAI-compatible server.
+
+    Tool-use translation:
+      The agent loop speaks Anthropic's tool format internally
+      (content blocks with ``type=tool_use``). This provider:
+        * sends tools as OpenAI ``functions``-style schema
+        * receives ``tool_calls`` from OpenAI back
+        * normalises the response to the same ``LLMResponse(tool_calls=[
+          {"name", "input", "id"}, ...])`` shape AsyncClaudeProvider returns
+      so AgentLoop sees identical structure regardless of backend.
+
+    Usage::
+
+        # DeepSeek API
+        provider = AsyncOpenAIProvider(
+            model="deepseek-chat",
+            api_key=os.environ["DEEPSEEK_API_KEY"],
+            api_base="https://api.deepseek.com/v1",
+        )
+
+        # Local vLLM
+        provider = AsyncOpenAIProvider(
+            model="DeepSeek-Prover-V2-7B",
+            api_key="EMPTY",
+            api_base="http://localhost:8000/v1",
+        )
+    """
+
+    def __init__(self, model: str = "gpt-4o-mini",
+                 api_key: str = "",
+                 api_base: str = "",
+                 timeout_s: float = 120.0):
+        self._model = model
+        # Allow empty api_key for local servers (vLLM/sglang/ollama).
+        # The OpenAI client requires *some* string, so default to
+        # "EMPTY" which is the vLLM convention.
+        self._api_key = api_key or os.environ.get(
+            "OPENAI_API_KEY", "") or "EMPTY"
+        self._api_base = api_base or os.environ.get("OPENAI_API_BASE", "")
+        self._timeout_s = timeout_s
+        self._client = None
+
+    @property
+    def model_name(self) -> str:
+        return self._model
+
+    def _get_client(self):
+        if self._client is None:
+            try:
+                from openai import AsyncOpenAI
+            except ImportError as e:
+                raise RuntimeError(
+                    "AsyncOpenAIProvider requires the 'openai' package. "
+                    "Install with: pip install openai>=1.40.0"
+                ) from e
+            kwargs = {"api_key": self._api_key, "timeout": self._timeout_s}
+            if self._api_base:
+                kwargs["base_url"] = self._api_base
+            self._client = AsyncOpenAI(**kwargs)
+        return self._client
+
+    @staticmethod
+    def _claude_tools_to_openai(tools: list) -> list:
+        """Convert Anthropic tool schema to OpenAI function-calling schema.
+
+        Anthropic format:  {"name", "description", "input_schema"}
+        OpenAI   format:   {"type":"function",
+                            "function":{"name","description","parameters"}}
+        """
+        out = []
+        for t in tools or []:
+            if not isinstance(t, dict):
+                continue
+            out.append({
+                "type": "function",
+                "function": {
+                    "name": t.get("name", ""),
+                    "description": t.get("description", ""),
+                    "parameters": t.get("input_schema",
+                                         {"type": "object", "properties": {}}),
+                },
+            })
+        return out
+
+    @staticmethod
+    def _claude_messages_to_openai(messages: list) -> list:
+        """Translate Anthropic content-block messages to OpenAI shape.
+
+        Anthropic uses structured ``content`` lists with text blocks and
+        tool_use / tool_result blocks. OpenAI uses string ``content`` plus
+        a separate ``tool_calls`` array on assistant messages and
+        ``role="tool"`` messages for tool results.
+        """
+        import json as _json
+        out = []
+        for m in messages or []:
+            role = m.get("role", "user")
+            content = m.get("content", "")
+            if isinstance(content, str):
+                out.append({"role": role, "content": content})
+                continue
+            # content is a list of blocks
+            text_parts = []
+            tool_calls = []
+            tool_results = []  # list of {tool_call_id, content}
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                btype = block.get("type")
+                if btype == "text":
+                    text_parts.append(block.get("text", ""))
+                elif btype == "tool_use":
+                    tool_calls.append({
+                        "id": block.get("id", ""),
+                        "type": "function",
+                        "function": {
+                            "name": block.get("name", ""),
+                            "arguments": _json.dumps(
+                                block.get("input", {}),
+                                ensure_ascii=False),
+                        },
+                    })
+                elif btype == "tool_result":
+                    tc_id = block.get("tool_use_id", "")
+                    inner = block.get("content", "")
+                    if isinstance(inner, list):
+                        # extract text from inner blocks
+                        inner = "".join(
+                            ib.get("text", "")
+                            for ib in inner
+                            if isinstance(ib, dict) and ib.get("type") == "text"
+                        )
+                    tool_results.append({
+                        "tool_call_id": tc_id, "content": str(inner)})
+
+            joined_text = "\n".join(p for p in text_parts if p)
+
+            if role == "assistant" and tool_calls:
+                msg = {"role": "assistant", "content": joined_text or None,
+                       "tool_calls": tool_calls}
+                out.append(msg)
+            elif tool_results:
+                # tool_result blocks become separate role=tool messages
+                for tr in tool_results:
+                    out.append({"role": "tool", **tr})
+                if joined_text:
+                    out.append({"role": role, "content": joined_text})
+            else:
+                out.append({"role": role, "content": joined_text})
+        return out
+
+    async def generate(self, system: str = "", user: str = "",
+                       temperature: float = 0.7,
+                       tools: list = None,
+                       max_tokens: int = 4096) -> LLMResponse:
+        return await self.chat(
+            system, [{"role": "user", "content": user}],
+            temperature, tools, max_tokens)
+
+    async def chat(self, system: str = "", messages: list = None,
+                   temperature: float = 0.7, tools: list = None,
+                   max_tokens: int = 4096) -> LLMResponse:
+        client = self._get_client()
+        oai_messages = []
+        if system:
+            oai_messages.append({"role": "system", "content": system})
+        oai_messages.extend(self._claude_messages_to_openai(messages or []))
+
+        kwargs = dict(
+            model=self._model, max_tokens=max_tokens,
+            temperature=temperature, messages=oai_messages)
+        if tools:
+            kwargs["tools"] = self._claude_tools_to_openai(tools)
+
+        last_error = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                start = time.time()
+                response = await client.chat.completions.create(**kwargs)
+                latency = int((time.time() - start) * 1000)
+                choice = response.choices[0]
+                msg = choice.message
+
+                content = msg.content or ""
+                tool_calls_out = []
+                for tc in (getattr(msg, "tool_calls", None) or []):
+                    fn = getattr(tc, "function", None)
+                    if fn is None:
+                        continue
+                    import json as _json
+                    try:
+                        parsed_args = _json.loads(fn.arguments or "{}")
+                    except Exception:
+                        parsed_args = {}
+                    tool_calls_out.append({
+                        "name": fn.name,
+                        "input": parsed_args,
+                        "id": getattr(tc, "id", "") or "",
+                    })
+
+                stop_reason_map = {
+                    "stop": "end_turn",
+                    "length": "max_tokens",
+                    "tool_calls": "tool_use",
+                    "function_call": "tool_use",
+                }
+                stop_reason = stop_reason_map.get(
+                    choice.finish_reason or "stop", "end_turn")
+
+                usage = getattr(response, "usage", None)
+                tokens_in = getattr(usage, "prompt_tokens", 0) if usage else 0
+                tokens_out = getattr(usage, "completion_tokens", 0) if usage else 0
+
+                return LLMResponse(
+                    content=content, model=self._model,
+                    tokens_in=tokens_in, tokens_out=tokens_out,
+                    latency_ms=latency, tool_calls=tool_calls_out,
+                    stop_reason=stop_reason)
+
+            except Exception as e:
+                last_error = e
+                if attempt < _MAX_RETRIES:
+                    backoff = min(
+                        _INITIAL_BACKOFF_S * (2 ** attempt), _MAX_BACKOFF_S)
+                    jitter = random.uniform(0, backoff * 0.3)
+                    wait = backoff + jitter
+                    logger.warning(
+                        f"AsyncOpenAIProvider call failed (attempt "
+                        f"{attempt + 1}/{_MAX_RETRIES + 1}): {e}. "
+                        f"Retrying in {wait:.1f}s...")
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error(
+                        f"AsyncOpenAIProvider failed after "
+                        f"{_MAX_RETRIES + 1} attempts: {e}")
+
+        raise last_error
+
+    async def close(self):
+        if self._client is not None:
+            try:
+                await self._client.close()
+            except Exception:
+                pass
+            self._client = None
+
+
 class AsyncCachedProvider(AsyncLLMProvider):
     """异步缓存包装器 — 包装任意 AsyncLLMProvider.
 
@@ -315,13 +584,69 @@ class AsyncCachedProvider(AsyncLLMProvider):
 
 
 def create_async_provider(config: dict) -> AsyncLLMProvider:
-    """工厂: 从配置创建异步 Provider"""
-    p = config.get("provider", "anthropic")
+    """工厂: 从配置创建异步 Provider.
+
+    v15: OpenAI-compatible aliases. Each alias just sets sensible
+    api_base / model / env-var defaults on AsyncOpenAIProvider; the
+    explicit ``api_base`` / ``model`` / ``api_key`` in ``config``
+    always wins.
+
+    Recognised provider names::
+
+        "anthropic"     →  AsyncClaudeProvider           (Claude API)
+        "mock"          →  AsyncMockProvider             (no network)
+        "openai"        →  AsyncOpenAIProvider           (OpenAI API)
+        "deepseek"      →  AsyncOpenAIProvider           (api.deepseek.com)
+        "vllm"          →  AsyncOpenAIProvider           (localhost:8000)
+        "sglang"        →  AsyncOpenAIProvider           (localhost:30000)
+        "ollama"        →  AsyncOpenAIProvider           (localhost:11434)
+        "openai_compat" →  AsyncOpenAIProvider           (generic; expects
+                                                          api_base in config)
+    """
+    p = (config.get("provider") or "anthropic").lower()
+    api_key = config.get("api_key", "")
+    api_base = config.get("api_base", "")
+    model = config.get("model", "")
+
     if p == "anthropic":
         return AsyncClaudeProvider(
-            model=config.get("model", DEFAULT_CLAUDE_MODEL),
-            api_key=config.get("api_key", ""))
-    elif p == "mock":
+            model=model or DEFAULT_CLAUDE_MODEL,
+            api_key=api_key)
+    if p == "mock":
         return AsyncMockProvider()
-    else:
-        raise ValueError(f"Unknown provider: {p}")
+
+    # OpenAI-compatible family — pick defaults per alias, then let
+    # explicit config override.
+    _OAI_ALIASES = {
+        "openai":        ("",                                "gpt-4o-mini",
+                          "OPENAI_API_KEY"),
+        "deepseek":      ("https://api.deepseek.com/v1",     "deepseek-chat",
+                          "DEEPSEEK_API_KEY"),
+        "vllm":          ("http://localhost:8000/v1",        "",
+                          ""),
+        "sglang":        ("http://localhost:30000/v1",       "",
+                          ""),
+        "ollama":        ("http://localhost:11434/v1",       "",
+                          ""),
+        "openai_compat": ("",                                "",
+                          ""),
+    }
+    if p in _OAI_ALIASES:
+        default_base, default_model, env_var = _OAI_ALIASES[p]
+        if not api_base:
+            api_base = default_base
+        if not model:
+            model = default_model
+        if not api_key and env_var:
+            api_key = os.environ.get(env_var, "")
+        if not model:
+            raise ValueError(
+                f"provider={p!r}: 'model' must be specified "
+                f"(local servers don't have a default).")
+        return AsyncOpenAIProvider(
+            model=model, api_key=api_key, api_base=api_base)
+
+    raise ValueError(
+        f"Unknown provider: {p!r}. "
+        f"Try one of: anthropic, mock, openai, deepseek, vllm, "
+        f"sglang, ollama, openai_compat")

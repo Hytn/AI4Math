@@ -82,6 +82,60 @@ python3 -c "import anthropic" 2>/dev/null || {
     info "安装依赖..."; pip install -r requirements.txt --break-system-packages -q 2>/dev/null || pip install -r requirements.txt -q; }
 ok "依赖就绪"
 
+# ── Lean toolchain preflight (v15) ──
+# 不同 benchmark 的 lean-toolchain 文件锁了**不同**版本(v4.20 / v4.24 /
+# v4.27 / v4.28 跨度极大),Mathlib API 在这些版本之间会变。如果用户开了
+# --lean 但本机 lean 版本和 benchmark 锁的版本不一致,verify_complete
+# 会大批静默失败,产出无意义的 pass@k 数字。
+#
+# 预检逻辑:
+#   * --lean 不开 → 跳过整段(mock 评测无影响)
+#   * --lean 开 + lean 不在 PATH → fail 立即停
+#   * --lean 开 + lean 版本与 benchmark 锁版本不匹配 → 显著 warn
+preflight_lean() {
+    if [ "$LEAN_MODE" != "real" ]; then
+        return 0
+    fi
+    if ! command -v lean >/dev/null 2>&1; then
+        fail "--lean 已开启但未在 PATH 找到 lean 二进制。\
+请安装 elan + 对应工具链(参见 docker/Dockerfile.lean),\
+或用 mock 模式跑(去掉 --lean)。"
+    fi
+    local LEAN_HAVE
+    LEAN_HAVE="$(lean --version 2>/dev/null | head -1 || true)"
+    info "lean --version: ${LEAN_HAVE:-unknown}"
+
+    # benchmark 名 → lean-toolchain 锁定路径
+    local pinned_path=""
+    case "$1" in
+        minif2f)        pinned_path="data/miniF2F/lean-toolchain" ;;
+        putnambench)    pinned_path="data/PutnamBench/lean4/lean-toolchain" ;;
+        proofnet)       pinned_path="data/ProofNet/lean-toolchain" ;;
+        fate-m)         pinned_path="data/FATE-M/lean-toolchain" ;;
+        fate-h)         pinned_path="data/FATE-H/lean-toolchain" ;;
+        fate-x)         pinned_path="data/FATE-X/lean-toolchain" ;;
+        builtin|*)      return 0 ;;
+    esac
+    if [ ! -f "$pinned_path" ]; then
+        return 0
+    fi
+    local pinned
+    pinned="$(cat "$pinned_path" | tr -d '[:space:]')"
+    # extract just the v-tag (e.g. "v4.28.0") for comparison
+    local pinned_tag have_tag
+    pinned_tag="$(echo "$pinned" | grep -oE 'v[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)"
+    have_tag="$(echo "$LEAN_HAVE" | grep -oE 'version [0-9]+\.[0-9]+(\.[0-9]+)?' \
+                  | head -1 | sed 's/version /v/')"
+    if [ -n "$pinned_tag" ] && [ -n "$have_tag" ] \
+            && [ "$pinned_tag" != "$have_tag" ]; then
+        warn "Lean 版本错配: $1 的 lean-toolchain 锁定 $pinned_tag, "\
+"本机 $have_tag。Mathlib API 在这些版本间不稳定 —— "\
+"verify 大概率全部失败, pass@k 数字将无意义。"
+        warn "建议: 在 $1 的目录里运行 'elan install $pinned' 后再评测,"\
+" 或用对应版本的 docker 镜像。"
+    fi
+}
+
 # ── Step 2: 数据集 ──
 header "Step 2/3 — 数据集验证 (已内置 1,631 道真实题目)"
 python3 -c "
@@ -104,6 +158,7 @@ LIMIT_ARG=""; [ "${LIMIT:-0}" -gt 0 ] 2>/dev/null && LIMIT_ARG="--limit $LIMIT"
 
 for bench in $BL; do
     echo -e "\n${C}──── 评测: $bench ────${N}"
+    preflight_lean "$bench"
     python3 run_eval.py --benchmark "$bench" --provider "$MODE" --model "$MODEL" \
         --max-samples "$MAX_SAMPLES" --lean-mode "$LEAN_MODE" --split "$SPLIT" \
         --profile "$PROFILE" $LIMIT_ARG $NO_KNOWLEDGE 2>&1 \

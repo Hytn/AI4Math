@@ -177,3 +177,130 @@ def load_knowledge(db_path: Optional[str]):
             f"Continuing without it.")
         return None, None, None
 
+
+# ═══════════════════════════════════════════════════════════════════════
+# v15: factory loaders for the v14 features that previously had no
+# CLI / no factory wiring. Without these, ``--policy-engine``,
+# ``--plugins-dir`` and ``--lemma-bank-db`` could not be exposed
+# through ``run_unified.py`` / ``run_eval.py`` and the v14 reservoirs
+# stayed `policy_engine=None` / `plugin_loader=None` /
+# `persistent_lemma_bank=None` in every default eval — i.e. v14 was
+# unmeasurable in production.
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def load_policy_engine(enabled: bool):
+    """Build a ``PolicyEngine`` with the 5 default rules, or return None.
+
+    Args:
+        enabled: ``True`` to construct ``PolicyEngine.default()``;
+                 anything else returns ``None`` (legacy v13 behaviour:
+                 hard ``max_turns`` termination, no declarative rules).
+
+    Why a boolean and not a path?
+        Default ``PolicyRule`` set is pure-Python doctrine (no persisted
+        state). A YAML / JSON config for selectively enabling rules is
+        a future feature; for now the right granularity is "use defaults"
+        vs "off". When you need fewer rules, hand-build an engine in code.
+
+    Fail-soft: import error logs a warning and returns None — the
+    runner continues with the v13 hardcoded path.
+    """
+    if not enabled:
+        return None
+    try:
+        from engine.policy import PolicyEngine
+        eng = PolicyEngine.default()
+        logger.info(
+            "policy engine: enabled (default rules: InfraRecovery, "
+            "ConsecutiveSameError, BudgetEscalation, BankedLemmaDecompose, "
+            "Reflection)")
+        return eng
+    except Exception as e:
+        logger.warning(
+            f"could not construct PolicyEngine: {e}. "
+            f"Falling back to hardcoded max_turns termination.")
+        return None
+
+
+def load_plugin_loader(plugins_dir: Optional[str]):
+    """Discover domain plugins from one or more directories.
+
+    Args:
+        plugins_dir: Path or comma-separated paths to plugin roots.
+                     Each root contains ``<domain>/plugin.yaml`` etc.
+                     Default layout: ``plugins/strategies/``.
+                     None disables plugin injection entirely.
+
+    Returns:
+        ``PluginLoader`` with ``.discover()`` already called, or
+        ``None`` if loading failed or the directory yielded no plugins.
+
+    The runner's ``_build_initial_message`` calls
+    ``loader.match(theorem)`` per problem; a None loader short-circuits
+    to plain behaviour. So a None return is a legitimate eval state,
+    not a bug.
+    """
+    if not plugins_dir:
+        return None
+    try:
+        from prover.plugins import PluginLoader
+        dirs = [d.strip() for d in plugins_dir.split(",") if d.strip()]
+        if not dirs:
+            return None
+        loader = PluginLoader(plugin_dirs=dirs)
+        loader.discover()
+        n = len(getattr(loader, "_registry", {}))
+        if n == 0:
+            logger.warning(
+                f"plugin loader: discovered 0 plugins in {dirs!r}. "
+                f"Continuing without domain injection.")
+            return None
+        logger.info(f"plugin loader: {n} plugin(s) loaded from {dirs!r}")
+        return loader
+    except Exception as e:
+        logger.warning(
+            f"could not initialise PluginLoader from {plugins_dir!r}: "
+            f"{e}. Continuing without domain injection.")
+        return None
+
+
+def load_persistent_lemma_bank(db_path: Optional[str],
+                                 lean_version: Optional[str] = None,
+                                 mathlib_rev: Optional[str] = None):
+    """Open a SQLite-backed cross-problem lemma bank, or return None.
+
+    Args:
+        db_path:       Path to the SQLite file. None / empty disables.
+        lean_version:  Optional Lean toolchain tag stamped on new lemmas
+                       (e.g. ``"leanprover/lean4:v4.28.0"``). Used so
+                       a future ``recheck_after_upgrade`` step can flag
+                       lemmas extracted under a different toolchain.
+        mathlib_rev:   Optional Mathlib commit hash, same purpose.
+
+    Returns:
+        ``PersistentLemmaBank`` or ``None``.
+
+    The runner accepts ``persistent_lemma_bank=None`` as "no cross-problem
+    sharing" — the in-memory ``LemmaBank`` per-problem is unaffected.
+    """
+    if not db_path:
+        return None
+    try:
+        from prover.lemma_bank import PersistentLemmaBank
+        bank = PersistentLemmaBank(
+            db_path=db_path,
+            lean_version=lean_version or "",
+            mathlib_rev=mathlib_rev or "",
+        )
+        rev_short = (mathlib_rev or "?")[:12]
+        logger.info(
+            f"persistent lemma bank opened: {db_path} "
+            f"(lean_version={lean_version or '?'}, mathlib_rev={rev_short})")
+        return bank
+    except Exception as e:
+        logger.warning(
+            f"could not open PersistentLemmaBank at {db_path!r}: {e}. "
+            f"Continuing without cross-problem lemma reuse.")
+        return None
+

@@ -121,6 +121,55 @@ def parse_args():
         help=("Path to a SQLite knowledge store. When set, the runner "
               "deposits successful proofs and reads briefings. Off by "
               "default (no knowledge persistence in single-run mode)."))
+
+    # ── v15: factory-loaded v14 reservoirs (previously only reachable
+    # through code-only ``UnifiedProofRunner(...)`` kwargs, never via CLI) ──
+    p.add_argument(
+        "--policy-engine", action="store_true",
+        help=("Enable engine.policy.PolicyEngine with the 5 default rules "
+              "(InfraRecovery / ConsecutiveSameError / BudgetEscalation / "
+              "BankedLemmaDecompose / Reflection). When enabled, multi-turn "
+              "loops can early-terminate or switch strategy on declarative "
+              "rules instead of running until ``max_turns``. Off by default "
+              "to preserve v13 hardcoded behaviour."))
+    p.add_argument(
+        "--plugins-dir", type=str, default=None,
+        metavar="DIR",
+        help=("Domain-plugin root(s), comma-separated. Each subdirectory "
+              "with a ``plugin.yaml`` is loaded; the runner injects the "
+              "best-matching plugin's few-shot / extra premises / strategic "
+              "hint into the initial user message per problem. Try "
+              "``--plugins-dir plugins/strategies`` for the bundled "
+              "algebra/analysis/number-theory pack. Off by default."))
+    p.add_argument(
+        "--lemma-bank-db", type=str, default=None,
+        metavar="DB_PATH",
+        help=("SQLite path for the cross-problem lemma bank (BM25 "
+              "retrieval, fed by ConjectureProposeTool). When set, "
+              "successful auxiliary lemmas from one problem are visible "
+              "to LemmaBankTool fallback in later problems. Off by "
+              "default; use a stable path across runs to accumulate."))
+    p.add_argument(
+        "--lean-version", type=str, default=None,
+        metavar="TAG",
+        help=("Lean toolchain tag stamped on lemmas written to "
+              "--lemma-bank-db (e.g. 'leanprover/lean4:v4.28.0'). "
+              "Lets a future ``recheck_after_upgrade`` step flag "
+              "lemmas extracted under a different toolchain."))
+    p.add_argument(
+        "--mathlib-rev", type=str, default=None,
+        metavar="HASH",
+        help="Mathlib commit stamped on lemmas written to --lemma-bank-db.")
+
+    # ── v15: OpenAI-compatible providers (DeepSeek, vLLM, sglang, ollama, ...) ──
+    p.add_argument(
+        "--api-base", type=str, default=None,
+        metavar="URL",
+        help=("OpenAI-compatible API base URL. Used by --provider=openai/"
+              "deepseek/vllm/sglang/ollama/openai_compat. If unset, each "
+              "alias picks a sensible default (vllm→localhost:8000, "
+              "deepseek→api.deepseek.com, ...)."))
+
     # v12: opt-in LLM response caching. Off by default to preserve
     # legacy behaviour. With ``--cache`` the runner wraps the provider
     # in AsyncCachedProvider; same prompt → cached LLMResponse on hit.
@@ -168,21 +217,37 @@ def build_llm(args):
     process — across multiple problems in --benchmark mode this can
     cut LLM cost meaningfully (system prompt + few-shot prefix is
     shared across problems).
+
+    v15: route everything through ``create_async_provider`` so the
+    OpenAI-compatible aliases (deepseek / vllm / sglang / ollama /
+    openai / openai_compat) all work without a per-alias if-branch
+    here. ``--api-base`` overrides the alias default base URL.
     """
+    from agent.brain.async_llm_provider import create_async_provider
+    cfg = {
+        "provider": args.provider,
+        "model": args.model or "",
+        "api_key": "",
+        "api_base": getattr(args, "api_base", None) or "",
+    }
+    # Per-provider api_key env-var lookup. Anthropic is required-or-die
+    # for backward compatibility; OpenAI-family providers fall back to
+    # env vars inside create_async_provider itself.
     if args.provider == "anthropic":
-        from agent.brain.async_llm_provider import AsyncClaudeProvider
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
             raise SystemExit("ANTHROPIC_API_KEY not set")
-        provider = AsyncClaudeProvider(
-            model=args.model or DEFAULT_CLAUDE_MODEL,
-            api_key=api_key,
-        )
-    elif args.provider == "mock":
-        from agent.brain.async_llm_provider import AsyncMockProvider
-        provider = AsyncMockProvider()
-    else:
-        raise SystemExit(f"provider not yet wired: {args.provider}")
+        cfg["api_key"] = api_key
+        cfg["model"] = cfg["model"] or DEFAULT_CLAUDE_MODEL
+    elif args.provider == "deepseek":
+        cfg["api_key"] = os.environ.get("DEEPSEEK_API_KEY", "")
+    elif args.provider == "openai":
+        cfg["api_key"] = os.environ.get("OPENAI_API_KEY", "")
+
+    try:
+        provider = create_async_provider(cfg)
+    except ValueError as e:
+        raise SystemExit(str(e))
 
     if getattr(args, "cache", False):
         from agent.brain.async_llm_provider import AsyncCachedProvider
@@ -248,13 +313,22 @@ async def main():
 
     # ── v10/v11: optional features previously locked behind code-only access ──
     # v11: factory loaders make these one-liners + uniform with run_eval.py.
+    # v15: same treatment for v14 reservoirs (policy / plugins / lemma bank).
     from prover.unified.factory import (
         load_world_model, load_dialog_index, load_knowledge,
+        load_policy_engine, load_plugin_loader, load_persistent_lemma_bank,
     )
     world_model = load_world_model(args.world_model)
     dialog_index = load_dialog_index(args.dialog_index)
     knowledge_store, knowledge_writer, _knowledge_reader = load_knowledge(
         args.knowledge_db)
+    policy_engine = load_policy_engine(getattr(args, "policy_engine", False))
+    plugin_loader = load_plugin_loader(getattr(args, "plugins_dir", None))
+    persistent_lemma_bank = load_persistent_lemma_bank(
+        getattr(args, "lemma_bank_db", None),
+        lean_version=getattr(args, "lean_version", None),
+        mathlib_rev=getattr(args, "mathlib_rev", None),
+    )
 
     runner = UnifiedProofRunner(
         llm=llm,
@@ -267,6 +341,12 @@ async def main():
         lookeng_backend=lookeng_backend,
         world_model=world_model,
         dialog_index=dialog_index,
+        # v15: previously only reachable via code, now driven from CLI.
+        # ``None`` defaults preserve v13 behaviour exactly when the
+        # flags are absent.
+        policy_engine=policy_engine,
+        plugin_loader=plugin_loader,
+        persistent_lemma_bank=persistent_lemma_bank,
     )
     result = await runner.run(problem, profile_name=args.profile)
 

@@ -1,13 +1,29 @@
-"""engine/world_model.py — 世界模型预测器接口 (Fix #8)
+"""engine/world_model.py — 战术成功率先验预测器接口 (Fix #8 / v15 honesty pass)
 
-提供证明状态转移的预测能力，让智能体在心智空间中模拟策略效果，
-无需调用 Lean4 REPL 即可预判 tactic 的可能结果。
+⚠️  **Naming caveat (v15)**: this is *not* a "world model" in the RL /
+    model-based-planning sense. It is a **per-tactic success-rate
+    prior**:
 
-当前状态:
-  - 接口已定义
-  - MockWorldModel 提供基于规则的启发式预测
-  - 训练数据管道通过 ProofContextStore.export_rich_trajectories() 就绪
-  - 未来可训练 transformer-based 模型替换 MockWorldModel
+        predictor.predict(goal_state, tactic) →
+            {likely_success: bool, confidence: 0..1, ...}
+
+    A real proof-state world model would predict the *resulting goals*
+    after applying a tactic — i.e., simulate the Lean kernel without
+    calling it. This module does not. ``predicted_goals`` is exposed
+    for forward compatibility but populated only sparsely.
+
+    Default backend (``MockWorldModel``) is a hand-written rule book
+    over ~30 regular expressions: roughly "rfl on equality goals tends
+    to succeed". Trained backend (``TrainedWorldModel`` →
+    ``SklearnWorldModel``) is a sklearn ``LogisticRegression`` over
+    TF-IDF features — strictly a tactic-success classifier, not a
+    state-dynamics network.
+
+    The interface name is preserved because callers spell it out
+    (``world_model=`` kwarg on ``UnifiedProofRunner``) and renaming
+    cascades through too many places. Honest aliases:
+      - ``TacticSuccessPrior`` — alias of ``WorldModelPredictor``
+      - ``RuleBasedTacticPrior`` — alias of ``MockWorldModel``
 
 架构位置:
   ProofContextStore (Layer 0 数据) → 训练 → WorldModelPredictor
@@ -282,3 +298,12 @@ def make_world_model(model_path: Optional[str] = None) -> WorldModelPredictor:
         if m.is_trained:
             return m
     return MockWorldModel()
+
+
+# v15: honest-name aliases (see module docstring). Old names preserved
+# for backward compatibility — ``UnifiedProofRunner(world_model=...)``,
+# ``--world-model`` CLI flag, and ``make_world_model`` factory all
+# continue to work unchanged.
+TacticSuccessPrior = WorldModelPredictor
+RuleBasedTacticPrior = MockWorldModel
+TrainedTacticPrior = TrainedWorldModel
