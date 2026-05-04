@@ -14,8 +14,10 @@
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Optional, Literal
+from typing import Literal
 from enum import Enum
+
+from common.constants import DEFAULT_CLAUDE_MODEL
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -92,8 +94,6 @@ class ObservationPolicy:
                                 自动调用 verify 并把结果作为下一轮 observation 注入.
                                 (你说的"Lean 代码生成 → 自动 parse → 送 Lean → 反馈")
     auto_inject_goal_state ——  apply tactic 成功后, 自动把 new_goals 注入 (即使 LLM 没问).
-    compress_errors ——        长错误压缩到 N 字 (lane.summary_compressor).
-    visible_history_turns —— 上下文窗口可见的历史轮数 (-1 = 全部).
     inject_premises_in_prompt —— 初始 user message 是否预先粘上检索到的引理 (top-N).
     n_premises —— 初始注入的引理条数上限.
     inject_few_shot —— 初始 user message 是否附上 few-shot 示例.
@@ -103,11 +103,13 @@ class ObservationPolicy:
                               意外上下文长度增长.
     n_similar_dialogs —— v5: 注入相似对话的条数上限.
     similar_dialogs_max_chars —— v5: 注入相似对话块的字符上限.
+
+    v12 移除: ``compress_errors_budget`` 与 ``visible_history_turns`` —
+    这两个字段从来没有被 runner 或 agent_loop 读取过, 是已删 ``agent.context``
+    子系统的孤儿. 在 YAML 设它们等同 no-op, 删掉避免误导.
     """
     auto_inject_lean_compile: bool = True
     auto_inject_goal_state: bool = False
-    compress_errors_budget: int = 1200
-    visible_history_turns: int = -1
     include_search_state_in_prompt: bool = False  # 把当前搜索树注入 prompt
     include_knowledge_briefing: bool = True       # KnowledgeReader 简报
     inject_premises_in_prompt: bool = True        # v3 新增: 检索引理预注入
@@ -148,7 +150,7 @@ class Profile:
     # 2. 主循环参数 —— 算法的"思考节奏"
     max_turns: int = 1
     temperature: float = 0.7
-    model: str = "claude-sonnet-4-20250514"
+    model: str = DEFAULT_CLAUDE_MODEL
 
     # 3. System prompt 引导 —— 算法的"思维框架"
     #    具体 prompt 在 system_prompts.py 中按 framing 名字查表
@@ -163,8 +165,21 @@ class Profile:
     # 6. 终止条件
     stop: StopCondition = field(default_factory=StopCondition)
 
-    # 7. (可选) plugin 钩子 —— 用现有 agent.plugins 体系做领域微调
-    plugins: list[str] = field(default_factory=list)
+    # 7. v12: integrity-checker strictness toggle.
+    #    True  → CRITICAL integrity issues mark `verified=False` even
+    #            when Lean accepts the proof. Use for competition-
+    #            style benchmarks (PutnamBench, FormalMATH) where
+    #            ``native_decide`` / ``Decidable.decide`` / large
+    #            heartbeats are forbidden.
+    #    False → integrity issues become an advisory note in the
+    #            response but do not flip ``verified``. Default for
+    #            mainline benchmarks (miniF2F, ProofNet) where these
+    #            tactics are perfectly legitimate Mathlib usage.
+    integrity_strict: bool = False
+
+    # v12: removed the ``plugins`` field. It was wired through YAML and
+    # Profile but never read by anyone — ``agent.plugins`` was deleted
+    # in v9 and nothing replaced the consumer side.
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -439,25 +454,10 @@ PRESETS["beam"] = Profile(
 )
 
 
-# ═══════════════════════════════════════════════════════════════════════
-# Experimental: 留作未来不确定方向; 当前为空, 但保留 API.
-# ═══════════════════════════════════════════════════════════════════════
-
-EXPERIMENTAL_PRESETS: dict[str, Profile] = {}
-
-
-def enable_experimental_search_presets() -> None:
-    """Back-compat shim: tree-search presets (best_first / mcts / beam)
-    are now in PRESETS by default thanks to v4's dialog.json schema 3.0
-    merge. This function used to opt-in three EXPERIMENTAL_PRESETS into
-    PRESETS; it is kept callable so older scripts don't break, but it
-    has no effect now and will be removed in a later version.
-
-    EXPERIMENTAL_PRESETS itself remains as an extension point for any
-    *future* presets we want to gate behind explicit opt-in.
-    """
-    for name, prof in EXPERIMENTAL_PRESETS.items():
-        PRESETS[name] = prof
+# v11: EXPERIMENTAL_PRESETS dict and enable_experimental_search_presets()
+# shim were removed. They had been empty / no-op since v4 when MCTS / 
+# best_first / beam graduated into PRESETS. New "experimental" gating
+# can be re-introduced if and when there's an actual preset to gate.
 
 
 def get_profile(name: str) -> Profile:
@@ -472,6 +472,11 @@ def register_profile(profile: Profile) -> None:
     PRESETS[profile.name] = profile
 
 
+def list_profiles() -> list[str]:
+    """列出当前所有可用 profile 名 (含 register_profile 注册的)."""
+    return sorted(PRESETS.keys())
+
+
 def load_profile_from_yaml(path: str) -> Profile:
     """从 YAML 加载 Profile —— 用户态扩展点, 不动代码就能加新算法."""
     import yaml
@@ -484,16 +489,23 @@ def _profile_from_dict(d: dict) -> Profile:
     search_d = d.get("search", {}) or {}
     obs_d = d.get("observation", {}) or {}
     stop_d = d.get("stop", {}) or {}
+    # v12: silently drop legacy keys so old YAMLs still load. The
+    # fields themselves are gone; the YAMLs in config/profiles/* may
+    # still mention them after auto-regen from older PRESETS.
+    obs_d = {k: v for k, v in obs_d.items()
+             if k not in {"compress_errors_budget", "visible_history_turns"}}
+    if "plugins" in d:
+        d = {k: v for k, v in d.items() if k != "plugins"}
     return Profile(
         name=d["name"],
         description=d.get("description", ""),
         tools=[ToolKit(t) for t in d.get("tools", [])],
         max_turns=d.get("max_turns", 1),
         temperature=d.get("temperature", 0.7),
-        model=d.get("model", "claude-sonnet-4-20250514"),
+        model=d.get("model", DEFAULT_CLAUDE_MODEL),
         framing=d.get("framing", "whole_proof"),
         search=SearchConfig(**search_d) if search_d else SearchConfig(),
         observation=ObservationPolicy(**obs_d) if obs_d else ObservationPolicy(),
         stop=StopCondition(**stop_d) if stop_d else StopCondition(),
-        plugins=d.get("plugins", []),
+        integrity_strict=d.get("integrity_strict", False),
     )

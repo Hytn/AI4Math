@@ -64,9 +64,9 @@ simply starts from the most recent succeeded artifact.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import logging
-import os
 import shlex
 import subprocess
 import sys
@@ -177,6 +177,201 @@ def stage_eval(*, iter_dir: Path, profile: str, benchmark: str,
         artifact=str(traces_dir),
         metrics={"n_dialogs": n_dialogs, "profile": profile,
                  "benchmark": benchmark, "provider": provider})
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Stage 1b (v7.1): rollout — TreeRolloutSampler-driven roll-outs
+# ─────────────────────────────────────────────────────────────────────────
+
+def stage_rollout(*, iter_dir: Path,
+                    benchmark: str,
+                    backend: str = "local",
+                    backend_url: Optional[str] = None,
+                    backend_api_key: Optional[str] = None,
+                    policy_kind: str = "mock",
+                    policy_url: Optional[str] = None,
+                    policy_model: str = "gpt-4o-mini",
+                    policy_api_key: Optional[str] = None,
+                    search_kind: str = "best_first",
+                    branching_factor: int = 4,
+                    paths_per_problem: int = 8,
+                    max_nodes: int = 64,
+                    max_depth: int = 8,
+                    max_turns: int = 16,
+                    pool_size: int = 2,
+                    limit: int = 0,
+                    grpo_normalize: bool = True,
+                    write_dialog_json: bool = True) -> StageResult:
+    """Stage 1b — sampler-driven RL roll-out.
+
+    The V6 ``stage_eval`` invokes ``run_eval.py`` as a subprocess; that
+    is fine for offline benchmarking but bypasses the v7 unified RL
+    sampler entirely. ``stage_rollout`` is the v7.1 alternative: it
+    uses ``TreeRolloutSampler`` directly, so backend selection,
+    tree-shaped roll-outs, and group-reward shaping all flow through
+    the same code path the actual training will use.
+
+    Output (per problem)::
+
+        iter_dir/traces/<problem_id>_leaf<N>/dialog.json    (one per traj)
+        iter_dir/grpo_batch.jsonl                            (whole batch)
+        iter_dir/rollout_summary.json                        (stats)
+
+    Stage 2 (``stage_collect``) reads the per-traj ``dialog.json``
+    files exactly as it does for ``stage_eval`` output, so the
+    downstream pipeline is unchanged.
+    """
+    t0 = time.monotonic()
+    iter_dir.mkdir(parents=True, exist_ok=True)
+    traces_dir = iter_dir / "traces"
+    traces_dir.mkdir(exist_ok=True)
+
+    try:
+        from sampler import (
+            ProofEnvConfig, TreeRolloutSampler, TreeRolloutConfig,
+            MockPolicy, OpenAIPolicy, to_grpo_batch, save_batch_jsonl,
+        )
+    except ImportError as e:
+        return StageResult(
+            stage="rollout", ok=False,
+            duration_s=time.monotonic() - t0,
+            metrics={"error": f"sampler import failed: {e}"})
+
+    # Load benchmark problems
+    try:
+        from benchmarks.loader import load_benchmark
+        problems = load_benchmark(benchmark)
+        if limit > 0:
+            problems = problems[:limit]
+        # Translate to the dict shape ProofEnv expects.
+        rollout_problems = [
+            {"problem_id": p.problem_id,
+              "theorem_statement": p.theorem_statement,
+              "header": getattr(p, "header", "")}
+            for p in problems
+        ]
+    except Exception as e:
+        return StageResult(
+            stage="rollout", ok=False,
+            duration_s=time.monotonic() - t0,
+            metrics={"error": f"benchmark load failed: {e}"})
+
+    # Build policy
+    if policy_kind == "mock":
+        policy = MockPolicy(shuffle=True, seed=0)
+    elif policy_kind == "openai":
+        if not policy_url:
+            return StageResult(
+                stage="rollout", ok=False,
+                duration_s=time.monotonic() - t0,
+                metrics={"error":
+                          "policy=openai requires policy_url"})
+        policy = OpenAIPolicy(
+            base_url=policy_url, model=policy_model,
+            api_key=policy_api_key)
+    else:
+        return StageResult(
+            stage="rollout", ok=False,
+            duration_s=time.monotonic() - t0,
+            metrics={"error":
+                      f"unknown policy kind: {policy_kind}"})
+
+    # Build sampler
+    env_cfg = ProofEnvConfig(
+        backend=backend, backend_url=backend_url,
+        backend_api_key=backend_api_key,
+        pool_size=pool_size, max_turns=max_turns,
+    )
+    cfg = TreeRolloutConfig(
+        env_config=env_cfg,
+        num_envs=pool_size,
+        max_concurrent_problems=pool_size,
+        search_kind=search_kind,
+        branching_factor=branching_factor,
+        max_nodes=max_nodes,
+        max_depth=max_depth,
+        max_paths_per_problem=paths_per_problem,
+        group_normalize_rewards=grpo_normalize,
+    )
+
+    async def _run():
+        sampler = TreeRolloutSampler(cfg, policy_fn=policy)
+        await sampler.setup()
+        try:
+            return await sampler.collect_rollouts(rollout_problems)
+        finally:
+            try:
+                await sampler.teardown()
+            except Exception:
+                pass
+
+    try:
+        trajectories = asyncio.run(_run())
+    except Exception as e:
+        return StageResult(
+            stage="rollout", ok=False,
+            duration_s=time.monotonic() - t0,
+            metrics={"error": f"rollout failed: {e}"})
+
+    if not trajectories:
+        return StageResult(
+            stage="rollout", ok=False,
+            duration_s=time.monotonic() - t0,
+            metrics={"error": "no trajectories produced"})
+
+    # Persist artefacts
+    n_dialogs = 0
+    if write_dialog_json:
+        for t in trajectories:
+            try:
+                task_dir = traces_dir / (
+                    f"{t.problem_id}_leaf"
+                    f"{t.metadata.get('leaf_node_id', 0)}")
+                t.save_unified(
+                    task_dir,
+                    model=policy_model if policy_kind == "openai" else "mock",
+                    provider=policy_kind,
+                    system_prompt="(see meta)",
+                )
+                n_dialogs += 1
+            except Exception as e:
+                logger.debug(
+                    "save_unified failed for %s: %r", t.problem_id, e)
+
+    grpo = to_grpo_batch(
+        trajectories,
+        advantage_kind=("centered_normalized"
+                          if grpo_normalize else "raw"))
+    grpo_path = iter_dir / "grpo_batch.jsonl"
+    n_grpo = save_batch_jsonl(grpo, grpo_path)
+
+    stats = TreeRolloutSampler.batch_stats(trajectories)
+    summary = {
+        "n_problems": len(rollout_problems),
+        "n_trajectories": len(trajectories),
+        "success_rate": stats["success_rate"],
+        "avg_turns": stats["avg_turns"],
+        "avg_reward": stats["avg_reward"],
+        "termination_dist": stats["termination_dist"],
+        "search_kind": search_kind,
+        "branching_factor": branching_factor,
+        "backend": backend,
+        "policy_kind": policy_kind,
+    }
+    (iter_dir / "rollout_summary.json").write_text(
+        json.dumps(summary, indent=2), encoding="utf-8")
+
+    return StageResult(
+        stage="rollout", ok=True,
+        duration_s=time.monotonic() - t0,
+        artifact=str(traces_dir),
+        metrics={"n_trajectories": len(trajectories),
+                  "n_dialogs": n_dialogs,
+                  "n_grpo_rows": n_grpo,
+                  "success_rate": stats["success_rate"],
+                  "search_kind": search_kind,
+                  "backend": backend,
+                  "policy_kind": policy_kind})
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -310,10 +505,10 @@ def _trajectories_from_dialogs(traces_dir: Path) -> list:
 
     from agent.persistence.unified_storage import collect_dialogs
     from agent.persistence.dialog_format import (
-        meta_of, search_tree_of, messages_of, result_of,
+        meta_of, result_of,
     )
     from engine.proof_context_store import (
-        RichProofTrajectory, StepDetail,
+        RichProofTrajectory,
     )
 
     out: list = []
@@ -553,6 +748,40 @@ def cmd_collect(args) -> int:
     return 0 if r.ok else 1
 
 
+def cmd_rollout(args) -> int:
+    """Stage 1b — sampler-driven rollout (v7.1)."""
+    iter_dir = Path(args.iter_dir
+                       or REPO_ROOT / "results" / "rl" / "iter_0")
+    r = stage_rollout(
+        iter_dir=iter_dir,
+        benchmark=args.benchmark,
+        backend=args.backend,
+        backend_url=args.backend_url,
+        backend_api_key=args.backend_api_key,
+        policy_kind=args.policy,
+        policy_url=args.policy_url,
+        policy_model=args.policy_model,
+        policy_api_key=args.policy_api_key,
+        search_kind=args.search_kind,
+        branching_factor=args.branching_factor,
+        paths_per_problem=args.paths_per_problem,
+        max_nodes=args.max_nodes,
+        max_depth=args.max_depth,
+        max_turns=args.max_turns,
+        pool_size=args.pool_size,
+        limit=args.limit,
+        grpo_normalize=args.grpo_normalize,
+    )
+    print(r.short())
+    if r.artifact:
+        print(f"  → {r.artifact}")
+        if (iter_dir / "rollout_summary.json").exists():
+            print(f"  → {iter_dir / 'rollout_summary.json'}")
+        if (iter_dir / "grpo_batch.jsonl").exists():
+            print(f"  → {iter_dir / 'grpo_batch.jsonl'}")
+    return 0 if r.ok else 1
+
+
 def cmd_train_wm(args) -> int:
     r = stage_train_wm(
         traces_dir=Path(args.traces_dir),
@@ -629,6 +858,40 @@ def parse_args():
     sp_wm.add_argument("--db", default=None)
     sp_wm.add_argument("--output", default="world_model.pkl")
 
+    # ── v7.1: sampler-driven rollout subcommand ──────────────────────
+    sp_ro = sub.add_parser(
+        "rollout",
+        help="Stage 1b — sampler-driven rollout via TreeRolloutSampler. "
+             "Use this instead of `iter` when you want backend selection, "
+             "tree-shaped roll-outs, and GRPO group rewards.")
+    sp_ro.add_argument("--iter-dir", default=None)
+    sp_ro.add_argument("--benchmark", default="builtin")
+    sp_ro.add_argument("--limit", type=int, default=4,
+                          help="cap on number of problems")
+    sp_ro.add_argument("--backend",
+                          choices=("local", "kimina", "http", "socket",
+                                    "pantograph", "lookeng", "mock",
+                                    "fallback"),
+                          default="local")
+    sp_ro.add_argument("--backend-url", default=None)
+    sp_ro.add_argument("--backend-api-key", default=None)
+    sp_ro.add_argument("--policy",
+                          choices=("mock", "openai"), default="mock")
+    sp_ro.add_argument("--policy-url", default=None)
+    sp_ro.add_argument("--policy-model", default="gpt-4o-mini")
+    sp_ro.add_argument("--policy-api-key", default=None)
+    sp_ro.add_argument("--search-kind",
+                          choices=("best_first", "ucb", "beam"),
+                          default="best_first")
+    sp_ro.add_argument("--branching-factor", type=int, default=4)
+    sp_ro.add_argument("--paths-per-problem", type=int, default=8)
+    sp_ro.add_argument("--max-nodes", type=int, default=64)
+    sp_ro.add_argument("--max-depth", type=int, default=8)
+    sp_ro.add_argument("--max-turns", type=int, default=16)
+    sp_ro.add_argument("--pool-size", type=int, default=2)
+    sp_ro.add_argument("--grpo-normalize", action="store_true",
+                          help="normalize per-group advantages")
+
     return p.parse_args()
 
 
@@ -650,6 +913,7 @@ def main():
         "loop":      cmd_loop,
         "collect":   cmd_collect,
         "train-wm":  cmd_train_wm,
+        "rollout":   cmd_rollout,
     }
     sys.exit(handlers[args.command](args))
 

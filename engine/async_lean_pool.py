@@ -17,12 +17,9 @@
 from __future__ import annotations
 import asyncio
 import hashlib
-import json
 import logging
-import os
 import time
-from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 from engine._core import (
     TacticFeedback, FullVerifyResult,
@@ -35,7 +32,7 @@ from engine._core import (
     which as _which,
     make_cache_key,
 )
-from engine.observability import metrics
+from engine.observability_stub import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -271,11 +268,42 @@ class AsyncLeanPool:
 
     def __init__(self, pool_size: int = 4, project_dir: str = ".",
                  preamble: str = "import Mathlib",
-                 timeout_seconds: int = 30):
+                 timeout_seconds: int = 30,
+                 transport_factory: Optional[
+                     Callable[[int], "REPLTransport"]] = None):
+        """Initialise the pool.
+
+        Args:
+            pool_size:        number of REPL sessions to maintain
+            project_dir:      Lean project root (passed to transports)
+            preamble:         imports to load on each session start
+            timeout_seconds:  per-request timeout
+            transport_factory: optional callable ``(session_id) -> REPLTransport``.
+                When given, every session — including those added later via
+                ``add_session()`` — will be constructed with the transport
+                this factory returns. The factory is responsible for
+                creating *already-configured but not-yet-started* transports;
+                ``AsyncLeanSession.start()`` will call ``.start()`` on them.
+
+                When ``None`` (the V1–V6 default), every session falls back
+                to ``LocalTransport`` exactly as before. **This kwarg is
+                strictly additive: callers that pass only positional args
+                or that pass no transport_factory are unaffected.**
+
+                Use cases unlocked by passing a factory:
+                  * RL roll-outs that want Kimina batch verify
+                    (``factory = lambda i: KiminaServerBackend(...)``)
+                  * Pantograph-backed sessions for mvar focusing
+                  * LooKeng outer / Kimina inner chains
+                See ``sampler.proof_env._make_transport_factory`` and
+                ``prover.unified.factory.build_infra_backends`` for
+                examples of typical builders.
+        """
         self.pool_size = pool_size
         self.project_dir = project_dir
         self.preamble = preamble
         self.timeout = timeout_seconds
+        self._transport_factory = transport_factory
         self._sessions: list[AsyncLeanSession] = []
         self._session_available = asyncio.Condition()
         self._started = False
@@ -286,6 +314,27 @@ class AsyncLeanPool:
         self._next_session_id = pool_size
         self._env_version = 0
 
+    def _make_session(self, session_id: int) -> "AsyncLeanSession":
+        """Construct one session, threading the transport factory through.
+
+        Centralised so ``start()`` and ``add_session()`` cannot drift on
+        whether the factory is honoured.
+        """
+        transport = None
+        if self._transport_factory is not None:
+            try:
+                transport = self._transport_factory(session_id)
+            except Exception as e:
+                logger.warning(
+                    f"transport_factory({session_id}) raised {e!r}; "
+                    f"session will fall back to LocalTransport")
+                transport = None
+        return AsyncLeanSession(
+            session_id=session_id,
+            project_dir=self.project_dir,
+            timeout_seconds=self.timeout,
+            transport=transport)
+
     async def start(self) -> bool:
         """启动所有会话"""
         if self._started:
@@ -293,14 +342,8 @@ class AsyncLeanPool:
 
         logger.info(f"AsyncLeanPool: starting {self.pool_size} sessions...")
 
-        # 并行启动所有会话
-        sessions = []
-        for i in range(self.pool_size):
-            s = AsyncLeanSession(
-                session_id=i,
-                project_dir=self.project_dir,
-                timeout_seconds=self.timeout)
-            sessions.append(s)
+        # 并行启动所有会话 (通过 _make_session 集中处理 transport_factory)
+        sessions = [self._make_session(i) for i in range(self.pool_size)]
 
         results = await asyncio.gather(
             *(s.start(self.preamble) for s in sessions),
@@ -476,10 +519,7 @@ class AsyncLeanPool:
         async with self._session_available:
             sid = self._next_session_id
             self._next_session_id += 1
-            session = AsyncLeanSession(
-                session_id=sid,
-                project_dir=self.project_dir,
-                timeout_seconds=self.timeout)
+            session = self._make_session(sid)
             ok = await session.start(self.preamble)
             if ok:
                 self._sessions.append(session)

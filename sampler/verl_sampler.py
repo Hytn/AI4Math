@@ -14,6 +14,24 @@ Two integration modes for veRL:
      turn management, and early termination
    - Best for: maximum performance and customization
 
+v7 — REAL INTEGRATION when verl is importable
+---------------------------------------------
+
+V1–V6 shipped these as ducktype-compatible stubs ("interface follows
+verl's BaseInteraction / AgentLoopBase but doesn't inherit"). v7 detects
+``verl`` at import time:
+
+  * If ``verl`` is installed, the classes inherit from the real
+    ``BaseInteraction`` / ``AgentLoopBase`` and decorate themselves with
+    the real ``@register_agent_loop`` so verl's discovery picks them up.
+  * If ``verl`` is *not* installed, the classes inherit from ``object``
+    via stub bases — preserving the V1–V6 standalone-test path
+    unchanged. ``VERL_AVAILABLE`` exposes which mode is active.
+
+This means a ``pip install verl && from sampler import VeRLProofAgentLoop``
+gets you a class that's already registered under
+``"ai4math_proof_agent"`` and can be plumbed in via verl YAML.
+
 Configuration example (veRL yaml)::
 
     # Mode 1: Interaction
@@ -26,29 +44,81 @@ Configuration example (veRL yaml)::
     # Mode 2: Custom AgentLoop
     rollout:
       agent:
-        default_agent_loop: proof_agent
+        default_agent_loop: ai4math_proof_agent
         agent_loop_config_path: configs/proof_agent_loop.yaml
 """
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
-import os
 import time
 from typing import Any, Optional
 
 from sampler.proof_env import ProofEnv, ProofEnvConfig
-from sampler.trajectory import Trajectory, RewardInfo, TerminationReason
 
 logger = logging.getLogger(__name__)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# v7: real verl detection — try multiple known import paths because verl's
+# experimental agent_loop module has moved between releases.
+# ═══════════════════════════════════════════════════════════════════════
+
+VERL_AVAILABLE = False
+_BaseInteraction: type = object
+_AgentLoopBase: type = object
+
+
+def _register_agent_loop(name: str):
+    """No-op decorator stub when verl is absent."""
+    def deco(cls):
+        cls._verl_registered_name = name
+        return cls
+    return deco
+
+
+_register: callable = _register_agent_loop
+
+try:
+    # Newer verl layout (>=0.4): experimental.agent_loop
+    from verl.experimental.agent_loop import (  # type: ignore
+        AgentLoopBase as _AgentLoopBase,
+        register as _register,
+    )
+    VERL_AVAILABLE = True
+except ImportError:
+    try:
+        # Older layout (<0.4)
+        from verl.agent_loop import (  # type: ignore
+            AgentLoopBase as _AgentLoopBase,
+            register as _register,
+        )
+        VERL_AVAILABLE = True
+    except ImportError:
+        pass
+
+try:
+    from verl.interactions.base import BaseInteraction as _BaseInteraction  # type: ignore
+    VERL_AVAILABLE = True
+except ImportError:
+    try:
+        from verl.workers.interactions import BaseInteraction as _BaseInteraction  # type: ignore
+        VERL_AVAILABLE = True
+    except ImportError:
+        pass
+
+if VERL_AVAILABLE:
+    logger.info("sampler.verl_sampler: verl detected, real integration active")
+else:
+    logger.debug(
+        "sampler.verl_sampler: verl not installed, running in stub mode "
+        "(install with `pip install -r requirements-rl.txt`)")
 
 
 # ═══════════════════════════════════════════════════════════════════════
 # Mode 1: BaseInteraction — minimal integration with veRL ToolAgentLoop
 # ═══════════════════════════════════════════════════════════════════════
 
-class VeRLProofInteraction:
+class VeRLProofInteraction(_BaseInteraction):
     """veRL BaseInteraction implementation for formal theorem proving.
 
     This wraps ProofEnv as a veRL Interaction, allowing veRL's existing
@@ -59,12 +129,18 @@ class VeRLProofInteraction:
       - Running Lean verification
       - Returning (should_terminate, feedback, score, info)
 
+    v7: when verl is installed, ``_BaseInteraction`` resolves to the real
+    ``verl.workers.interactions.BaseInteraction``; otherwise it's a stub
+    ``object`` so the class can still be imported and unit-tested.
+
     Registration in interaction config yaml::
 
         interactions:
           - name: lean_prover
             class_path: sampler.verl_sampler.VeRLProofInteraction
             config:
+              backend: kimina           # v7: pass through to ProofEnvConfig
+              backend_url: http://kimina:8000
               project_dir: /path/to/mathlib
               pool_size: 4
               max_turns: 32
@@ -72,6 +148,15 @@ class VeRLProofInteraction:
     """
 
     def __init__(self, config: dict[str, Any]):
+        # Some verl versions forward kwargs to the parent; guard with try.
+        try:
+            super().__init__(config)
+        except TypeError:
+            try:
+                super().__init__()
+            except TypeError:
+                pass
+
         self.config = config
         self.name = config.get("name", "lean_prover")
 
@@ -87,6 +172,12 @@ class VeRLProofInteraction:
             reward_l1_pass=config.get("reward_l1_pass", 0.05),
             reward_l0_reject=config.get("reward_l0_reject", -0.02),
             reward_sorry=config.get("reward_sorry", -0.5),
+            # v7: surface backend selection through the interaction config
+            backend=config.get("backend", "local"),
+            backend_url=config.get("backend_url"),
+            backend_api_key=config.get("backend_api_key"),
+            backend_socket_path=config.get("backend_socket_path"),
+            backend_inner_kind=config.get("backend_inner_kind"),
         )
 
         self._env_config = env_cfg
@@ -99,14 +190,24 @@ class VeRLProofInteraction:
         """Lazy setup of shared Lean pool."""
         if self._setup_done:
             return
-        # Create a shared pool that environments reference
+        # Create a shared pool that environments reference. v7: honour
+        # backend selection — if config.backend != "local", build a
+        # transport factory the pool will use for each session.
         from engine.async_lean_pool import AsyncLeanPool
+        transport_factory = None
+        if self._env_config.backend not in ("", "local", None):
+            # Reuse ProofEnv's factory builder so backend semantics stay
+            # in one place.
+            tmp_env = ProofEnv(self._env_config)
+            transport_factory = tmp_env._make_transport_factory()
         self._shared_pool = AsyncLeanPool(
             pool_size=self._env_config.pool_size,
             project_dir=self._env_config.project_dir,
+            preamble=self._env_config.preamble,
             timeout_seconds=self._env_config.lean_timeout_s,
+            transport_factory=transport_factory,
         )
-        await self._shared_pool.start(preamble=self._env_config.preamble)
+        await self._shared_pool.start()
         self._setup_done = True
 
     async def start_interaction(
@@ -219,7 +320,8 @@ class VeRLProofInteraction:
 # Mode 2: Custom AgentLoop — full control over the prove loop
 # ═══════════════════════════════════════════════════════════════════════
 
-class VeRLProofAgentLoop:
+@_register("ai4math_proof_agent")
+class VeRLProofAgentLoop(_AgentLoopBase):
     """Custom veRL AgentLoop for formal theorem proving.
 
     Unlike VeRLProofInteraction (which integrates with ToolAgentLoop),
@@ -229,33 +331,65 @@ class VeRLProofAgentLoop:
       - Reward computation and token masking
       - Metrics collection
 
-    To register with veRL, in your config set::
+    v7: this class is **really** registered with verl when verl is
+    importable. ``@register("ai4math_proof_agent")`` resolves to the
+    actual ``verl.experimental.agent_loop.register`` decorator;
+    ``_AgentLoopBase`` resolves to the actual
+    ``verl.experimental.agent_loop.AgentLoopBase``. When verl is
+    absent both fall back to no-op stubs and the class becomes a
+    plain ``object`` subclass — preserving the V1–V6 unit-test path.
 
-        rollout.agent.default_agent_loop: proof_agent
+    To use after ``pip install verl``::
 
-    And add to your entrypoint::
+        rollout:
+          agent:
+            default_agent_loop: ai4math_proof_agent
+            agent_loop_config_path: configs/proof_agent_loop.yaml
 
-        from sampler.verl_sampler import VeRLProofAgentLoop
-        # veRL will discover it via the register decorator
+    And in your verl entrypoint::
 
-    Note: This class follows veRL's AgentLoopBase interface but does not
-    inherit from it directly to avoid hard dependency on veRL imports.
-    In a real deployment, add the veRL import and @register decorator.
+        from sampler.verl_sampler import VeRLProofAgentLoop  # registers
     """
 
     def __init__(self, *args, **kwargs):
-        # In real deployment, call super().__init__(*args, **kwargs)
-        # to get server_manager, tokenizer, etc. from veRL
-        self._server_manager = kwargs.get("server_manager")
-        self._tokenizer = kwargs.get("tokenizer")
-        self._rollout_config = kwargs.get("rollout_config", {})
+        # When verl is present, super().__init__ wires up server_manager,
+        # tokenizer, etc. from verl's AgentLoopWorker. When verl is absent,
+        # _AgentLoopBase is `object` and we shouldn't pass anything.
+        if VERL_AVAILABLE:
+            try:
+                super().__init__(*args, **kwargs)
+            except TypeError:
+                # Older verl versions had different __init__ signatures;
+                # fall back to no-arg.
+                super().__init__()
+        # Read fields from verl-injected attrs first, then from kwargs
+        # for the standalone test path.
+        self._server_manager = getattr(
+            self, "server_manager", None) or kwargs.get("server_manager")
+        self._tokenizer = getattr(
+            self, "tokenizer", None) or kwargs.get("tokenizer")
+        self._rollout_config = getattr(
+            self, "rollout_config", None) or kwargs.get("rollout_config", {})
 
-        # Proof environment config
+        # Proof environment config — accept either a `proof_config` dict
+        # (test path) or fields on rollout_config.proof_env (verl path).
         proof_config = kwargs.get("proof_config", {})
+        if not proof_config and self._rollout_config:
+            rc = self._rollout_config
+            proof_config = (
+                rc.get("proof_env", {}) if isinstance(rc, dict)
+                else getattr(rc, "proof_env", {}) or {}
+            )
         self._env_config = ProofEnvConfig(
             project_dir=proof_config.get("project_dir", "."),
             pool_size=proof_config.get("pool_size", 4),
             max_turns=proof_config.get("max_turns", 32),
+            # v7: backend selection passes through here too
+            backend=proof_config.get("backend", "local"),
+            backend_url=proof_config.get("backend_url"),
+            backend_api_key=proof_config.get("backend_api_key"),
+            backend_socket_path=proof_config.get("backend_socket_path"),
+            backend_inner_kind=proof_config.get("backend_inner_kind"),
         )
 
         self._env: Optional[ProofEnv] = None

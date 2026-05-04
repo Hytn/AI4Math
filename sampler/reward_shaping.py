@@ -13,9 +13,8 @@ Strategies:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
-from sampler.trajectory import Trajectory, RewardInfo
+from sampler.trajectory import Trajectory
 
 
 @dataclass

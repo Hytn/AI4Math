@@ -30,8 +30,6 @@ from typing import Optional
 from agent.runtime.agent_loop import AgentLoop, LoopConfig, LoopResult
 from agent.tools.base import ToolContext
 from agent.tools.registry import ToolRegistry
-from common.response_parser import extract_lean_code
-from prover.verifier.sorry_detector import detect_sorry
 
 from prover.unified.profiles import (
     Profile, get_profile, ToolKit, SearchConfig,
@@ -128,7 +126,23 @@ class UnifiedProofRunner:
                   pantograph_backend=None,
                   lookeng_backend=None,
                   dialog_index=None,
+                  plugin_loader=None,
+                  persistent_lemma_bank=None,
+                  policy_engine=None,
                   auto_register_llm_autoformalizer: bool = True):
+        """
+        v14 新增三个可选注入:
+          plugin_loader        prover.plugins.PluginLoader 实例 — 按定理领域
+                               注入 few-shot/premises/strategic_hint 到首条
+                               user message。预留接口 A 的领域维度。
+          persistent_lemma_bank prover.lemma_bank.PersistentLemmaBank 实例 —
+                               跨问题/跨会话的 SQLite + BM25 引理库, 接到
+                               LemmaBankTool 读 + ConjectureProposeTool 写。
+                               预留接口 A 的 lemma 维度。
+          policy_engine         engine.policy.PolicyEngine 实例 — 接到
+                               AgentLoop, 多轮失败后 declarative early termination。
+        三者均默认 None, 不传则保持 v13 行为。
+        """
         self.llm = llm
         self.lean_pool = lean_pool
         self.knowledge_store = knowledge_store
@@ -158,6 +172,12 @@ class UnifiedProofRunner:
         # solved dialogs get prepended to the initial user message
         # as in-context demos. None disables the feature.
         self.dialog_index = dialog_index
+        # v14 (项④): optional plugin loader for domain-specific injection.
+        self.plugin_loader = plugin_loader
+        # v14 (项③): optional persistent lemma bank — cross-problem reuse.
+        self.persistent_lemma_bank = persistent_lemma_bank
+        # v14 (项②): optional policy engine — declarative early-term rules.
+        self.policy_engine = policy_engine
 
         # v6: by default, if the runner has an LLM and no autoformalizer
         # has been registered yet, plug the LLM in as the default NL→FL
@@ -381,6 +401,8 @@ class UnifiedProofRunner:
             kimina_backend=self.kimina_backend,
             pantograph_backend=self.pantograph_backend,
             lookeng_backend=self.lookeng_backend,
+            persistent_lemma_bank=self.persistent_lemma_bank,
+            llm=self.llm,
         )
 
         # Optional knowledge briefing (ReProver 风格还会通过 tool 查; 这里
@@ -483,6 +505,8 @@ class UnifiedProofRunner:
             kimina_backend=self.kimina_backend,
             pantograph_backend=self.pantograph_backend,
             lookeng_backend=self.lookeng_backend,
+            persistent_lemma_bank=self.persistent_lemma_bank,
+            llm=self.llm,
         )
 
         sc: SearchConfig = profile.search
@@ -588,7 +612,16 @@ class UnifiedProofRunner:
     # ──────────────────────────────────────────────────────────────────
 
     async def _run_parallel(self, problem, profile: Profile) -> UnifiedResult:
-        """异构 N 个 sub-profile 并行 + 共享广播总线 (项目原有特色)."""
+        """异构 N 个 sub-profile 并行 + 共享广播总线 (项目原有特色).
+
+        v13: 真正接通 broadcast bus —— 之前 sub-profile 用 ``sp.__dict__``
+        实例化, parent profile 的 ``ToolKit.BROADCAST`` 不传播, 整个
+        ``engine/broadcast.py`` 在主路径死代码, heterogeneous 实际只是
+        best-of-4。现把 BROADCAST 注入每个 sub-profile 的 tools 列表,
+        并把 bus 透传给所有 sub-runners (它们走同一个 ``self``, 共享
+        ``self.broadcast_bus``)。一个 sub-profile 提议「avoid: ring 在 ℕ
+        减法上无效」, 其他三个 sub-profile 立刻能 read 到。
+        """
         sub_names = profile.search.parallel_profiles or [profile.name]
         sub_profiles = [get_profile(n) for n in sub_names]
         # Share broadcast bus across all sub-runs
@@ -599,14 +632,20 @@ class UnifiedProofRunner:
             except Exception:
                 self.broadcast_bus = None
 
-        tasks = [
-            self.run(problem, profile=sp.__class__(**{
+        def _augment(sp: Profile) -> Profile:
+            """Clone sub-profile with BROADCAST tool merged in + search reset."""
+            new_tools = list(sp.tools)
+            if (self.broadcast_bus is not None
+                    and ToolKit.BROADCAST not in new_tools):
+                new_tools.append(ToolKit.BROADCAST)
+            return sp.__class__(**{
                 **sp.__dict__,
-                # Reset search to none for sub-profiles to avoid recursion
+                "tools": new_tools,
+                # Reset search to none for sub-profiles to avoid recursion.
                 "search": SearchConfig(kind="none"),
-            }))
-            for sp in sub_profiles
-        ]
+            })
+
+        tasks = [self.run(problem, profile=_augment(sp)) for sp in sub_profiles]
         sub_results: list[UnifiedResult] = await asyncio.gather(
             *tasks, return_exceptions=False)
 
@@ -623,7 +662,8 @@ class UnifiedProofRunner:
             loop_result=winner.loop_result,
             sub_results=sub_results,
             search_summary={"kind": "parallel",
-                            "sub_profiles": sub_names},
+                            "sub_profiles": sub_names,
+                            "broadcast_bus": self.broadcast_bus is not None},
         )
 
     # ──────────────────────────────────────────────────────────────────
@@ -638,7 +678,10 @@ class UnifiedProofRunner:
         # tactic_apply auto-returns goal state). For the optional auto-call
         # of lean_verify when LLM produced lean code without invoking it,
         # we'd plug into AgentLoop.on_turn. Kept minimal here.
-        return AgentLoop(llm=self.llm, tools=registry, config=config)
+        # v14 (项②): inject policy_engine if available, else stay silent.
+        return AgentLoop(
+            llm=self.llm, tools=registry, config=config,
+            policy_engine=self.policy_engine)
 
     async def _init_root_state(self, problem):
         """Establish a Lean REPL env at the theorem header — root of search."""
@@ -834,10 +877,32 @@ class UnifiedProofRunner:
         # Few-shot
         if profile.observation.inject_few_shot:
             try:
-                from common.prompt_builder import FEW_SHOT_EXAMPLES
+                from common.few_shot import FEW_SHOT_EXAMPLES
                 parts.append(f"\n{FEW_SHOT_EXAMPLES}")
             except Exception as e:
                 logger.debug(f"few-shot skipped: {e}")
+
+        # v14: domain plugin injection (prover/plugins/) — 按定理领域注入
+        # 额外 few-shot + premises + strategic hint。运行时 lazy-load, 找不到
+        # 插件目录或没有匹配则静默跳过, 与 v13 行为一致。
+        if self.plugin_loader is not None:
+            try:
+                matches = self.plugin_loader.match(problem.theorem_statement)
+                if matches:
+                    top = matches[0]  # 取得分最高的一个插件
+                    if top.few_shot_examples:
+                        parts.append(f"\n## Domain-specific examples ({top.name})")
+                        parts.append(top.few_shot_examples)
+                    if top.extra_premises:
+                        parts.append(f"\n## Domain-specific lemmas ({top.name})")
+                        for prem in top.extra_premises[:10]:
+                            stmt = prem.get("statement", "")
+                            if stmt:
+                                parts.append(f"- `{stmt}`")
+                    if top.strategic_hint:
+                        parts.append(f"\n## Strategic hint\n{top.strategic_hint}")
+            except Exception as e:
+                logger.debug(f"plugin injection skipped: {e}")
 
         # v5: similar past dialogs (cross-problem demo retrieval)
         if profile.observation.inject_similar_dialogs \
@@ -898,14 +963,29 @@ class UnifiedProofRunner:
         """对 LLM 输出但未主动验证的 proof 跑一次 Lean4 编译。
 
         返回 None 表示无验证器可用; True/False 表示验证结果。
+
+        v10: 修了 v9 留下的 method-name bug。pool 的真实接口是
+        ``verify_complete(theorem, proof, preamble)`` ——
+        ``check_proof`` 从来不存在,旧代码每次都会落到 except 分支,
+        导致 auto_inject_lean_compile 兜底实际从未生效。
         """
         if not self.lean_pool:
             return None
         try:
-            full_code = f"{problem.theorem_statement}\n{proof_code}"
-            r = self.lean_pool.check_proof(full_code, timeout=30)
-            ok = r.get("success", False) and not r.get("errors")
-            return bool(ok)
+            verify = getattr(self.lean_pool, "verify_complete", None)
+            if verify is None:
+                logger.debug(
+                    f"auto-verify: pool {type(self.lean_pool).__name__} "
+                    f"has no verify_complete")
+                return None
+            import inspect as _inspect
+            result = verify(problem.theorem_statement, proof_code, "")
+            if _inspect.iscoroutine(result):
+                result = await result
+            success = bool(getattr(result, "success", False))
+            has_sorry = bool(getattr(result, "has_sorry", False))
+            errors = getattr(result, "errors", None) or []
+            return bool(success and not has_sorry and not errors)
         except Exception as e:
             logger.debug(f"auto-verify failed: {e}")
             return None

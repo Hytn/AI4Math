@@ -1,47 +1,13 @@
-"""agent/tools/builtin/__init__.py — Built-in tool collection
+"""agent/tools/builtin/ — Built-in tool implementations.
 
-Register all built-in tools with a single call:
+Tools are registered selectively per-profile by
+``prover.unified.tool_kits.build_tool_registry``, which imports each
+tool class directly. There is no "register everything at once" entry
+point — that pattern was removed in v10 (zero callers, and the
+selective per-profile registration is the actual contract).
 
-    from agent.tools.builtin import register_all_builtins
-    register_all_builtins(registry, lean_pool=pool, knowledge_store=store)
+To add a new built-in tool:
+    1. Implement it as a subclass of ``agent.tools.base.Tool`` in this dir.
+    2. Add a ``ToolKit`` enum entry in ``prover/unified/profiles.py``.
+    3. Register it in ``prover/unified/tool_kits.py::_build_tool``.
 """
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Optional
-
-from agent.tools.registry import ToolRegistry
-from agent.tools.builtin.premise_search import PremiseSearchTool
-from agent.tools.builtin.goal_inspect import GoalInspectTool
-from agent.tools.builtin.tactic_suggest import TacticSuggestTool
-from agent.tools.builtin.lean_verify import LeanVerifyTool
-from agent.tools.builtin.cas_tool import CASTool
-from agent.tools.builtin.lean_auto import LeanAutoTool
-from agent.tools.builtin.file_read import FileReadTool
-
-if TYPE_CHECKING:
-    from knowledge.store import KnowledgeStore
-
-
-def register_all_builtins(
-    registry: ToolRegistry,
-    lean_pool=None,
-    knowledge_store=None,
-    premise_db_path: str = "",
-) -> list[str]:
-    """Register all built-in tools and return their names."""
-    tools = [
-        PremiseSearchTool(
-            knowledge_store=knowledge_store,
-            premise_db_path=premise_db_path),
-        GoalInspectTool(lean_pool=lean_pool),
-        TacticSuggestTool(lean_pool=lean_pool),
-        LeanVerifyTool(lean_pool=lean_pool),
-        LeanAutoTool(lean_pool=lean_pool),
-        CASTool(),
-        FileReadTool(),
-    ]
-    names = []
-    for tool in tools:
-        registry.register(tool)
-        names.append(tool.name)
-    return names

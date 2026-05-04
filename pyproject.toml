@@ -1,0 +1,85 @@
+[tool.ruff]
+# Match the project's actual style; we're after correctness rules,
+# not full PEP8 enforcement on legacy code.
+line-length = 100
+target-version = "py310"
+extend-exclude = [
+    "data",
+    "results",
+    "venv",
+    ".venv",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+# F: pyflakes — undefined names, unused imports, this is the bug-catching set.
+# E: pycodestyle errors only (skip W warnings).
+# B: bugbear — likely-bug patterns (mutable defaults, etc.).
+# PLE: pylint errors only (no style).
+# (We deliberately skip "UP" — pyupgrade rules complain about legacy
+#  Optional[X] / quoted forward-refs that are still valid Python and
+#  there are 170+ of them in legacy modules. Fixing those is a separate
+#  pass; CI's job here is to catch *new* bugs.)
+select = ["F", "E", "B", "PLE"]
+ignore = [
+    "E501",   # line too long — many long descriptions/prompts
+    "E701",   # multiple statements on one line — pre-existing pattern
+    "E702",   # multiple statements (semicolon) — pre-existing
+    "E731",   # lambda assignments — used deliberately
+    "E741",   # ambiguous var names (e/l/i in some contexts)
+    "E402",   # module-level import not at top of file — pre-existing
+    "E401",   # multiple imports on one line — pre-existing
+    "B007",   # unused loop control variable — pre-existing
+    "B008",   # function call in default argument — used for dataclasses
+    "B023",   # function uses loop variable — pre-existing patterns
+    "B904",   # raise...from in except — we lose context intentionally
+    "B905",   # zip without explicit strict — pre-existing
+    "F541",   # f-string without placeholders — pre-existing
+    "F821",   # undefined-name — only triggers on string forward refs
+              # in type hints; all 6 occurrences are intentional
+              # (REPLTransport, DialogIndex) with `# type: ignore`.
+    "F841",   # unused variable — pre-existing (mostly in tests)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["F401", "F811"]   # tests use unused imports for fixtures
+"__init__.py" = ["F401"]        # re-exports
+
+# ─────────────────────────────────────────────────────────────────────
+# mypy: strict where it pays, permissive on the long tail.
+# We don't aim for green-everywhere; the goal is to catch the
+# "deleted X but missed reference Y" class of bug that v9 cleanup hit.
+# ─────────────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+warn_redundant_casts = true
+# Don't fail on missing stubs from third-party libs we don't control:
+ignore_missing_imports = true
+# Most legacy modules don't have annotations; only enforce strict in NEW code:
+disallow_untyped_defs = false
+check_untyped_defs = true
+# These two are the bug catchers:
+warn_unreachable = true
+warn_no_return = true
+
+# Strict modules (should grow over time)
+[[tool.mypy.overrides]]
+module = [
+    "engine.lean3_to_lean4",
+    "agent.tools.builtin.lean_verify",
+]
+disallow_untyped_defs = true
+warn_return_any = true
+
+# ─────────────────────────────────────────────────────────────────────
+# pytest config (mirrors pytest.ini for tools that read pyproject)
+# ─────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]

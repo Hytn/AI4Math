@@ -1,25 +1,18 @@
 #!/usr/bin/env python3
-"""run_eval.py — 真实基准评测入口 (v3)
+"""run_eval.py — 基准评测入口 (v9, profile-only)
 
-v3 改进 (在 v2 基础上):
-  6. 知识闭环: 每次尝试结果写入知识库, 下轮 prompt 注入积累知识
-  7. 修复链路: 失败后的下一轮 prompt 包含错误诊断和修复建议
-  8. 多角色模式: --multi-role 启用 Generator → Repair → Decomposer 链
-  9. pass@k 修复: 默认跑满全部 samples, --early-stop 才提前退出
-  10. 验证标注: lean_mode=skip 时结果明确标注 [unverified]
+每次 sample = 一次 ``UnifiedProofRunner.run(profile)``。
+profile 选择算法 (whole_proof_repair / repair / conjecture_driven / ...)。
+增量保存到 ``results/traces/<id>/dialog.json``, 支持断点续跑。
 
-v2 改进:
-  1. 增量保存: 每道题完成后立即写入磁盘, 中途崩溃不丢失
-  2. 断点续跑: 自动检测已完成的 trace, 跳过已评测的题目
-  3. pass@k 正确统计: 不在首次成功时中断, 记录 correct_count
-  4. 支持 --resume 参数显式启用断点续跑
-  5. 总结报告包含 pass@1/5/10/32
+Usage::
 
-Usage:
-    python run_eval.py --benchmark minif2f --provider mock
-    python run_eval.py --benchmark minif2f --provider anthropic --resume
-    python run_eval.py --benchmark all --provider anthropic --limit 10
-    python run_eval.py --benchmark minif2f --provider anthropic --multi-role
+    python run_eval.py --benchmark minif2f --profile whole_proof_repair --provider mock
+    python run_eval.py --benchmark minif2f --profile repair --provider anthropic --resume
+    python run_eval.py --benchmark all --profile heterogeneous --limit 10
+
+历史路径 (v8 之前的 multi-role 老链路) 已在 v9 删除——所有路径统一通过
+``prover.unified.UnifiedProofRunner``。
 """
 import argparse
 import asyncio
@@ -31,281 +24,67 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from benchmarks.loader import load_benchmark, list_benchmarks
+from benchmarks.loader import load_benchmark
 from benchmarks.metrics import compute_metrics, MetricsSummary
 from prover.models import (
-    BenchmarkProblem, ProofTrace, ProofAttempt, AttemptStatus,
+    BenchmarkProblem, ProofTrace,
 )
-from agent.brain.claude_provider import create_provider
-from common.prompt_builder import build_prompt
-from common.response_parser import extract_lean_code
-from common.roles import AgentRole, ROLE_PROMPTS
-from prover.verifier.sorry_detector import detect_sorry
-from prover.codegen.code_formatter import format_lean_code
 from prover.premise.selector import PremiseSelector
-from prover.repair.repair_generator import RepairGenerator
+from agent.brain.async_llm_provider import create_async_provider
+from common.constants import DEFAULT_CLAUDE_MODEL
 from knowledge.store import UnifiedKnowledgeStore
 from knowledge.reader import KnowledgeReader
 from knowledge.writer import KnowledgeWriter
-from engine.proof_context_store import StepDetail
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 
+
 def prove_single(problem: BenchmarkProblem, llm, premise_selector,
-                 max_samples: int = 8, lean_env=None,
+                 *,
+                 profile: str,
+                 max_samples: int = 8,
+                 lean_env=None,
                  lean_mode: str = "skip",
-                 temperature: float = 0.8,
-                 temp_mode: str = "fixed",
                  knowledge_reader: KnowledgeReader = None,
                  knowledge_writer: KnowledgeWriter = None,
-                 multi_role: bool = False,
-                 early_stop: bool = False,
-                 profile: str = None,
                  kimina_backend=None,
                  pantograph_backend=None,
-                 lookeng_backend=None) -> ProofTrace:
-    """对单道题进行证明尝试。
+                 lookeng_backend=None,
+                 world_model=None,
+                 dialog_index=None) -> ProofTrace:
+    """对单道题运行 ``UnifiedProofRunner.run(profile)``, 累积 pass@k。
 
-    v3 改进:
-      - 知识闭环: 每次尝试后写入知识库, 下轮注入积累知识 (Fix #1)
-      - 错误反馈: 失败后将错误诊断注入下轮 prompt (Fix #9)
-      - 多角色: Generator → Repair → Generator 交替 (Fix #3)
-      - pass@k: 默认跑满全部 samples, 仅 early_stop=True 时提前退出 (Fix #4)
-      - 验证标注: lean_mode=skip 时 stderr 明确标注 [unverified] (Fix #5)
-      - profile (v3 新增): 不为 None 时走 prover.unified 主管线;
-        每个 sample 是一次 UnifiedProofRunner.run(profile)。
+    v9: profile-only。每次 sample = 一次独立 UnifiedProofRunner.run。
+    v10: 新增 world_model / dialog_index 透传, 把基础设施真正接通到 CLI。
 
-    Infrastructure-merge (新增):
-      kimina_backend / pantograph_backend / lookeng_backend 可在外层构建后
-      传入, 让 unified profile 使用对应的社区基建. 留 None 即按默认 Lean
-      REPL 路径走, 同时各对应工具会以 fallback 模式注册.
-
-    温度调度模式:
-      - "fixed": 所有样本使用相同温度 (默认 0.8), 满足 pass@k i.i.d. 假设
-      - "escalating": 逐步提高温度 (0.3 → 1.0) 增加多样性
+    Args:
+        profile: 必填。从 ``prover.unified.PRESETS`` 选择算法。
+        kimina_backend / pantograph_backend / lookeng_backend:
+            可选社区基建; None 时对应 ToolKit 进入 fallback 模式。
+        world_model: 可选 sklearn world-model. 见 --world-model.
+        dialog_index: 可选 DialogIndex. 见 --dialog-index.
     """
-    # ── v3 unified path ──
-    if profile:
-        return _prove_single_unified(
-            problem, llm, premise_selector,
-            max_samples=max_samples, lean_env=lean_env,
-            lean_mode=lean_mode,
-            knowledge_reader=knowledge_reader,
-            knowledge_writer=knowledge_writer,
-            profile_name=profile,
-            kimina_backend=kimina_backend,
-            pantograph_backend=pantograph_backend,
-            lookeng_backend=lookeng_backend,
+    if not profile:
+        raise SystemExit(
+            "--profile is required as of v9; non-profile path removed. "
+            "Use one of: whole_proof_repair, repair, conjecture_driven, ..."
         )
-    trace = ProofTrace(
-        problem_id=problem.problem_id,
-        problem_name=problem.name,
-        theorem_statement=problem.theorem_statement,
-        natural_language=problem.natural_language,
+    return _prove_single_unified(
+        problem, llm, premise_selector,
+        max_samples=max_samples, lean_env=lean_env,
+        lean_mode=lean_mode,
+        knowledge_reader=knowledge_reader,
+        knowledge_writer=knowledge_writer,
+        profile_name=profile,
+        kimina_backend=kimina_backend,
+        pantograph_backend=pantograph_backend,
+        lookeng_backend=lookeng_backend,
+        world_model=world_model,
+        dialog_index=dialog_index,
     )
-
-    # 检索相关前提
-    premises = premise_selector.retrieve(problem.theorem_statement, top_k=10)
-    premise_strs = [f"{r['name']}: {r['statement']}" for r in premises]
-
-    # Fix #1: 从知识库注入积累知识
-    knowledge_context = ""
-    if knowledge_reader:
-        try:
-            knowledge_context = asyncio.get_event_loop().run_until_complete(
-                knowledge_reader.render_for_prompt(
-                    goal=problem.theorem_statement,
-                    theorem=problem.theorem_statement,
-                    max_chars=1200))
-        except RuntimeError:
-            # No event loop running, create one
-            knowledge_context = asyncio.run(
-                knowledge_reader.render_for_prompt(
-                    goal=problem.theorem_statement,
-                    theorem=problem.theorem_statement,
-                    max_chars=1200))
-        except Exception as e:
-            logger.debug(f"  知识注入跳过: {e}")
-
-    # Fix #9: 跟踪上一次失败的错误信息, 用于修复链路
-    last_failed_proof = ""
-    last_error_analysis = ""
-    error_history_parts = []  # 积累所有历史错误摘要
-
-    # Fix #3: 多角色修复器
-    repair_gen = RepairGenerator(llm) if multi_role else None
-
-    for attempt_idx in range(max_samples):
-        attempt = ProofAttempt(attempt_number=attempt_idx + 1)
-        t0 = time.time()
-
-        try:
-            # Fix #3: 多角色 — 偶数轮用 Generator, 失败后奇数轮用 Repair
-            use_repair = (multi_role and last_failed_proof
-                          and attempt_idx % 2 == 1)
-
-            if use_repair:
-                # Repair Agent 接力
-                repairs = repair_gen.generate_repair(
-                    theorem=problem.theorem_statement,
-                    failed_proof=last_failed_proof,
-                    error_analysis=last_error_analysis,
-                    max_repairs=1,
-                    temperature=0.4)
-                proof = repairs[0] if repairs else ""
-                proof = format_lean_code(proof) if proof.strip() else ""
-                attempt.llm_model = llm.model_name
-                attempt.repair_rounds = 1
-                attempt.prompt_summary = "repair_agent"
-            else:
-                # Fix #9: 如有上轮错误, 构建包含错误诊断的 retry prompt
-                error_history_str = ""
-                if error_history_parts:
-                    # 只保留最近 3 条历史
-                    recent = error_history_parts[-3:]
-                    error_history_str = "\n".join(recent)
-
-                # Fix #1: 将知识库知识附加到 premises 中
-                effective_premises = list(premise_strs[:10])
-                if knowledge_context:
-                    effective_premises.append(
-                        f"[Knowledge from past proofs]\n{knowledge_context}")
-
-                prompt = build_prompt(
-                    theorem_statement=problem.theorem_statement,
-                    premises=effective_premises,
-                    error_analysis=last_error_analysis if last_failed_proof else "",
-                    error_history=error_history_str,
-                    failed_proof=last_failed_proof,
-                    attempt_number=attempt_idx + 1,
-                )
-
-                # 温度调度
-                if temp_mode == "escalating":
-                    temp = 0.3 + (attempt_idx * 0.1)
-                    temp = min(temp, 1.0)
-                else:
-                    temp = temperature
-
-                resp = llm.generate(
-                    system=ROLE_PROMPTS[AgentRole.PROOF_GENERATOR],
-                    user=prompt,
-                    temperature=min(temp, 1.0),
-                )
-                proof = extract_lean_code(resp.content)
-                proof = format_lean_code(proof) if proof.strip() else ""
-
-                attempt.generated_proof = proof
-                attempt.llm_model = resp.model
-                attempt.llm_tokens_in = resp.tokens_in
-                attempt.llm_tokens_out = resp.tokens_out
-                attempt.llm_latency_ms = resp.latency_ms
-
-        except Exception as e:
-            attempt.lean_result = AttemptStatus.LLM_ERROR
-            attempt.lean_stderr = str(e)
-            trace.add_attempt(attempt)
-            continue
-
-        if not proof.strip():
-            attempt.lean_result = AttemptStatus.LLM_ERROR
-            attempt.lean_stderr = "Empty proof"
-            trace.add_attempt(attempt)
-            continue
-
-        # Sorry 检测 (快速预过滤, 无需调用 Lean)
-        sorry_report = detect_sorry(proof)
-        if sorry_report.has_sorry:
-            attempt.lean_result = AttemptStatus.LEAN_ERROR
-            attempt.lean_stderr = (
-                f"Proof contains sorry ({len(sorry_report.locations)} locations)")
-            attempt.lean_check_ms = int((time.time() - t0) * 1000)
-            # Fix #9: 记录错误用于下轮修复
-            last_failed_proof = proof
-            last_error_analysis = (
-                "Proof contains `sorry` — it is incomplete. "
-                "Replace all sorry placeholders with actual proof terms.")
-            error_history_parts.append(
-                f"Attempt #{attempt_idx+1}: sorry detected")
-            trace.add_attempt(attempt)
-            continue
-
-        # Lean4 验证
-        if lean_mode == "real" and lean_env:
-            try:
-                from prover.verifier.lean_checker import LeanChecker
-                checker = LeanChecker(lean_env)
-                status, errors, stderr, check_ms = checker.check(
-                    problem.theorem_statement, proof)
-                attempt.lean_result = status
-                attempt.lean_errors = errors
-                attempt.lean_stderr = stderr
-                attempt.lean_check_ms = check_ms
-            except Exception as e:
-                attempt.lean_result = AttemptStatus.LEAN_ERROR
-                attempt.lean_stderr = str(e)
-        else:
-            # Fix #5: 明确标注未验证状态
-            attempt.lean_result = AttemptStatus.LEAN_ERROR
-            attempt.lean_stderr = (
-                "[unverified] Lean verification skipped (--lean-mode=skip). "
-                "This result has NOT been verified by Lean4.")
-            attempt.lean_check_ms = 0
-
-        trace.add_attempt(attempt)
-
-        # Fix #9: 记录错误反馈用于下一轮
-        if attempt.lean_result != AttemptStatus.SUCCESS:
-            last_failed_proof = proof
-            # 构建错误分析文本
-            error_parts = []
-            if attempt.lean_stderr and "[unverified]" not in attempt.lean_stderr:
-                error_parts.append(f"Lean error: {attempt.lean_stderr[:300]}")
-            for e in attempt.lean_errors[:3]:
-                error_parts.append(
-                    f"- [{e.category.value}] {e.message[:150]}")
-                if e.expected_type:
-                    error_parts.append(f"  expected: {e.expected_type}")
-                if e.actual_type:
-                    error_parts.append(f"  actual: {e.actual_type}")
-            last_error_analysis = "\n".join(error_parts) if error_parts else ""
-            if last_error_analysis:
-                error_history_parts.append(
-                    f"Attempt #{attempt_idx+1}: {attempt.lean_errors[0].category.value if attempt.lean_errors else 'error'}")
-        else:
-            # 成功时清空错误状态
-            last_failed_proof = ""
-            last_error_analysis = ""
-
-        # Fix #1: 将结果写入知识库 (无论成功或失败)
-        if knowledge_writer:
-            try:
-                step = StepDetail(
-                    step_index=attempt_idx,
-                    tactic=proof[:200],
-                    env_id_before=0,
-                    env_id_after=0 if attempt.lean_result == AttemptStatus.SUCCESS else -1,
-                    goals_before=[problem.theorem_statement],
-                    goals_after=[] if attempt.lean_result == AttemptStatus.SUCCESS else [problem.theorem_statement],
-                    error_message=attempt.lean_stderr if attempt.lean_result != AttemptStatus.SUCCESS else "",
-                    error_category=attempt.lean_errors[0].category.value if attempt.lean_errors else "",
-                    elapsed_ms=attempt.lean_check_ms,
-                )
-                asyncio.get_event_loop().run_until_complete(
-                    knowledge_writer.ingest_step(
-                        step, theorem=problem.theorem_statement))
-            except Exception as e:
-                logger.debug(f"  知识写入跳过: {e}")
-
-        # Fix #4: 默认跑满全部 samples, 仅 early_stop=True 时提前退出
-        # 这保证 pass@k 的无偏估计 (公式需要精确的 n 和 c)
-        if early_stop and trace.correct_count >= 3:
-            break
-
-    return trace
 
 
 def load_existing_traces(trace_dir: Path) -> dict[str, dict]:
@@ -342,6 +121,8 @@ def _prove_single_unified(
     kimina_backend=None,
     pantograph_backend=None,
     lookeng_backend=None,
+    world_model=None,
+    dialog_index=None,
 ) -> ProofTrace:
     """v3 unified 主管线路径: 每个 sample = 一次 UnifiedProofRunner.run。
 
@@ -355,8 +136,6 @@ def _prove_single_unified(
     from prover.unified import (
         UnifiedProofRunner, get_profile, unified_to_attempt,
     )
-    from prover.pipeline.heterogeneous_engine import _SyncToAsyncAdapter
-    import inspect
 
     trace = ProofTrace(
         problem_id=problem.problem_id,
@@ -373,17 +152,31 @@ def _prove_single_unified(
         logger.error(f"  unknown profile {profile_name!r}: {e}")
         return trace
 
-    # Coerce sync LLM → async if needed
-    is_async = (
-        inspect.iscoroutinefunction(getattr(llm, "generate", None))
-        or inspect.iscoroutinefunction(getattr(llm, "chat", None))
-    )
-    async_llm = llm if is_async else _SyncToAsyncAdapter(llm)
+    # v9: llm is always async (from create_async_provider).
+    async_llm = llm
 
-    # Lean pool extraction
+    # v11: extract a real AsyncLeanPool. Previously the code did
+    # ``getattr(lean_env, "pool", None) or lean_env`` and ended up handing
+    # ``LeanEnvironment`` (a bare subprocess wrapper, no ``verify_complete``)
+    # to the runner, so ``--lean-mode real`` silently failed every verify.
+    # We now require ``lean_env.pool`` to be a real pool; if absent, the
+    # caller passed something that can't verify and we leave lean_pool=None
+    # so the prefilter-only path is used (same as ``--lean-mode skip``).
     lean_pool = None
     if lean_env is not None:
-        lean_pool = getattr(lean_env, "pool", None) or lean_env
+        candidate = getattr(lean_env, "pool", None)
+        if candidate is not None and hasattr(candidate, "verify_complete"):
+            lean_pool = candidate
+        elif hasattr(lean_env, "verify_complete"):
+            # Caller passed an AsyncLeanPool directly (or a wrapper that
+            # already exposes verify_complete) — accept it as the pool.
+            lean_pool = lean_env
+        else:
+            logger.warning(
+                f"lean_env of type {type(lean_env).__name__} has no "
+                f"verify_complete; running with lean_pool=None (prefilter only). "
+                f"This typically means you passed agent.executor.LeanEnvironment "
+                f"instead of an AsyncLeanPool.")
 
     # Knowledge store (if writer/reader given, share their store)
     knowledge_store = None
@@ -394,11 +187,14 @@ def _prove_single_unified(
         llm=async_llm,
         lean_pool=lean_pool,
         knowledge_store=knowledge_store,
+        knowledge_writer=knowledge_writer,
         retriever=premise_selector,
         broadcast_bus=None,
         kimina_backend=kimina_backend,
         pantograph_backend=pantograph_backend,
         lookeng_backend=lookeng_backend,
+        world_model=world_model,
+        dialog_index=dialog_index,
     )
 
     # 跑 max_samples 次 (pass@k 兼容)
@@ -444,7 +240,7 @@ def main():
                         help="数据集名: builtin/minif2f/putnambench/proofnet/all")
     parser.add_argument("--split", default="test")
     parser.add_argument("--provider", default="mock", help="LLM: mock/anthropic")
-    parser.add_argument("--model", default="claude-sonnet-4-20250514")
+    parser.add_argument("--model", default=DEFAULT_CLAUDE_MODEL)
     parser.add_argument("--max-samples", type=int, default=8)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--lean-mode", default="skip",
@@ -452,26 +248,15 @@ def main():
     parser.add_argument("--output-dir", default="results")
     parser.add_argument("--resume", action="store_true",
                         help="断点续跑: 跳过已有 trace 的题目")
-    # Fix #4: 反转默认行为 — 默认跑满, 需显式 --early-stop 才提前退出
-    parser.add_argument("--early-stop", action="store_true",
-                        help="在 3 次成功后提前退出 (节省 API 调用, 但 pass@k 估计有偏)")
-    # Fix #3: 多角色模式
-    parser.add_argument("--multi-role", action="store_true",
-                        help="启用多角色: Generator + Repair Agent 交替")
-    # Fix #1: 知识系统开关
     parser.add_argument("--no-knowledge", action="store_true",
                         help="禁用知识系统 (不沉淀/不注入)")
-    # 向后兼容旧参数
-    parser.add_argument("--no-early-stop", action="store_true",
-                        help="(已废弃, 现在默认不提前退出)")
     parser.add_argument(
-        "--profile", default=None,
+        "--profile", required=True,
         help=(
-            "走统一管线 (prover.unified) 的 profile 名. "
+            "(REQUIRED in v9) prover.unified profile 名. "
             "可选: whole_proof, whole_proof_repair, dsp, reprover, "
             "leandojo, heterogeneous, kimina_batch, pantograph_dsp, "
-            "lookeng_lemma, nfl_hybrid. "
-            "不指定 = 使用 v2 旧 prove_single 路径 (兼容)."
+            "lookeng_lemma, nfl_hybrid, conjecture_driven, ..."
         ))
     parser.add_argument(
         "--backend", default="auto",
@@ -480,23 +265,46 @@ def main():
         help=(
             "Lean 4 verification backend. 默认 auto. "
             "kimina_batch profile 自动选 kimina; pantograph_dsp 自动选 "
-            "pantograph; lookeng_lemma 自动选 lookeng. "
-            "显式 --backend 覆盖 profile 默认。"))
+            "pantograph; lookeng_lemma 自动选 lookeng."))
     parser.add_argument("--backend-url", default=None,
                           help="HTTP/Kimina backend URL.")
     parser.add_argument("--backend-api-key", default=None,
                           help="HTTP/Kimina backend API key.")
+
+    # v10: previously-locked features now reachable from the CLI.
+    parser.add_argument(
+        "--world-model", default=None, metavar="PATH",
+        help=("Path to a trained sklearn world-model pickle. When set, "
+              "step-level profiles short-circuit high-confidence-failure "
+              "tactics. Off by default."))
+    parser.add_argument(
+        "--dialog-index", default=None, metavar="DB_PATH",
+        help=("SQLite DialogIndex of past solved dialogs. When set and "
+              "the active profile has inject_similar_dialogs=True, "
+              "similar past dialogs are injected as in-context demos."))
+
+    # v12: opt-in LLM response caching.
+    parser.add_argument(
+        "--cache", action="store_true",
+        help="Wrap LLM in AsyncCachedProvider (in-process LRU). "
+             "Useful for pass@k sweeps and resumed runs where the "
+             "system prompt + few-shot prefix repeats.")
+    parser.add_argument("--cache-all", action="store_true",
+                          help="With --cache, cache responses at any temperature.")
+
     args = parser.parse_args()
 
-    if args.no_early_stop:
-        logger.info("  注意: --no-early-stop 已废弃, v3 默认跑满全部 samples")
-
-    # 初始化 LLM
-    llm = create_provider({
+    # 初始化 LLM (async)
+    llm = create_async_provider({
         "provider": args.provider,
         "model": args.model,
         "api_key": os.environ.get("ANTHROPIC_API_KEY", ""),
     })
+    if args.cache:
+        from agent.brain.async_llm_provider import AsyncCachedProvider
+        llm = AsyncCachedProvider(llm, cache_all=args.cache_all)
+        logger.info(
+            f"  LLM cache enabled (cache_all={args.cache_all})")
     premise_selector = PremiseSelector({"mode": "hybrid"})
 
     # Fix #1: 初始化知识系统
@@ -514,52 +322,39 @@ def main():
         except Exception as e:
             logger.warning(f"  知识系统初始化失败: {e}, 继续不带知识系统")
 
-    # 初始化 Lean 环境
+    # 初始化 Lean 环境 (v11: 用真正的 AsyncLeanPool, 不再用
+    # agent.executor.LeanEnvironment —— 后者不暴露 verify_complete,
+    # 等于让 UnifiedProofRunner 在 real 模式下静默退化到 prefilter.)
     lean_env = None
     if args.lean_mode == "real":
         try:
-            from agent.executor.lean_env import LeanEnvironment
-            lean_env = LeanEnvironment(mode="local")
+            from engine.async_lean_pool import AsyncLeanPool
+            pool_size = 4
+            lean_env = AsyncLeanPool(pool_size=pool_size)
+            asyncio.run(lean_env.start())
+            logger.info(f"  Lean 4 池已启动 (pool_size={pool_size})")
         except Exception as e:
-            logger.warning(f"无法初始化 Lean 环境: {e}, 回退到 skip 模式")
+            logger.warning(f"无法启动 AsyncLeanPool: {e}, 回退到 skip 模式")
             args.lean_mode = "skip"
+            lean_env = None
 
-    # Infrastructure-merge: 构建可选 backend.
-    # 与 run_unified.py 同样的策略 — profile 隐含 backend, 显式 --backend 覆盖.
-    profile_backend_hint = {
-        "kimina_batch":   "kimina",
-        "pantograph_dsp": "pantograph",
-        "lookeng_lemma":  "lookeng",
-    }
-    chosen_backend = args.backend
-    if chosen_backend == "auto" and args.profile in profile_backend_hint:
-        chosen_backend = profile_backend_hint[args.profile]
-        logger.info(
-            f"  profile '{args.profile}' implies backend "
-            f"'{chosen_backend}', using it")
+    # Infrastructure-merge: 构建可选 backend (共享 factory).
+    from prover.unified.factory import (
+        resolve_backend_kind, build_infra_backends,
+        load_world_model, load_dialog_index,
+    )
+    chosen_backend = resolve_backend_kind(args.backend, args.profile)
+    kimina_backend, pantograph_backend, lookeng_backend = asyncio.run(
+        build_infra_backends(
+            chosen_backend, url=args.backend_url, api_key=args.backend_api_key))
 
-    kimina_backend = pantograph_backend = lookeng_backend = None
-    if chosen_backend in ("kimina", "http"):
-        from engine.backends.kimina_server import KiminaServerBackend
-        kimina_backend = KiminaServerBackend(
-            base_url=args.backend_url, api_key=args.backend_api_key)
-        asyncio.run(kimina_backend.start())
-        logger.info(f"  Kimina backend (fallback={kimina_backend.is_fallback})")
-    elif chosen_backend == "pantograph":
-        from engine.backends.pantograph import PantographBackend
-        pantograph_backend = PantographBackend()
-        asyncio.run(pantograph_backend.start())
-        logger.info(f"  Pantograph backend (mode={pantograph_backend.mode})")
-    elif chosen_backend == "lookeng":
-        from engine.backends.lookeng import LooKengBackend
-        lookeng_backend = LooKengBackend()
-        asyncio.run(lookeng_backend.start())
-        logger.info("  LooKeng backend started")
-
-    # Fix #5: 未验证模式警告
     if args.lean_mode == "skip":
         logger.info("  ⚠ Lean 验证已跳过 (--lean-mode=skip): "
                      "所有 pass@k 指标标记为 [unverified]")
+
+    # v10/v11: optional features (shared factory loaders)
+    world_model = load_world_model(args.world_model)
+    dialog_index = load_dialog_index(args.dialog_index)
 
     # 确定 benchmarks
     if args.benchmark == "all":
@@ -609,16 +404,16 @@ def main():
 
             trace = prove_single(
                 problem, llm, premise_selector,
+                profile=args.profile,
                 max_samples=args.max_samples,
                 lean_env=lean_env, lean_mode=args.lean_mode,
                 knowledge_reader=knowledge_reader,
                 knowledge_writer=knowledge_writer,
-                multi_role=args.multi_role,
-                early_stop=args.early_stop,
-                profile=args.profile,
                 kimina_backend=kimina_backend,
                 pantograph_backend=pantograph_backend,
                 lookeng_backend=lookeng_backend,
+                world_model=world_model,
+                dialog_index=dialog_index,
             )
 
             status = ("✓ 通过" if trace.solved
@@ -674,7 +469,6 @@ def main():
                 "max_samples": args.max_samples,
                 "lean_mode": args.lean_mode,
                 "verification": "lean4" if args.lean_mode == "real" else "unverified",
-                "multi_role": args.multi_role,
                 "knowledge_enabled": not args.no_knowledge,
                 "resumed_count": skipped,
                 "elapsed_s": round(elapsed, 1),
@@ -701,6 +495,14 @@ def main():
             for k in [1, 5, 10]:
                 line += f" {m.get(f'pass@{k}', 0):>7.3f}"
             logger.info(line)
+
+    # v12: cache hit-rate at end of run.
+    cache_stats = getattr(llm, "cache_stats", None)
+    if callable(cache_stats):
+        st = cache_stats()
+        logger.info(
+            f"\nLLM cache: hits={st['hits']} misses={st['misses']} "
+            f"hit_rate={st['hit_rate']:.1%} size={st['size']}")
 
 
 if __name__ == "__main__":

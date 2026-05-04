@@ -12,8 +12,6 @@
 只是 (max_turns, tools, system_prompt) 不同, 外加可选的 driver 调度。
 """
 from __future__ import annotations
-import asyncio
-import heapq
 import logging
 import math
 import time

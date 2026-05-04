@@ -6,10 +6,8 @@ AsyncLeanPool (async) import from this module instead of duplicating code.
 """
 from __future__ import annotations
 import hashlib
-import re
 import shutil
 import threading
-import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Optional
@@ -325,3 +323,45 @@ def make_cache_key(theorem: str, proof: str, preamble: str = "",
     return hashlib.sha256(
         f"{env_fingerprint}||{preamble}||{theorem}||{proof}".encode()
     ).hexdigest()
+
+
+# ═══════════════════════════════════════════════════════════════
+# VerificationResult — three-level verification result (L0/L1/L2)
+#
+# Migrated from engine/verification_scheduler.py (sync, deleted in v9).
+# Kept here so AsyncVerificationScheduler can import it without
+# pulling in the dead sync scheduler.
+# ═══════════════════════════════════════════════════════════════
+
+@dataclass
+class VerificationResult:
+    """Unified result across the three verification levels."""
+    success: bool
+    level_reached: str  # "L0" | "L1" | "L2"
+
+    # Structured feedback. Type is engine.error_intelligence.AgentFeedback,
+    # but kept untyped here to avoid an import cycle (_core is imported
+    # by error_intelligence indirectly through the pool).
+    feedback: object = None
+
+    # L0
+    l0_passed: bool = True
+    l0_reject_reason: str = ""
+    l0_fix_hint: str = ""
+
+    # L1
+    l1_env_id: int = -1
+    l1_goals_remaining: list = field(default_factory=list)
+
+    # L2
+    l2_verified: bool = False
+
+    # Timing
+    l0_us: int = 0
+    l1_ms: int = 0
+    l2_ms: int = 0
+    total_ms: int = 0
+
+    # Broadcast (filled by scheduler when bus is wired)
+    broadcast_sent: list = field(default_factory=list)
+

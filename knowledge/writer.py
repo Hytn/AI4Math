@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import logging
 import re
-import time
 from typing import Optional
 
 from engine.proof_context_store import StepDetail
@@ -299,97 +298,11 @@ class KnowledgeWriter:
                     fix_tactic=next_step.tactic.strip(),
                     fix_succeeded=True)
 
-    async def import_from_persistent_knowledge(
-            self, pk) -> int:
-        """从旧版 PersistentKnowledge 迁移数据
-
-        Args:
-            pk: agent.memory.persistent_knowledge.PersistentKnowledge 实例
-
-        Returns:
-            迁移的条目数
-        """
-        count = 0
-        now = time.time()
-
-        # 迁移失败模式
-        for tactic, goals in pk._failures.items():
-            for goal_type, freq in goals.items():
-                for _ in range(freq):
-                    await self.store.upsert_tactic_effectiveness(
-                        tactic=tactic, goal_pattern=goal_type,
-                        success=False)
-                count += 1
-
-        # 迁移成功模式
-        for domain, combos in pk._successes.items():
-            for combo, freq in combos.items():
-                tactics = combo.split(" → ")
-                for t in tactics:
-                    for _ in range(freq):
-                        await self.store.upsert_tactic_effectiveness(
-                            tactic=t.strip(), goal_pattern="(migrated)",
-                            success=True, domain=domain)
-                count += 1
-
-        logger.info(f"KnowledgeWriter: migrated {count} entries "
-                    f"from PersistentKnowledge")
-        return count
-
-    async def import_from_lemma_bank(self, bank) -> int:
-        """从旧版 LemmaBank 迁移数据
-
-        Args:
-            bank: prover.lemma_bank.bank.LemmaBank 实例
-
-        Returns:
-            迁移的引理数
-        """
-        count = 0
-        for lemma in bank.lemmas:
-            keywords = extract_keywords(
-                f"{lemma.statement} {lemma.name}")
-            record = LemmaRecord(
-                name=lemma.name,
-                statement=lemma.statement,
-                proof=lemma.proof,
-                statement_hash=statement_hash(lemma.statement),
-                verified=lemma.verified,
-                keywords=keywords,
-            )
-            await self.store.add_lemma(record)
-            count += 1
-
-        logger.info(f"KnowledgeWriter: migrated {count} lemmas "
-                    f"from LemmaBank")
-        return count
-
-    async def import_from_episodic_memory(self, em) -> int:
-        """从旧版 EpisodicMemory 迁移数据
-
-        Args:
-            em: agent.memory.episodic_memory.EpisodicMemory 实例
-
-        Returns:
-            迁移的 episode 数
-        """
-        from knowledge.types import StrategyPattern
-        count = 0
-
-        for ep in em.episodes:
-            pattern = StrategyPattern(
-                name=f"{ep.problem_type}_{ep.winning_strategy}",
-                domain=ep.problem_type,
-                problem_pattern=f"{ep.problem_type} ({ep.difficulty})",
-                tactic_template=ep.key_tactics,
-                confidence=0.7,  # 历史数据给予中等置信度
-            )
-            await self.store.add_strategy_pattern(pattern)
-            count += 1
-
-        logger.info(f"KnowledgeWriter: migrated {count} episodes "
-                    f"from EpisodicMemory")
-        return count
+    # NOTE: ``import_from_lemma_bank`` was a one-shot migration helper from
+    # the legacy ``prover.lemma_bank.bank.LemmaBank`` (deleted in v11). The
+    # canonical ``proved_lemmas`` SQLite table is now the only home; if you
+    # still have an old LemmaBank JSONL file, write a 5-line ad-hoc loader
+    # rather than reviving this method.
 
 
 # ═══════════════════════════════════════════════════════════════

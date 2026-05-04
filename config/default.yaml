@@ -1,82 +1,27 @@
-# AI4Math — Default Configuration
+# AI4Math — Default Configuration (v13)
+#
+# v13 注: 之前的 default.yaml 列了 7 个 section、~30 个字段, 但 run_unified.py
+# 实际只读 2 个 (lean_pool_size, prover.premise.mode), 其余 80% 是装饰用。
+# v13 砍到只剩有消费方的字段 + 一段 RL infra defaults (vllm/slime 接入用)。
+#
+# Override priority (highest → lowest):
+#   1. CLI flags (--pool-size / --profile / ...)
+#   2. Environment variables (AI4MATH_ENGINE__LEAN_POOL_SIZE=8 → engine.lean_pool_size=8)
+#   3. This file
+#
+# To use a different config file: pass --config path/to/your.yaml.
 
 agent:
   brain:
-    provider: "anthropic"
-    model: "claude-sonnet-4-20250514"
-    api_key: ""
-    max_tokens: 8192
-    extended_thinking: true
-  memory:
-    working_memory_max_items: 20
-    episodic_memory_enabled: false
-  context:
-    max_context_tokens: 100000
-    compression_threshold: 0.7
-  strategy:
-    default: "adaptive"
-    max_light_rounds: 2
-    max_medium_rounds: 4
-    reflection_interval: 3
+    # 仅供 run_eval.py / run_unified.py 启动时打印.
+    # 真正生效的 model 由 --model 参数 + AI4MATH_DEFAULT_MODEL 环境变量决定.
+    provider: "anthropic"           # anthropic | mock
+    model: ""                       # empty → fall back to common.constants.DEFAULT_CLAUDE_MODEL
 
 prover:
-  pipeline:
-    samples_per_round: 8
-    max_rounds: 4
-    max_workers: 4
-    temperature: 0.9
-    max_samples: 128
-    verify_min_confidence: 0.3
-  sketch:
-    enabled: true
-    max_hypotheses: 3
   premise:
-    mode: "hybrid"
+    mode: "hybrid"                  # bm25 | embedding | hybrid | none
     top_k: 10
-    bm25_k1: 1.5
-    bm25_b: 0.75
-  codegen:
-    auto_import: true
-    scaffold_enabled: true
-  verifier:
-    mode: "docker"
-    docker_image: "ai4math-lean"
-    docker_container: ""
-    lean_project_dir: "/workspace/lean-project"
-    timeout_seconds: 300
-  repair:
-    enabled: true
-    max_cycles: 3
-  lemma_bank:
-    enabled: true
-    verify_extracted: true
-    max_banked: 10
-  conjecture:
-    enabled: false
-  decompose:
-    enabled: true
-    max_depth: 3
-
-benchmark:
-  name: "builtin"
-  path: ""
-  split: "test"
-
-output:
-  dir: "results"
-
-server:
-  host: "0.0.0.0"
-  port: 8000
 
 engine:
-  lean_pool_size: 4
-  max_wall_seconds: 3600
-  pipeline_queue_size: 16
-  num_verifiers: 4
-  pool_scaler:
-    min_sessions: 1
-    max_sessions: 16
-    scale_up_threshold: 0.8
-    scale_down_threshold: 0.3
-    cooldown_seconds: 10.0
+  lean_pool_size: 4                 # AsyncLeanPool 并发会话数

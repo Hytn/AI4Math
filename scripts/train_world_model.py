@@ -134,7 +134,6 @@ def cmd_inspect(args) -> int:
         return 2
 
     from engine.world_model import make_world_model
-    from engine.world_model_trainer import SklearnWorldModel
 
     wm = make_world_model(path)
     print(f"Loaded world model from {path}")

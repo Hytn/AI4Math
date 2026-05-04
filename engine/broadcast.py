@@ -21,7 +21,7 @@ import logging
 from enum import Enum
 from dataclasses import dataclass, field
 from collections import deque
-from typing import Optional, Callable
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 

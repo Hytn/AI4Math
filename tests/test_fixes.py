@@ -188,97 +188,28 @@ class TestWorldModel:
 # ═══════════════════════════════════════════════════════════════
 
 class TestPassKEarlyStop:
-    """Fix #4: Default should run all samples; only --early-stop exits early."""
-
-    def test_default_no_early_stop(self):
-        """prove_single with early_stop=False should run all samples."""
-        from prover.models import BenchmarkProblem
-        from agent.brain.claude_provider import MockProvider
-        from prover.premise.selector import PremiseSelector
-        from run_eval import prove_single
-
-        problem = BenchmarkProblem(
-            problem_id="test", name="test",
-            theorem_statement="theorem t : True := by trivial")
-        llm = MockProvider()
-        ps = PremiseSelector({"mode": "bm25"})
-
-        trace = prove_single(
-            problem, llm, ps, max_samples=6, early_stop=False)
-        # Should have run all 6 attempts (mock always generates sorry)
-        assert trace.total_attempts == 6
-
-    def test_early_stop_enabled(self):
-        """With early_stop=True, should stop after 3 successes."""
-        # This is hard to test without a mock that returns success,
-        # but we can verify the flag is respected
-        from prover.models import BenchmarkProblem
-        from agent.brain.claude_provider import MockProvider
-        from prover.premise.selector import PremiseSelector
-        from run_eval import prove_single
-
-        problem = BenchmarkProblem(
-            problem_id="test", name="test",
-            theorem_statement="theorem t : True := by trivial")
-        llm = MockProvider()
-        ps = PremiseSelector({"mode": "bm25"})
-
-        trace = prove_single(
-            problem, llm, ps, max_samples=20, early_stop=True)
-        # Mock generates sorry → no success → runs all 20
-        assert trace.total_attempts == 20
+    """Fix #4 (v9: removed). prove_single is profile-only and doesn't
+    expose early_stop / multi_role anymore — legacy non-profile path
+    was deleted alongside the v3 multi-role chain.
+    """
+    pass
 
 
 # ═══════════════════════════════════════════════════════════════
-# Fix #5: Unverified marking
+# Fix #5: Unverified marking — legacy path deleted in v9.
 # ═══════════════════════════════════════════════════════════════
 
 class TestUnverifiedMarking:
-    """Fix #5: lean_mode=skip should mark results as [unverified]."""
-
-    def test_skip_mode_marks_unverified(self):
-        from prover.models import BenchmarkProblem
-        from agent.brain.claude_provider import MockProvider
-        from prover.premise.selector import PremiseSelector
-        from run_eval import prove_single
-
-        problem = BenchmarkProblem(
-            problem_id="test", name="test",
-            theorem_statement="theorem t : True := by trivial")
-        llm = MockProvider()
-        ps = PremiseSelector({"mode": "bm25"})
-
-        trace = prove_single(
-            problem, llm, ps, max_samples=1, lean_mode="skip")
-        # Mock generates sorry, so it won't reach the unverified marking
-        # (sorry is caught earlier). But we can check the function runs.
-        assert trace.total_attempts == 1
+    """Marking is now handled inside UnifiedProofRunner; this layer of
+    test no longer applies after the v9 profile-only consolidation."""
+    pass
 
 
 # ═══════════════════════════════════════════════════════════════
-# Fix #9: Error feedback in retry prompt
+# Fix #9 (build_prompt): 已在 v13 删除 — common.prompt_builder
+# 整模块只有 ``FEW_SHOT_EXAMPLES`` 常量在主路径用, 已挪到
+# common/few_shot.py。``build_prompt`` 只在测试里调过, 测试一并删除。
 # ═══════════════════════════════════════════════════════════════
-
-class TestErrorFeedback:
-    """Fix #9: build_prompt should accept error_analysis for retries."""
-
-    def test_retry_prompt_includes_error(self):
-        from common.prompt_builder import build_prompt
-        prompt = build_prompt(
-            theorem_statement="theorem t : True := by trivial",
-            error_analysis="type_mismatch: expected Nat, got Bool",
-            failed_proof=":= by sorry",
-            attempt_number=2)
-        assert "type_mismatch" in prompt
-        assert "sorry" in prompt
-        assert "MOST RECENT" in prompt
-
-    def test_first_attempt_no_error(self):
-        from common.prompt_builder import build_prompt
-        prompt = build_prompt(
-            theorem_statement="theorem t : True := by trivial")
-        assert "Failed attempt" not in prompt
-        assert "Prove the following" in prompt
 
 
 # ═══════════════════════════════════════════════════════════════

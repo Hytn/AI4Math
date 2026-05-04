@@ -1,60 +1,41 @@
-"""APE v2 — Agent-oriented Proof Environment
+"""engine/ — Lean 4 验证引擎层 (Verification OS)
 
-把 Lean4 本身变成 Agent 的高性能交互环境（不自建简化内核）。
+把 Lean 4 REPL 包装成高性能、可编程的交互环境。所有上层 (agent/, prover/)
+通过此层与 Lean 交互, 不直接调 Lean 子进程。
 
-三大核心能力:
-  1. Lean4 REPL 连接池 + 增量验证 → 验证延迟 2-12s → 50ms, 精度 100%
-  2. 错误智能层 → 每次交互 ~100 bits 结构化反馈 (vs 传统 1 bit pass/fail)
-  3. 跨智能体广播 → 失败中提取负面知识, 搜索空间实时剪枝
+核心模块:
+  async_lean_pool                Lean 4 REPL 异步连接池 + AsyncLeanSession
+  async_verification_scheduler   自适应三级验证调度 (L0 → L1 → L2)
+  prefilter                      L0 语法预过滤 (~1μs)
+  error_intelligence             stderr → 结构化 AgentFeedback (~100 bits)
+  transport                      Lean transport 抽象 (Local/Socket/Mock/Fallback)
+  backends/                      社区 Lean 4 backend (Kimina/Pantograph/LooKeng)
+  proof_context_store            步级 trajectory 落盘 (SQLite)
+  _core                          共享数据类型 + classify_error 一份
 
-Active modules (v2-v4):
-  broadcast              跨线程实时广播总线 (发布-订阅, 非阻塞)
-  async_lean_pool        Lean4 REPL 异步连接池
-  prefilter              L0 语法预过滤器 (~1μs, 过滤 ~90% 无效输出)
-  error_intelligence     错误智能层 (结构化 AgentFeedback + 修复候选)
-  verification_scheduler 自适应三级验证调度 (L0→L1→L2)
-  observability          结构化日志 + 指标收集 + Prometheus/JSON 导出
-  world_model            世界模型预测器接口 + Mock + Sklearn 实现
-  world_model_trainer    世界模型训练管道 (TF-IDF + LogisticRegression)
-  lane/                  Proof Lane Runtime (状态机, 事件总线, 策略引擎)
-
-Legacy modules (v1, see engine/LEGACY.md — DO NOT add new dependencies):
-  core/       Expr, de Bruijn indices, Universe, Environment
-  kernel/     TypeChecker (deprecated)
-  tactic/     18 built-in tactics (deprecated)
-  state/      ProofState, SearchTree (depends on core)
-  search/     MCTS + UCB1 (depends on state + tactic)
+预留接口模块 (核心三件套之外、明确保留的功能位):
+  broadcast                      多智能体 rollout 广播总线 (发布-订阅)
+  world_model                    世界模型预测器 (sklearn 包装, 留给训练替换)
 """
-__version__ = "0.4.0"
+__version__ = "0.10.0"
 
-# APE v2 core exports (synchronous)
-from engine.broadcast import BroadcastBus, BroadcastMessage, MessageType
+from engine._core import (
+    TacticFeedback, FullVerifyResult, VerificationResult,
+)
 from engine.prefilter import PreFilter, FilterResult
-from engine.lean_pool import LeanPool, TacticFeedback, FullVerifyResult
 from engine.error_intelligence import ErrorIntelligence, AgentFeedback
-from engine.verification_scheduler import VerificationScheduler, VerificationResult
-
-# APE v3 async exports
 from engine.async_lean_pool import AsyncLeanSession, AsyncLeanPool, SyncLeanPool
 from engine.async_verification_scheduler import AsyncVerificationScheduler
-from engine.async_factory import AsyncEngineFactory, AsyncEngineComponents
-
-# APE v3 incremental verification + persistent state
-from engine.proof_session import ProofSessionManager, ProofSession
-from engine.incremental_verifier import IncrementalVerifier, IncrementalResult
-
-# APE v3 elastic scheduling
-from engine.pool_scaler import PoolScaler
-from engine.resource_scheduler import ResourceScheduler, ResourceBudget, Priority
-from engine.remote_session import (
-    RemoteSession, LocalTransport, TCPTransport, ElasticPool,
-)
-from engine.api.protocols import AsyncPoolProtocol
-
-# APE v4 persistent proof context
 from engine.proof_context_store import (
     ProofContextStore, StepDetail, RichProofTrajectory,
 )
 
-# APE v4 async search
-from engine.async_search import AsyncSearchCoordinator
+# Reserved interfaces (intentionally exposed):
+from engine.broadcast import BroadcastBus, BroadcastMessage, MessageType
+from engine.world_model import (
+    WorldModelPredictor, WorldModelPrediction,
+    MockWorldModel, make_world_model,
+)
+
+# Backward-compat alias: legacy callers used `from engine import LeanPool`
+LeanPool = SyncLeanPool

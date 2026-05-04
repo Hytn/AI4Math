@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """scripts/check_layers.py — 验证模块层依赖方向
 
-规则:
-  engine/  不得导入  agent/ 或 prover/   (engine 是最底层)
-  prover/  不得导入  agent/              (除 TYPE_CHECKING guard)
+规则 (与架构图一致, engine 是底层):
+  engine/  不得导入  agent/ 或 prover/
+
+注: prover/ 在 agent/ 之上, 因此 prover → agent 是允许的依赖方向
+(``prover/unified/tools_extra.py`` 等 16 处都从 ``agent.tools.base``
+import, 这是正常的)。
 
 在 CI 中运行: python scripts/check_layers.py
 退出码: 0 = 通过, 1 = 违规

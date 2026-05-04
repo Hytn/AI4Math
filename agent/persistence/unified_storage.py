@@ -79,9 +79,8 @@ def load_task(task_dir: Union[str, Path]) -> Optional[dict]:
     return load_dialog(p)
 
 
-# Back-compat names so older imports keep working.
-save_task_outputs = save_task
-load_task_outputs = load_task
+# v13: 删除 ``save_task_outputs`` / ``load_task_outputs`` back-compat
+# alias —— v9 删除了所有可能的旧调用方, 这两个 alias 之后 0 处使用。
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -195,7 +194,6 @@ def _utc_now_iso() -> str:
 __all__ = [
     "DIALOG_FILENAME",
     "save_task", "load_task",
-    "save_task_outputs", "load_task_outputs",  # back-compat
     "collect_dialogs",
     "build_meta", "build_result",
 ]

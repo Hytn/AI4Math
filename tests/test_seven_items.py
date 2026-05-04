@@ -7,6 +7,11 @@ Item 4: Multi-agent full role dispatch
 Item 5: Knowledge TF-IDF retrieval
 Item 6: Re-exports removed (direct imports work)
 Item 7: Observability export
+
+v12 note: hook_types / budget / working_memory deletions removed
+the corresponding direct-import tests in TestDirectImports. All
+three modules had 0 production callers; their removal is now
+pinned by ``test_re_export_files_removed`` covering the shim files.
 """
 import pytest
 import os
@@ -18,32 +23,30 @@ import tempfile
 
 class TestDirectImports:
     def test_common_roles(self):
-        from common.roles import AgentRole, ROLE_PROMPTS, get_role_prompt
-        assert len(AgentRole) == 11
-        assert AgentRole.PROOF_GENERATOR in ROLE_PROMPTS
+        # v13: 精简到 2 个角色 (DECOMPOSER, CONJECTURE_PROPOSER) — 见
+        # common/roles.py docstring。其他 9 个原本 0 主路径调用方。
+        from common.roles import AgentRole, ROLE_PROMPTS
+        assert len(AgentRole) == 2
+        assert AgentRole.DECOMPOSER in ROLE_PROMPTS
+        assert AgentRole.CONJECTURE_PROPOSER in ROLE_PROMPTS
 
     def test_common_response_parser(self):
         from common.response_parser import extract_lean_code
         code = extract_lean_code("Here is proof:\n```lean\n:= by simp\n```\n")
         assert "simp" in code
 
-    def test_common_prompt_builder(self):
-        from common.prompt_builder import build_prompt
-        assert callable(build_prompt)
+    def test_common_few_shot(self):
+        # v13: prompt_builder 整文件删除 (109 行, 主路径只用 FEW_SHOT_EXAMPLES
+        # 一个常量); 挪到 common/few_shot.py。
+        from common.few_shot import FEW_SHOT_EXAMPLES
+        assert isinstance(FEW_SHOT_EXAMPLES, str)
+        assert "induction" in FEW_SHOT_EXAMPLES.lower()
 
-    def test_common_working_memory(self):
-        from common.working_memory import WorkingMemory
-        wm = WorkingMemory()
-        assert wm.solved is False
-
-    def test_common_budget(self):
-        from common.budget import Budget
-        b = Budget(max_samples=10)
-        assert not b.is_exhausted()
-
-    def test_common_hook_types(self):
-        from common.hook_types import HookEvent, HookAction
-        assert HookEvent is not None
+    # v12: removed test_common_working_memory / test_common_budget /
+    # test_common_hook_types — those modules had 0 production callers
+    # and were deleted along with agent.memory / agent.strategy /
+    # agent.hooks. The "shim removed" test below still pins the
+    # cleanup invariant.
 
     def test_re_export_files_removed(self):
         """Verify the re-export shim files no longer exist."""
@@ -62,14 +65,26 @@ class TestDirectImports:
 # ─── Item 1: Legacy cleanup ─────────────────────────────────────────────────
 
 class TestLegacyCleanup:
-    def test_legacy_md_exists(self):
-        assert os.path.exists("engine/LEGACY.md")
+    """v8 起 legacy CIC 内核已彻底删除 (engine/core/, kernel/, tactic/, state/,
+    search/, api/, lean_bridge/, llm/, async_search.py)。本测试组从"验证
+    LEGACY.md 存在"翻转为"验证 legacy 不再存在"。
+    """
+    def test_legacy_dirs_removed(self):
+        for d in ("core", "kernel", "tactic", "state", "search",
+                  "api", "lean_bridge", "llm"):
+            assert not os.path.exists(f"engine/{d}"), \
+                f"engine/{d}/ should be deleted in v8"
 
-    def test_engine_init_marks_legacy(self):
+    def test_async_search_removed(self):
+        assert not os.path.exists("engine/async_search.py")
+
+    def test_engine_init_lists_only_active_modules(self):
         with open("engine/__init__.py") as f:
             content = f.read()
-        assert "Legacy modules" in content
-        assert "DO NOT add new dependencies" in content
+        # No "Legacy modules" section anymore
+        assert "Legacy modules" not in content
+        # Active modules header should be there
+        assert "核心模块" in content or "Active" in content
 
 
 # ─── Item 2: World model training ────────────────────────────────────────────
@@ -154,74 +169,9 @@ class TestBroadcastRelevance:
 
 # ─── Item 4: Full role dispatch ──────────────────────────────────────────────
 
-class TestFullSpectrumPlanner:
-    def test_light_strategy_base_directions(self):
-        from agent.strategy.direction_planner import FullSpectrumPlanner
-        from prover.models import BenchmarkProblem
-
-        planner = FullSpectrumPlanner()
-        problem = BenchmarkProblem(
-            problem_id="test", name="test",
-            theorem_statement="theorem t : True := by trivial",
-            difficulty="easy")
-        dirs = planner.plan(problem, strategy="light")
-        # Light should have base directions (2-4)
-        assert len(dirs) >= 2
-        roles = {d.role.value for d in dirs}
-        assert "proof_generator" in roles
-
-    def test_medium_adds_decomposer(self):
-        from agent.strategy.direction_planner import FullSpectrumPlanner
-        from prover.models import BenchmarkProblem
-
-        planner = FullSpectrumPlanner()
-        problem = BenchmarkProblem(
-            problem_id="hard", name="hard",
-            theorem_statement="theorem hard " + "x" * 250,
-            difficulty="hard")
-        dirs = planner.plan(problem, strategy="medium",
-                            attempt_history=[{"errors": [{"message": "fail"}]}])
-        roles = {d.role.value for d in dirs}
-        assert "decomposer" in roles
-        assert "repair_agent" in roles
-
-    def test_heavy_adds_conjecture_and_sorry(self):
-        from agent.strategy.direction_planner import FullSpectrumPlanner
-        from prover.models import BenchmarkProblem
-
-        planner = FullSpectrumPlanner()
-        problem = BenchmarkProblem(
-            problem_id="comp", name="comp",
-            theorem_statement="theorem comp " + "y" * 300,
-            difficulty="competition")
-        dirs = planner.plan(
-            problem, strategy="heavy",
-            attempt_history=[{"errors": [{}]}] * 4,
-            has_sorry_skeleton=True)
-        roles = {d.role.value for d in dirs}
-        assert "sorry_closer" in roles
-        assert "conjecture_proposer" in roles
-        assert "hypothesis_proposer" in roles
-
-    def test_max_adds_all_roles(self):
-        from agent.strategy.direction_planner import FullSpectrumPlanner
-        from prover.models import BenchmarkProblem
-
-        planner = FullSpectrumPlanner()
-        problem = BenchmarkProblem(
-            problem_id="ultra", name="ultra",
-            theorem_statement="theorem ultra " + "z" * 300,
-            difficulty="competition",
-            natural_language="Prove that...")
-        dirs = planner.plan(
-            problem, strategy="max",
-            attempt_history=[{"errors": [{}]}] * 5,
-            has_sorry_skeleton=True,
-            banked_lemmas=["lemma h1 : True := trivial"])
-        roles = {d.role.value for d in dirs}
-        # Should have most roles
-        assert "proof_composer" in roles
-        assert "formalization_expert" in roles
+# (TestFullSpectrumPlanner deleted in v9: agent/strategy/ removed entirely.
+#  The 14 unified profiles in prover/unified/profiles.py replaced the old
+#  light/medium/heavy/max strategy switcher.)
 
 
 # ─── Item 5: TF-IDF Knowledge retrieval ─────────────────────────────────────
@@ -252,50 +202,6 @@ class TestTFIDFRetriever:
 
 # ─── Item 7: Observability export ────────────────────────────────────────────
 
-class TestObservabilityExport:
-    def test_prometheus_format(self):
-        from engine.observability import MetricsCollector, MetricsExporter
-
-        mc = MetricsCollector()
-        mc.increment("proof_attempts", 42)
-        mc.set_gauge("pool_size", 4.0)
-        with mc.timer("verify_latency"):
-            pass  # near-zero duration
-
-        exporter = MetricsExporter(mc)
-        prom = exporter.export_prometheus()
-        assert "proof_attempts 42" in prom
-        assert "pool_size 4" in prom
-        assert "verify_latency" in prom
-
-    def test_json_export(self):
-        from engine.observability import MetricsCollector, MetricsExporter
-
-        mc = MetricsCollector()
-        mc.increment("test_counter", 7)
-
-        exporter = MetricsExporter(mc)
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            path = f.name
-        try:
-            exporter.export_json(path)
-            with open(path) as f:
-                data = json.load(f)
-            assert "test_counter" in data
-            assert data["test_counter"]["value"] == 7
-            assert "_exported_at" in data
-        finally:
-            os.unlink(path)
-
-    def test_snapshot_includes_all_types(self):
-        from engine.observability import MetricsCollector
-
-        mc = MetricsCollector()
-        mc.increment("c1")
-        mc.set_gauge("g1", 3.14)
-        mc.record_time("t1", 42.0)
-        snap = mc.snapshot()
-        assert snap["c1"]["type"] == "counter"
-        assert snap["g1"]["type"] == "gauge"
-        assert snap["t1"]["type"] == "timer"
-        assert snap["t1"]["p50"] == 42.0
+# (TestObservabilityExport deleted in v9: engine/observability.py removed
+#  -- 0 callers outside the deleted sync VerificationScheduler.
+#  The async pool now uses the no-op shim engine/observability_stub.py.)

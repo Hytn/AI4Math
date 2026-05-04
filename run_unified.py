@@ -43,6 +43,8 @@ from pathlib import Path
 # Repo root on PYTHONPATH
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from common.constants import DEFAULT_CLAUDE_MODEL  # noqa: E402
+
 logger = logging.getLogger("run_unified")
 
 
@@ -88,8 +90,49 @@ def parse_args():
         "--backend-api-key", type=str, default=None,
         help="API key for HTTP/Kimina backend (default: $KIMINA_API_KEY).")
 
+    p.add_argument("--config", type=str, default="config/default.yaml",
+                    help="Path to YAML config file (default: config/default.yaml). "
+                         "CLI flags and APE_*=... env vars override it.")
     p.add_argument("--out", type=str, default="results/unified",
                     help="Output dir for dialog.json")
+
+    # v10: previously-locked features now reachable from the CLI.
+    # Both default to None (off) — the runner already accepts these
+    # as constructor args and gracefully no-ops when None.
+    p.add_argument(
+        "--world-model", type=str, default=None,
+        metavar="PATH",
+        help=("Path to a trained sklearn world-model pickle "
+              "(produced by scripts/train_world_model.py). When set, "
+              "tactic_apply / step-level profiles short-circuit "
+              "high-confidence-failure tactics instead of sending them "
+              "to Lean. Off by default."))
+    p.add_argument(
+        "--dialog-index", type=str, default=None,
+        metavar="DB_PATH",
+        help=("Path to a SQLite DialogIndex of past solved dialogs "
+              "(see knowledge.dialog_index). When set and the active "
+              "profile has observation.inject_similar_dialogs=True, "
+              "similar past dialogs are prepended to the initial user "
+              "message as in-context demos. Off by default."))
+    p.add_argument(
+        "--knowledge-db", type=str, default=None,
+        metavar="DB_PATH",
+        help=("Path to a SQLite knowledge store. When set, the runner "
+              "deposits successful proofs and reads briefings. Off by "
+              "default (no knowledge persistence in single-run mode)."))
+    # v12: opt-in LLM response caching. Off by default to preserve
+    # legacy behaviour. With ``--cache`` the runner wraps the provider
+    # in AsyncCachedProvider; same prompt → cached LLMResponse on hit.
+    # Particularly valuable for pass@k sweeps and resumed eval runs.
+    p.add_argument(
+        "--cache", action="store_true",
+        help="Wrap the LLM in AsyncCachedProvider. Caches identical "
+             "(system, messages, tools, T, max_tokens) calls in-process. "
+             "By default only T=0 calls are cached; --cache-all forces "
+             "caching at any temperature.")
+    p.add_argument("--cache-all", action="store_true",
+                    help="With --cache, cache responses at any temperature.")
     p.add_argument("-v", "--verbose", action="store_true")
     return p.parse_args()
 
@@ -118,73 +161,49 @@ def load_problem(args):
 
 
 def build_llm(args):
-    """Provider-aware LLM construction."""
+    """Provider-aware LLM construction.
+
+    v12: when ``--cache`` is set, wrap the constructed provider in
+    AsyncCachedProvider. The cache lives for the lifetime of the
+    process — across multiple problems in --benchmark mode this can
+    cut LLM cost meaningfully (system prompt + few-shot prefix is
+    shared across problems).
+    """
     if args.provider == "anthropic":
         from agent.brain.async_llm_provider import AsyncClaudeProvider
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
             raise SystemExit("ANTHROPIC_API_KEY not set")
-        return AsyncClaudeProvider(
-            model=args.model or "claude-sonnet-4-20250514",
+        provider = AsyncClaudeProvider(
+            model=args.model or DEFAULT_CLAUDE_MODEL,
             api_key=api_key,
         )
-    if args.provider == "mock":
+    elif args.provider == "mock":
         from agent.brain.async_llm_provider import AsyncMockProvider
-        return AsyncMockProvider()
-    raise SystemExit(f"provider not yet wired: {args.provider}")
+        provider = AsyncMockProvider()
+    else:
+        raise SystemExit(f"provider not yet wired: {args.provider}")
+
+    if getattr(args, "cache", False):
+        from agent.brain.async_llm_provider import AsyncCachedProvider
+        provider = AsyncCachedProvider(
+            provider, cache_all=getattr(args, "cache_all", False))
+        logger.info(
+            "LLM cache enabled (cache_all=%s)",
+            getattr(args, "cache_all", False))
+    return provider
 
 
-def build_lean_pool(args):
+def build_lean_pool(args, cfg=None):
     if not args.lean:
         return None
     try:
-        from engine.lean_pool import LeanPool
-        return LeanPool()
+        from engine.async_lean_pool import AsyncLeanPool
+        pool_size = (cfg or {}).get("lean_pool_size", 4)
+        return AsyncLeanPool(pool_size=pool_size)
     except Exception as e:
-        logger.warning(f"could not start LeanPool: {e}")
+        logger.warning(f"could not start AsyncLeanPool: {e}")
         return None
-
-
-async def _build_infra_backends(kind: str,
-                                 url: str = None,
-                                 api_key: str = None):
-    """Construct the optional backend trio (kimina, pantograph, lookeng).
-
-    Returns ``(kimina, pantograph, lookeng)`` — any can be None. Each is
-    only built when ``kind`` requests it, so a default ``--backend auto``
-    run pays no cost for backends it doesn't use.
-
-    The runner's tools tolerate any of these being None or in fallback —
-    they register in fallback mode and return a structured "unavailable"
-    error if the LLM tries to call them, rather than crashing the loop.
-    """
-    kimina = pantograph = lookeng = None
-
-    if kind in ("kimina", "http"):
-        from engine.backends.kimina_server import KiminaServerBackend
-        kimina = KiminaServerBackend(base_url=url, api_key=api_key)
-        await kimina.start()
-        logger.info(f"Kimina backend started "
-                    f"(fallback={kimina.is_fallback})")
-
-    elif kind == "pantograph":
-        from engine.backends.pantograph import PantographBackend
-        pantograph = PantographBackend()
-        await pantograph.start()
-        logger.info(f"Pantograph backend started "
-                    f"(mode={pantograph.mode})")
-
-    elif kind == "lookeng":
-        from engine.backends.lookeng import LooKengBackend
-        lookeng = LooKengBackend()
-        await lookeng.start()
-        logger.info("LooKeng backend started")
-
-    # 'local', 'socket', 'mock', 'fallback', 'auto' don't need
-    # any of the infrastructure backends; they're handled by the
-    # standard lean_pool path.
-
-    return kimina, pantograph, lookeng
 
 
 async def main():
@@ -192,6 +211,14 @@ async def main():
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+    # v9: load config (YAML + env overrides). CLI flags still win.
+    from config.schema import load_config
+    cfg = load_config(args.config)
+    logger.info(
+        f"loaded config from {args.config} "
+        f"(lean_pool_size={cfg.get('lean_pool_size', 4)}, "
+        f"premise.mode={cfg.get('prover', {}).get('premise', {}).get('mode', 'hybrid')})")
 
     # Load YAML-defined profile if provided
     if args.profile_yaml:
@@ -207,35 +234,39 @@ async def main():
 
     problem = load_problem(args)
     llm = build_llm(args)
-    lean_pool = build_lean_pool(args)
+    lean_pool = build_lean_pool(args, cfg)
 
     # ── Build infrastructure backends per --backend / per profile ───────
-    #
-    # Some profiles imply a specific backend (e.g. kimina_batch wants
-    # the Kimina server). When --backend=auto we honour that implicit
-    # preference; an explicit --backend overrides it.
-    profile_backend_hint = {
-        "kimina_batch":   "kimina",
-        "pantograph_dsp": "pantograph",
-        "lookeng_lemma":  "lookeng",
-    }
-    chosen = args.backend
-    if chosen == "auto" and args.profile in profile_backend_hint:
-        chosen = profile_backend_hint[args.profile]
-        logger.info(
-            f"profile '{args.profile}' implies backend '{chosen}', using it")
+    from prover.unified.factory import (
+        resolve_backend_kind, build_infra_backends,
+    )
+    chosen = resolve_backend_kind(args.backend, args.profile)
+    kimina_backend, pantograph_backend, lookeng_backend = (
+        await build_infra_backends(
+            chosen, url=args.backend_url, api_key=args.backend_api_key)
+    )
 
-    kimina_backend, pantograph_backend, lookeng_backend = await _build_infra_backends(
-        chosen, args.backend_url, args.backend_api_key)
+    # ── v10/v11: optional features previously locked behind code-only access ──
+    # v11: factory loaders make these one-liners + uniform with run_eval.py.
+    from prover.unified.factory import (
+        load_world_model, load_dialog_index, load_knowledge,
+    )
+    world_model = load_world_model(args.world_model)
+    dialog_index = load_dialog_index(args.dialog_index)
+    knowledge_store, knowledge_writer, _knowledge_reader = load_knowledge(
+        args.knowledge_db)
 
     runner = UnifiedProofRunner(
         llm=llm,
         lean_pool=lean_pool,
-        knowledge_store=None,
+        knowledge_store=knowledge_store,
+        knowledge_writer=knowledge_writer,
         retriever=None,
         kimina_backend=kimina_backend,
         pantograph_backend=pantograph_backend,
         lookeng_backend=lookeng_backend,
+        world_model=world_model,
+        dialog_index=dialog_index,
     )
     result = await runner.run(problem, profile_name=args.profile)
 
@@ -280,7 +311,7 @@ async def main():
     saved = result.save_unified(
         str(out_dir),
         problem_id=problem.problem_id,
-        model=args.model or "claude-sonnet-4-20250514",
+        model=args.model or DEFAULT_CLAUDE_MODEL,
         provider=args.provider,
         system_prompt=real_system_prompt,
         tools=tools_meta,
@@ -288,6 +319,13 @@ async def main():
     )
     if saved:
         print(f"dialog.json saved: {out_dir}/dialog.json")
+
+    # v12: surface cache stats so users can see whether --cache helped.
+    cache_stats = getattr(llm, "cache_stats", None)
+    if callable(cache_stats):
+        st = cache_stats()
+        print(f"LLM cache: hits={st['hits']} misses={st['misses']} "
+              f"hit_rate={st['hit_rate']:.1%}")
 
 
 if __name__ == "__main__":

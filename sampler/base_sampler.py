@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Awaitable, Optional
 
 from sampler.proof_env import ProofEnv, ProofEnvConfig
-from sampler.trajectory import Trajectory, Turn, RewardInfo, TerminationReason
+from sampler.trajectory import Trajectory
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,8 @@ class BaseSampler(ABC):
     def __init__(self, config: SamplerConfig = None):
         self.config = config or SamplerConfig()
         self._env_pool: list[ProofEnv] = []
-        self._env_semaphore: Optional[asyncio.Semaphore] = None
+        self._env_queue: Optional[asyncio.Queue] = None  # v7: atomic acquire
+        self._env_semaphore: Optional[asyncio.Semaphore] = None  # legacy
         self._setup_done = False
 
     async def setup(self):
@@ -85,6 +86,20 @@ class BaseSampler(ABC):
             for _ in range(self.config.num_envs)
         ]
         await asyncio.gather(*(env.setup() for env in self._env_pool))
+
+        # v7: replace the per-env _in_use boolean (which had a TOCTOU
+        # race between the semaphore acquire and the flag check —
+        # two coroutines could both observe _in_use=False on env[0]
+        # and both grab it) with an asyncio.Queue. Each env enters
+        # the queue exactly once; get() / put() are atomic, so no
+        # two episodes can ever share an env.
+        self._env_queue: asyncio.Queue = asyncio.Queue()
+        for env in self._env_pool:
+            self._env_queue.put_nowait(env)
+
+        # Kept for backwards compat with subclasses that read the
+        # semaphore directly; effectively redundant with the queue
+        # but harmless.
         self._env_semaphore = asyncio.Semaphore(self.config.num_envs)
         self._setup_done = True
         logger.info("BaseSampler: %d environments ready", self.config.num_envs)
@@ -163,16 +178,17 @@ class BaseSampler(ABC):
     async def _single_rollout(
         self, problem: dict, policy_fn: PolicyFn = None,
     ) -> Trajectory:
-        """Run a single multi-turn episode."""
-        # Acquire an environment from the pool
-        async with self._env_semaphore:
-            env = self._env_pool[0]  # Simple round-robin; improve if needed
-            # In practice, use a proper pool. This is simplified.
-            for e in self._env_pool:
-                if not getattr(e, "_in_use", False):
-                    env = e
-                    break
-            env._in_use = True
+        """Run a single multi-turn episode.
+
+        v7: atomic env acquisition via asyncio.Queue. The earlier
+        implementation had a TOCTOU race — two coroutines could both
+        observe ``_in_use=False`` on the same env between the
+        semaphore acquire and the flag set. Now ``get()`` returns
+        each env to exactly one waiter; ``put()`` returns it to the
+        pool; nothing else touches the queue.
+        """
+        # Acquire an environment from the pool (atomic).
+        env: ProofEnv = await self._env_queue.get()
 
         try:
             obs = await env.reset(problem)
@@ -205,7 +221,8 @@ class BaseSampler(ABC):
             return env.get_trajectory()
 
         finally:
-            env._in_use = False
+            # Always return the env to the queue, even on exception.
+            self._env_queue.put_nowait(env)
 
     # ── Convenience: synchronous entry point ──────────────────────────
 

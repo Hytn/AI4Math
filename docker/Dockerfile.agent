@@ -1,7 +1,8 @@
 # AI4Math — Python Agent
 #
 # 构建：docker build -t ai4math-agent -f docker/Dockerfile.agent .
-# 用法：docker run --rm -e ANTHROPIC_API_KEY=sk-... ai4math-agent python run_single.py --builtin nat_add_comm
+# 用法：docker run --rm -e ANTHROPIC_API_KEY=sk-... ai4math-agent \
+#         python run_unified.py --builtin nat_add_comm --profile whole_proof_repair
 
 FROM python:3.12-slim
 

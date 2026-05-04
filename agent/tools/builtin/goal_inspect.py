@@ -38,21 +38,37 @@ class GoalInspectTool(Tool):
         proof = input["proof_so_far"]
         header = input.get("theorem_header", ctx.theorem_statement)
 
+        # v10: pool exposes verify_complete(theorem, proof, preamble),
+        # not check_proof. Feature-detect to be defensive against any
+        # mock-style pools tests might inject.
         try:
-            code = f"{header}\n{proof}"
-            result = self._pool.check_proof(code, timeout=15)
+            verify = getattr(self._pool, "verify_complete", None)
+            if verify is None:
+                return ToolResult.error(
+                    f"lean_pool does not expose verify_complete; "
+                    f"got {type(self._pool).__name__}")
+            import inspect as _inspect
+            result = verify(header, proof, "")
+            if _inspect.iscoroutine(result):
+                result = await result
 
-            goals = result.get("goals", [])
-            hypotheses = result.get("hypotheses", [])
-            errors = result.get("errors", [])
+            # FullVerifyResult dataclass fields
+            goals = list(getattr(result, "goals_remaining", []) or [])
+            errors = list(getattr(result, "errors", []) or [])
+            success = bool(getattr(result, "success", False))
+            has_sorry = bool(getattr(result, "has_sorry", False))
 
             response = {
                 "remaining_goals": goals,
                 "goal_count": len(goals),
-                "hypotheses": hypotheses,
-                "errors": [str(e) for e in errors[:5]],
-                "all_goals_closed": len(goals) == 0 and not errors,
+                "hypotheses": [],   # Not extractable from verify_complete;
+                                    # add when REPL exposes a "context" cmd
+                "errors": [str(e)[:300] for e in errors[:5]],
+                "all_goals_closed": (success and not has_sorry
+                                       and len(goals) == 0
+                                       and not errors),
             }
-            return ToolResult.success(json.dumps(response, indent=2))
+            return ToolResult.success(json.dumps(response, indent=2,
+                                                  ensure_ascii=False))
         except Exception as e:
             return ToolResult.error(f"Goal inspection failed: {e}")

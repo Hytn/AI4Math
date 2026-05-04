@@ -15,19 +15,14 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
-import sqlite3
 import time
-from contextlib import contextmanager
-from typing import Optional
 
 from engine.proof_context_store import ProofContextStore
 from knowledge.types import (
     TacticEffectiveness, ErrorPattern, LemmaRecord,
-    StrategyPattern, ConceptNode, ConceptEdge,
-    TacticSuggestion, LemmaMatch,
+    StrategyPattern, LemmaMatch,
 )
 
 logger = logging.getLogger(__name__)

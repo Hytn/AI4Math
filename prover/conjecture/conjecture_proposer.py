@@ -1,9 +1,26 @@
 """prover/conjecture/conjecture_proposer.py — 主动猜想生成
 
 基于目标定理和已知引理，提出可能有用的辅助猜想。
+
+v11: ``propose`` is now ``async`` and feature-detects the LLM. The original
+sync implementation called ``self.llm.generate(...)`` without ``await``,
+but every production ``AsyncLLMProvider`` has an ``async generate``, so
+the call returned a coroutine and ``resp.content`` immediately raised
+AttributeError. This was an unfound v6→v10 bug — the ``conjecture_driven``
+profile had no test against a real provider, so CI never noticed.
+
+The new code:
+  * is async itself, so callers must ``await`` it (``ConjectureProposeTool``
+    already awaits — no caller change needed)
+  * accepts both async and sync ``llm.generate`` shapes via
+    ``inspect.iscoroutine`` on the result
+  * keeps the same return contract (list of statement strings)
 """
 from __future__ import annotations
+
+import inspect
 import re
+
 from common.roles import AgentRole, ROLE_PROMPTS
 from prover.conjecture.conjecture_verifier import ConjectureVerifier
 
@@ -15,8 +32,8 @@ class ConjectureProposer:
         self.llm = llm
         self.verifier = ConjectureVerifier(lean_env)
 
-    def propose(self, theorem: str, existing_lemmas: list[str] = None,
-                n: int = 5, verify: bool = True) -> list[str]:
+    async def propose(self, theorem: str, existing_lemmas: list[str] = None,
+                      n: int = 5, verify: bool = True) -> list[str]:
         """Propose n useful conjectures.
 
         Args:
@@ -40,6 +57,10 @@ class ConjectureProposer:
         resp = self.llm.generate(
             system=ROLE_PROMPTS[AgentRole.CONJECTURE_PROPOSER],
             user=prompt, temperature=0.9)
+        # AsyncLLMProvider.generate is async; sync legacy providers
+        # return LLMResponse directly. Handle both transparently.
+        if inspect.iscoroutine(resp):
+            resp = await resp
 
         # Extract lemma statements
         raw = []

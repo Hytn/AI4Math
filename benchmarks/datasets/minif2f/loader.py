@@ -4,92 +4,108 @@
   MiniF2F/
     Test.lean       ← 244 道 test
     Valid.lean       ← 244 道 valid
+
+v11: 共享解析逻辑下沉到 ``benchmarks.datasets._base.parse_lean_files``,
+本文件只保留路径探测 + 难度启发式。
 """
 from __future__ import annotations
-import re, json, logging
+
+import logging
 from pathlib import Path
+
+from benchmarks.datasets._base import parse_lean_files
 from prover.models import BenchmarkProblem
 
 logger = logging.getLogger(__name__)
 
-# miniF2F 的 Lean 4 文件中定理格式:
-#   theorem aime_1983_p1 ... : ... := by sorry
-_THEOREM_RE = re.compile(
-    r'^(theorem|lemma)\s+(\S+)\s*([\s\S]*?)(?=\n(?:theorem|lemma|end|--|/-)\s|\Z)',
-    re.MULTILINE)
 
-def _difficulty_from_name(name: str) -> str:
-    name_l = name.lower()
-    if "imo" in name_l: return "competition"
-    if "aime" in name_l: return "hard"
-    if "amc" in name_l: return "medium"
-    if "mathd" in name_l: return "easy"
+def _difficulty(name: str) -> str:
+    nl = name.lower()
+    if "imo" in nl: return "competition"
+    if "aime" in nl: return "hard"
+    if "amc" in nl: return "medium"
+    if "mathd" in nl: return "easy"
     return "medium"
 
-def _parse_lean_file(path: Path, split: str) -> list[BenchmarkProblem]:
-    content = path.read_text(encoding="utf-8")
-    problems = []
-    for m in _THEOREM_RE.finditer(content):
-        kind = m.group(1)
-        name = m.group(2)
-        full_text = m.group(0).strip()
-        # 提取 statement (去掉 := by sorry 部分)
-        stmt = re.split(r'\s*:=\s*by\b', full_text, maxsplit=1)[0].strip()
-        if not stmt:
-            stmt = re.split(r'\s*:=\s*', full_text, maxsplit=1)[0].strip()
-        problems.append(BenchmarkProblem(
-            problem_id=f"minif2f_{split}_{name}",
-            name=name,
-            theorem_statement=stmt,
-            difficulty=_difficulty_from_name(name),
-            source="miniF2F",
-        ))
-    return problems
+
+def _candidate_files(repo: Path, split: str) -> list[Path]:
+    """Resolve which Lean files to parse for the given split.
+
+    Tries the canonical yangky11 layout first (MiniF2F/Test.lean), then
+    a per-file directory layout, then a full recursive scan.
+    """
+    file_candidates = {
+        "test":  ["MiniF2F/Test.lean", "test.lean", "Test.lean"],
+        "valid": ["MiniF2F/Valid.lean", "valid.lean", "Valid.lean"],
+    }
+    for cand in file_candidates.get(split, file_candidates["test"]):
+        p = repo / cand
+        if p.is_file():
+            return [p]
+
+    dir_candidates = {
+        "test":  ["MiniF2F/Test", "Test", "test"],
+        "valid": ["MiniF2F/Valid", "Valid", "valid"],
+    }
+    for cand in dir_candidates.get(split, dir_candidates["test"]):
+        p = repo / cand
+        if p.is_dir():
+            return sorted(p.rglob("*.lean"))
+
+    return sorted(repo.rglob("*.lean"))
+
 
 def load(repo_path: str, split: str = "test") -> list[BenchmarkProblem]:
-    """加载 miniF2F 数据集。"""
-    path = Path(repo_path)
-    if not path.exists():
+    """加载 miniF2F 数据集。
+
+    yangky11/miniF2F-lean4 的 ``MiniF2F/Test.lean`` 是一个**索引文件**, 里面
+    只有 244 行 ``import``, 没有 theorem 块。所以即便文件存在, 我们也得在
+    解析返回 0 题时回退到目录扫描——这是 v10 的隐式契约 (它通过 if 判断
+    解析结果非空来达到), v11 显式表达。
+    """
+    repo = Path(repo_path)
+    if not repo.exists():
         logger.warning(f"miniF2F 路径不存在: {repo_path}")
         return []
 
-    # yangky11/miniF2F-lean4 结构: MiniF2F/Test.lean, MiniF2F/Valid.lean
-    split_file_map = {
-        "test": ["MiniF2F/Test.lean", "test.lean", "Test.lean"],
-        "valid": ["MiniF2F/Valid.lean", "valid.lean", "Valid.lean"],
-    }
-    candidates = split_file_map.get(split, split_file_map["test"])
+    files = _candidate_files(repo, split)
+    problems = parse_lean_files(
+        files,
+        problem_id_prefix=f"minif2f_{split}_",
+        source="miniF2F",
+        difficulty_fn=_difficulty,
+        skip_sorry_in_statement=False,
+    )
 
-    for candidate in candidates:
-        lean_file = path / candidate
-        if lean_file.exists():
-            problems = _parse_lean_file(lean_file, split)
-            if problems:
-                logger.info(f"miniF2F: 从 {lean_file} 加载了 {len(problems)} 道题")
-                return problems
+    # If the candidate file was an index-only file (just `import` lines),
+    # fall through to a per-file directory scan.
+    if not problems:
+        dir_candidates = {
+            "test":  ["MiniF2F/Test", "Test", "test"],
+            "valid": ["MiniF2F/Valid", "Valid", "valid"],
+        }
+        for cand in dir_candidates.get(split, dir_candidates["test"]):
+            p = repo / cand
+            if p.is_dir():
+                problems = parse_lean_files(
+                    sorted(p.rglob("*.lean")),
+                    problem_id_prefix=f"minif2f_{split}_",
+                    source="miniF2F",
+                    difficulty_fn=_difficulty,
+                    skip_sorry_in_statement=False,
+                )
+                if problems:
+                    break
 
-    # Per-file structure: MiniF2F/Test/*.lean or MiniF2F/Valid/*.lean
-    split_dir_map = {
-        "test": ["MiniF2F/Test", "Test", "test"],
-        "valid": ["MiniF2F/Valid", "Valid", "valid"],
-    }
-    dir_candidates = split_dir_map.get(split, split_dir_map["test"])
-    for dir_name in dir_candidates:
-        split_dir = path / dir_name
-        if split_dir.is_dir():
-            all_problems = []
-            for lean_file in sorted(split_dir.rglob("*.lean")):
-                all_problems.extend(_parse_lean_file(lean_file, split))
-            if all_problems:
-                logger.info(f"miniF2F: 从 {split_dir} 加载了 {len(all_problems)} 道题")
-                return all_problems
+    # Last-resort: full recursive scan
+    if not problems:
+        problems = parse_lean_files(
+            sorted(repo.rglob("*.lean")),
+            problem_id_prefix=f"minif2f_{split}_",
+            source="miniF2F",
+            difficulty_fn=_difficulty,
+            skip_sorry_in_statement=False,
+        )
 
-    # Fallback: 扫描所有 .lean 文件
-    all_problems = []
-    for lean_file in sorted(path.rglob("*.lean")):
-        if lean_file.name.startswith("lake") or "lakefile" in lean_file.name.lower():
-            continue
-        all_problems.extend(_parse_lean_file(lean_file, split))
-
-    logger.info(f"miniF2F: 从 {repo_path} 加载了 {len(all_problems)} 道题 (全部)")
-    return all_problems
+    logger.info(f"miniF2F: 加载了 {len(problems)} 道题")
+    return problems

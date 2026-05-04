@@ -1,0 +1,46 @@
+# requirements-rl.txt — Optional dependencies for the RL flywheel
+#
+# These are *not* installed by `pip install -r requirements.txt` because
+# (a) they have heavy CUDA / GPU deps you may not want in a CPU-only
+# inference environment, and (b) trainer choice (verl vs slime vs TRL)
+# is genuinely a user decision. Pick what you need.
+#
+# The sampler module (`sampler/`) detects each at import time and
+# enables real integration when present (`VERL_AVAILABLE`, `SLIME_AVAILABLE`).
+# Without these packages, the sampler still works — it falls back to
+# stub bases so unit tests pass, you just can't use it as a verl/slime
+# extension.
+
+# ── verl (Volcano-Engine RL) — recommended for PPO/GRPO ──────────────
+# When present, sampler.verl_sampler.VeRLProofAgentLoop is registered
+# under "ai4math_proof_agent" and ready to use in verl YAML configs.
+# verl >= 0.4.0
+
+# ── slime (THUDM lightweight RL) ─────────────────────────────────────
+# When present, sampler.slime_sampler is detected; SlimeSampler still
+# works without it (uses BaseSampler protocol).
+# slime-trainer
+
+# ── TRL (HuggingFace) — for SFT/DPO offline training ────────────────
+# Used by scripts/rl_pipeline.py stage 4 when --train-cmd is omitted
+# the user is expected to invoke trl/axolotl manually with the produced
+# sft.jsonl. We do NOT pin TRL because version churn is high.
+# trl
+# peft
+# accelerate
+# bitsandbytes
+
+# ── High-throughput inference servers (rollout-time policy) ──────────
+# vLLM is recommended for verl/slime training because verl's
+# AgentLoopWorker assumes an OpenAI-compatible policy endpoint.
+# vllm>=0.5
+# sglang[all]
+
+# ── Tokenizers — pre-installed by transformers/vLLM, listed for clarity
+# transformers>=4.38
+# tokenizers>=0.15
+
+# ── Sentence-transformers (better premise retrieval, also useful for
+#    reranking RL candidate tactics) ─────────────────────────────────
+# sentence-transformers>=2.0
+# torch>=2.0

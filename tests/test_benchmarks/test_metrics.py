@@ -3,7 +3,6 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 import pytest
 from benchmarks.metrics import pass_at_k, compute_metrics, MetricsSummary
-from knowledge.retriever import KnowledgeRetriever
 
 
 # ── pass@k ──
@@ -89,27 +88,7 @@ class TestComputeMetrics:
         assert "1/1" in table
 
 
-# ── Knowledge Retriever ──
+# ── Knowledge Retriever tests removed in v10: knowledge.retriever was an
+# unwired module deleted as part of the v10 cleanup. Live knowledge
+# integration is covered by test_unified_storage.py + test_dialog_*.py
 
-class TestKnowledgeRetriever:
-    def test_basic_retrieve(self):
-        kr = KnowledgeRetriever()
-        results = kr.retrieve("Nat add commutative", top_k=5)
-        assert len(results) > 0
-        assert isinstance(results[0], str)
-
-    def test_retrieve_full(self):
-        kr = KnowledgeRetriever()
-        bundle = kr.retrieve_full("theorem t (n m : Nat) : n + m = m + n",
-                                   goal_target="n + m = m + n")
-        assert "premises" in bundle
-        assert "templates" in bundle
-        assert "tactics" in bundle
-        assert "goal_shape" in bundle
-        assert bundle["goal_shape"] == "equality"
-
-    def test_add_custom(self):
-        kr = KnowledgeRetriever()
-        kr.add_premises([{"name": "custom_zzz", "statement": "lemma zzz : True"}])
-        results = kr.retrieve("zzz", top_k=3)
-        assert any("zzz" in r for r in results)

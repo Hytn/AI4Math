@@ -3,7 +3,6 @@
 支持: pass@k, solve_rate, token_efficiency, time_efficiency, error_distribution.
 """
 from __future__ import annotations
-import math
 from collections import Counter
 from dataclasses import dataclass, field
 

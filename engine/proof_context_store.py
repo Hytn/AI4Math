@@ -36,15 +36,49 @@ import asyncio
 import hashlib
 import json
 import logging
-import os
 import sqlite3
 import time
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from engine.proof_session import EnvNode, ProofSessionState
+
+# ─── Lightweight session-state dataclasses ─────────────────
+# Migrated from engine/proof_session.py (deleted in v9 — its
+# ProofSessionManager / ProofSession runtime classes had 0 callers).
+# These two dataclasses are still consumed by serialization paths.
+
+@dataclass
+class EnvNode:
+    """env_id 状态树中的节点"""
+    env_id: int
+    parent_env_id: int = -1
+    tactic: str = ""                   # 产生此节点的 tactic
+    goals: list[str] = field(default_factory=list)
+    is_proof_complete: bool = False
+    children: list[int] = field(default_factory=list)
+    created_at: float = field(default_factory=time.time)
+    depth: int = 0
+
+    @property
+    def is_leaf(self) -> bool:
+        return len(self.children) == 0
+
+
+@dataclass
+class ProofSessionState:
+    """单个证明的完整状态"""
+    theorem: str
+    root_env_id: int
+    theorem_env_id: int
+    current_env_id: int
+    nodes: dict = field(default_factory=dict)            # int → EnvNode
+    tactic_history: list = field(default_factory=list)   # list[str]
+    best_depth: int = 0
+    solved: bool = False
+    proof_path: list = field(default_factory=list)       # list[int]
+
 
 logger = logging.getLogger(__name__)
 

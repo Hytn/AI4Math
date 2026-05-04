@@ -1,974 +1,218 @@
-<div align="center">
+<p align="center">
+  <img src="https://img.shields.io/badge/Lean-4.28.0-blue" alt="Lean 4" />
+  <img src="https://img.shields.io/badge/Python-3.10+-3776ab" alt="Python" />
+  <img src="https://img.shields.io/badge/tests-760-green" alt="Tests" />
+  <img src="https://img.shields.io/badge/problems-1631-orange" alt="Problems" />
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
+</p>
+
+<p align="center">
+  <b>🇬🇧 English</b> ·
+  <a href="README_zh.md">🇨🇳 中文</a> ·
+  <a href="TUTORIAL_CN.md">📖 Tutorial (CN)</a> ·
+  <a href="docs/ARCHITECTURE.md">🏗️ Architecture</a> ·
+  <a href="docs/CHANGELOG.md">📝 Changelog</a>
+</p>
 
 # AI4Math
 
-### An Agent Operating System for Formal Theorem Proving
+A Lean 4 theorem-proving infrastructure built around three things, with three
+reserved interfaces on top.
 
-**English** · [中文](README_zh.md) · [Interactive Demo ↗](https://ai4math.github.io/ai4math) · [Tutorial (Chinese) ↗](TUTORIAL_CN.md)
+## What this project is
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Python 3.12+](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://python.org)
-[![Lean 4](https://img.shields.io/badge/Lean-4.24.0-orange.svg)](https://lean-lang.org)
-[![Tests](https://img.shields.io/badge/Tests-1429%20passed-brightgreen.svg)](#testing)
-[![Problems](https://img.shields.io/badge/Benchmarks-6%2C826%20problems-purple.svg)](#benchmarks)
+The **core** is exactly three things:
 
-<br>
+1. **Unified reasoning** — every prover method (DeepSeek-Prover style whole-proof,
+   ReProver-style RAG, LeanDojo step-level, MCTS / best-first / beam, DSP,
+   Pantograph drafting, conjecture-driven) runs through one `AgentLoop` driven
+   by a single `--profile` switch. 14 profiles ship; adding a new method = adding
+   one `Profile` entry.
 
-*Others are building better proof generators —<br>AI4Math is building the operating system that proof generators run inside.*
+2. **Verification infrastructure** — async Lean 4 REPL pool (`AsyncLeanPool`,
+   ~50 ms incremental verification via `env_id` fork), three-level pre-filter
+   (L0 syntax / L1 REPL / L2 full compile), four community backends
+   (Local / Kimina / Pantograph / LooKeng), structured `AgentFeedback` (~100 bits)
+   instead of a 1-bit pass/fail loop.
 
-</div>
+3. **RL infra interface** — `sampler/` exposes `ProofEnv` + `BaseSampler` to
+   the major RL frameworks (verl / slime / TRL / vLLM-driven trainers). Every
+   trajectory drops as a standard `dialog.json`; SFT export is one command.
 
----
+On top of that, the project reserves **three feature interfaces** for extension:
 
-## Table of Contents
+- **A. Knowledge base** (`knowledge/`) — four-layer SQLite pyramid: raw
+  trajectory → tactic effectiveness → strategy patterns → concept graph.
+  Layer 0/1 wire into the main path; the upper layers' schema is in but
+  the deposit path is left for downstream callers.
 
-- [Overview](#overview)
-- [Why AI4Math?](#why-ai4math)
-- [Key Features](#key-features)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Benchmarks](#benchmarks)
-- [Architecture](#architecture)
-- [Project Structure](#project-structure)
-- [Configuration](#configuration)
-- [Testing](#testing)
-- [Docker Deployment](#docker-deployment)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
-- [Citation](#citation)
-- [Acknowledgments](#acknowledgments)
-- [License](#license)
-- [中文版 (README_zh.md)](README_zh.md)
+- **B. World model** (`engine/world_model.py`) — a `tactic-success-prior`
+  predictor sits in front of `tactic_apply`. Default impl is a sklearn
+  LogisticRegression trained from past successful proofs. The interface is
+  one method; replace `MockWorldModel` with anything (transformer, GNN, ...)
+  by passing `world_model=` to `UnifiedProofRunner`.
 
----
+- **C. Multi-agent broadcast** (`engine/broadcast.py` + `BroadcastTool`) —
+  cross-direction discovery sharing for parallel rollouts. v13 wired this
+  to `heterogeneous` profile: each sub-profile gets the BROADCAST tool and
+  shares one bus, so a discovery in any direction reaches all others. The
+  longer-term aim: a global bus across problems → a "community of
+  mathematicians" where one solver's lemma helps another.
 
-## Overview
+**Anything outside these six items has been removed in v13.**
+The repo focuses; if it's there, it's load-bearing.
 
-AI4Math is an **agent operating system** that enables hundreds of heterogeneous AI mathematicians to collaboratively discover formal proofs in Lean 4. Rather than being yet another proof generator, AI4Math provides the foundational infrastructure — a verification OS, a living knowledge system, a world model, and a multi-agent society — that any LLM can plug into.
-
-> **See it in action →** Our [interactive demo](https://ai4math.github.io/ai4math) walks through a full Putnam competition problem being solved, step by step, with every internal component visible.
-
-## Why AI4Math?
-
-Current state-of-the-art systems (DeepSeek-Prover, Goedel-Prover, Kimina) share a fundamental limitation:
-
-| | Current Paradigm | AI4Math |
-|---|---|---|
-| **Feedback** | 1 bit per attempt (pass/fail) | ~100 bits structured diagnostics |
-| **Communication** | Zero cross-direction sharing | Real-time broadcast across all agents |
-| **Learning** | Failed attempts are discarded | Every failure deposits reusable knowledge |
-| **Verification** | Full Lean compilation (2–12s) | 3-tier: syntax ~1μs → REPL ~50ms → full ~3s |
-| **Architecture** | Monolithic LLM | Composable OS with pluggable components |
-
-These differences compound. On hard problems requiring 50+ attempts, AI4Math's knowledge flywheel means attempt #50 benefits from everything learned in attempts #1–49.
-
-## Key Features
-
-🧠 **Multi-Agent Society** — 11 specialized roles (generator, planner, repairer, critic, decomposer...) explore in parallel with real-time knowledge sharing via a broadcast bus.
-
-⚡ **3-Tier Verification** — L0 syntax prefilter (~1μs) catches 60% of bad proofs instantly. L1 REPL (~50ms) provides structured feedback. L2 full Lean compilation (~3s) gives definitive results. 95% of invalid proofs never reach Lean.
-
-📚 **Living Knowledge System** — A 4-layer pyramid (raw traces → tactic effectiveness → strategy patterns → concept graphs) built on SQLite with WAL. Knowledge decays, self-corrects, and evolves across proof sessions.
-
-🔄 **Policy Engine** — Composable, inspectable strategy rules replace hardcoded thresholds. Budget-aware escalation across sample, token, and wall-time dimensions. Automatic recovery from REPL crashes, API errors, and timeouts.
-
-🏗️ **Proof Pipeline** — State-machine-driven proof lifecycle with checkpoint/resume support. Green Contract verification (NONE → SYNTAX_CLEAN → GOALS_CLOSED → SORRY_FREE). Context compression keeps LLM prompts under budget.
-
-🔒 **Integrity Verification** — Deep sorry/axiom/unsafeCoerce detection prevents proofs that "cheat" through axiom injection or sorry redefinition — a real vulnerability in other systems.
-
-🔌 **Extensible Plugin System** — Domain-specific strategies (algebra, number theory, analysis) are declared in YAML with custom premises and few-shot examples. No source code changes needed.
-
----
-
-## Installation
-
-### Prerequisites
-
-- **Python 3.12+**
-- **Lean 4** (v4.24.0) with **Mathlib** — required for real proof verification
-- An **Anthropic API key** — for LLM-powered proof generation
-
-### Step 1: Clone and install Python dependencies
+## Quick start
 
 ```bash
 git clone https://github.com/ai4math/ai4math.git
 cd ai4math
 pip install -r requirements.txt
-```
-
-### Step 2: Set up Lean 4 + Mathlib (for real verification)
-
-If you are a mathematician new to Lean, follow these steps carefully:
-
-<details>
-<summary><b>macOS / Linux — Install Lean 4 from scratch</b></summary>
-<br>
-
-```bash
-# 1. Install elan (the Lean version manager, like rustup for Rust)
-curl https://elan-init.github.io/elan/elan-init.sh -sSf | sh
-source ~/.profile   # or restart your terminal
-
-# 2. Verify installation
-lean --version       # should show: leanprover/lean4:v4.x.x
-lake --version       # Lake is Lean's build system
-
-# 3. Clone our Lean project with Mathlib (first build takes ~20–30 min)
-cd data/miniF2F
-lake build           # downloads and compiles Mathlib — go get coffee ☕
-
-# 4. Verify Mathlib works
-echo 'import Mathlib
-#check Nat.add_comm' | lean --stdin
-# Should print: Nat.add_comm : ∀ (n m : ℕ), n + m = m + n
-```
-
-</details>
-
-<details>
-<summary><b>Windows — Install via WSL2</b></summary>
-<br>
-
-```bash
-# 1. Open PowerShell as admin, install WSL2
-wsl --install -d Ubuntu-24.04
-
-# 2. Inside WSL, follow the macOS/Linux instructions above
-```
-
-</details>
-
-<details>
-<summary><b>Docker — Zero-install option (recommended for evaluation)</b></summary>
-<br>
-
-```bash
-cd docker
-docker compose build    # builds Lean4+Mathlib image (~30 min first time)
-docker compose up -d    # starts REPL daemon
-# See "Docker Deployment" section below for full details
-```
-
-</details>
-
-### Step 3: Configure your API key
-
-```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
-```
 
----
-
-## Quick Start
-
-### Single theorem — interactive walkthrough
-
-```bash
-# Prove a built-in theorem with full pipeline trace:
-python run_single_lane.py --builtin nat_add_comm --provider anthropic
-
-# Prove a custom theorem:
-python run_single_lane.py \
-  --theorem "theorem t (n : Nat) : n + 0 = n" \
-  --provider anthropic
-
-# Verbose mode (shows full LLM prompts and responses):
-python run_single_lane.py --provider anthropic --builtin nat_add_comm --verbose
-```
-
-This walks through all 10 pipeline stages with intermediate output:
-
-```
-Step 1:  Problem loading & analysis
-Step 2:  Lane runtime assembly (EventBus, PolicyEngine, Knowledge, AgentPool)
-Step 3:  Knowledge injection (KnowledgeReader → prompt)
-Step 4:  Direction planning (3–4 heterogeneous exploration directions)
-Step 5:  Proof loop (generate → verify → policy → recover)
-Step 6:  State machine result (event-driven transitions)
-Step 7:  Event stream log
-Step 8:  Green Contract check (NONE → SYNTAX_CLEAN → GOALS_CLOSED → SORRY_FREE)
-Step 9:  Context compression (one-liner summary + prompt injection)
-Step 10: Dashboard overview
-```
-
-### Benchmark evaluation
-
-```bash
-# Quick evaluation — 5 built-in problems (~2 min)
-bash eval.sh --real --benchmark builtin
-
-# Quick sweep — 10 problems per benchmark
-bash eval.sh --real --quick
-
-# Full miniF2F evaluation (488 problems, 32 samples each)
-bash eval.sh --real --benchmark minif2f --samples 32
-
-# Use a specific model
-bash eval.sh --real --benchmark builtin --model claude-opus-4-6
-
-# Enable multi-role (Generator ↔ Repairer alternation)
-bash eval.sh --real --benchmark builtin --multi-role
-```
-
-### Legacy single-problem mode (without Lane runtime)
-
-```bash
-python run_single.py --builtin nat_add_comm --provider anthropic
-python run_single.py --theorem "theorem test (n : Nat) : n + 0 = n" --provider anthropic
-```
-
-### Community-infrastructure backends
-
-AI4Math integrates four open-source Lean 4 infrastructure projects as opt-in backends. Pick one with `--backend` and an aligned profile:
-
-| Backend         | Source                       | What it adds                                            |
-| --------------- | ---------------------------- | ------------------------------------------------------- |
-| `local` (default) | `lean4-repl` subprocess     | Standard Lean 4 REPL via stdio                         |
-| `kimina`        | Kimina Lean Server (Numina) | REST API · multi-process REPL pool · LRU import cache · batch verify |
-| `pantograph`    | Pantograph (Numina/Stanford/CMU) | Metavariable coupling · DSP-native drafting · S-expression proof terms |
-| `lookeng`       | LooKeng (Seed-Prover 1.5)   | Stateless REPL · running-context lemma cache · ~40% I/O reduction on long proofs |
-
-```bash
-# Kimina Lean Server: large pass@k with REST batch verify
-docker run -p 8000:8000 projectnumina/kimina-lean-server:2.0.0
-python run_unified.py --builtin nat_add_comm \
-    --profile kimina_batch --backend kimina
-
-# Pantograph: mvar focus + drafting for DSP-style proving
-python run_unified.py --builtin nat_add_comm \
-    --profile pantograph_dsp --backend pantograph
-
-# LooKeng: lemma-by-lemma proving for long proofs
-python run_unified.py --builtin nat_add_comm \
-    --profile lookeng_lemma --backend lookeng
-
-# NFL hybrid mode + NuminaMath-LEAN dataset
-huggingface-cli download AI-MO/NuminaMath-LEAN \
-    --repo-type dataset --local-dir data/NuminaMath-LEAN
-python run_eval.py --benchmark numinamath_lean \
-    --profile nfl_hybrid --max-samples 8
-```
-
-When the backend isn't reachable (server down, library missing) every component fails soft — the corresponding tools register in fallback mode and return structured "unavailable" errors rather than crashing the agent loop. See `INFRA_MERGE_REPORT.md` for the full design.
-
-> **v6 visibility note**: every run records which backend actually serviced it in `dialog.json` at `meta.backends`. If you set `--backend pantograph` but forgot to install `pypantograph`, the dialog will explicitly show `pantograph.is_fallback: true` so silent degradation can't hide. See *Verifying which backend actually ran* below.
-
----
-
-## Setting up optional integrations
-
-The four backends above (`kimina`, `pantograph`, `lookeng`) and several training-side capabilities (RL trainer, vLLM/SGLang serving, GPU autoformalizer) require external installations that AI4Math does **not** bundle, because each has its own CUDA/Docker/Python-version constraints. AI4Math reports `is_fallback: true` rather than crashing when these are missing — but you'll get the real performance only after setting them up. This section is the dummy-proof walkthrough.
-
-If you want to skip ahead: every section below is **independent**. You can install just the one you need.
-
-### Quick reference — what each integration buys you
-
-| Integration | What it gives you | Install effort | When to bother |
-|---|---|---|---|
-| **Kimina Lean Server** | 50–100× faster batch `lean_verify` for `--profile kimina_batch` and any RL roll-out | ~5 min (Docker) | RL training, large benchmark sweeps |
-| **Pantograph (`pypantograph`)** | Real metavariable coupling, drafting, S-expression proof terms for `--profile pantograph_dsp` | ~10 min | DSP-style proving, training data extraction |
-| **LooKeng backend** | Stateless REPL + lemma cache for `--profile lookeng_lemma` | ~5 min (it's bundled in the lookeng repo) | PutnamBench / FATE-X long proofs |
-| **vLLM / SGLang server** | High-throughput LLM inference (10–50× over single-call API) | ~30 min (CUDA + model weights) | RL roll-out, parallel `--profile heterogeneous` |
-| **RL trainer (TRL / verl / slime)** | Trains the LLM on collected trajectories — Stage 4 of `scripts/rl_pipeline.py` | varies (1 hour to 1 day) | Closing the RL flywheel end-to-end |
-| **Sentence-transformers** | Replaces TF-IDF/BM25 retriever with dense embeddings for `--profile reprover` | ~5 min | If TF-IDF retrieval misses on your domain |
-
-### 1. Kimina Lean Server (Docker)
-
-The fastest way. Kimina is `projectnumina/kimina-lean-server` on Docker Hub.
-
-```bash
-# Pull and run (first pull ~3 GB; subsequent runs are instant)
-docker pull projectnumina/kimina-lean-server:2.0.0
-docker run -d --name kimina-lean \
-    -p 8000:8000 \
-    -e MAX_WORKERS=4 \
-    projectnumina/kimina-lean-server:2.0.0
-
-# Verify it's responding
-curl http://localhost:8000/health
-# Expected: {"status":"ok"}
-
-# Smoke-test through AI4Math
-python run_unified.py --builtin nat_add_comm \
-    --profile kimina_batch \
-    --backend kimina \
-    --backend-url http://localhost:8000
-
-# Read the dialog.json — meta.backends.kimina should show is_fallback=false
-cat results/traces/*/dialog.json | python -m json.tool | grep -A 5 backends
-```
-
-**Configuration options**:
-
-| Env var | Purpose | Default |
-|---|---|---|
-| `MAX_WORKERS` | Parallel REPL workers in the container | 4 |
-| `IMPORT_CACHE_SIZE` | LRU size for compiled-import reuse | 256 |
-| `KIMINA_API_KEY` | Optional bearer token (set on both server and client) | unset |
-
-**Common issues**:
-
-- *"Connection refused"* on the smoke test → the container takes 30–60 s to compile its Mathlib cache on first start. `docker logs kimina-lean -f` to watch progress.
-- *Out of memory* with `MAX_WORKERS=4` → reduce to 2; each worker holds ~3 GB.
-- *Different machine* → set `--backend-url http://<host>:8000` and (if behind auth) `--backend-api-key $TOKEN` or `KIMINA_API_KEY=$TOKEN`.
-
-### 2. Pantograph (pypantograph)
-
-Pantograph requires its Python bindings. Two install paths — pick one:
-
-**Path A: pypantograph (Python bindings, recommended)**
-
-```bash
-# Requires Python 3.10+, Lean 4 already installed (Step 2 of main install).
-pip install pypantograph
-
-# Verify
-python -c "import pantograph; s = pantograph.Server(imports=['Mathlib']); print('ok')"
-# First run compiles Mathlib bindings — takes 5–10 min; cached after.
-
-# Smoke-test through AI4Math
-python run_unified.py --builtin nat_add_comm \
-    --profile pantograph_dsp --backend pantograph
-
-# Confirm it's not in fallback
-cat results/traces/*/dialog.json | python -m json.tool | grep -A 3 pantograph
-# Expected: "mode": "pypantograph", "is_fallback": false
-```
-
-**Path B: Pantograph binary (when pip install fails)**
-
-```bash
-# Clone and build the standalone binary
-git clone https://github.com/lenianiva/PyPantograph.git
-cd PyPantograph
-lake build pantograph
-
-# Add to PATH
-export PATH="$PWD/build/bin:$PATH"
-which pantograph     # must resolve
-
-# AI4Math auto-detects the binary mode if pypantograph isn't installed
-python run_unified.py --builtin nat_add_comm \
-    --profile pantograph_dsp --backend pantograph
-# meta.backends.pantograph.mode will show "binary" instead of "pypantograph"
-```
-
-**Common issues**:
-
-- *`ImportError: pantograph`* after `pip install pypantograph` → check your virtualenv. The package only registers under the active interpreter.
-- *`lake: command not found`* during binary build → Lean 4 not on PATH; re-source `~/.elan/env` or `~/.profile`.
-- *First `pantograph.Server()` call hangs* → it's compiling Mathlib bindings. Wait 5–10 min. Subsequent calls are instant.
-
-### 3. LooKeng backend
-
-LooKeng is shipped with `seed-prover-1.5`. Install its Python client:
-
-```bash
-# Currently distributed via the Seed-Prover 1.5 repo
-git clone https://github.com/Tongyi-DeepResearch/seed-prover.git
-cd seed-prover
-pip install -e ".[lookeng]"
-
-# Smoke-test
-python -c "from lookeng import LooKengSession; s = LooKengSession.start(); print('ok')"
-
-# Through AI4Math (LocalTransport is wrapped, no separate server)
-python run_unified.py --builtin nat_add_comm \
-    --profile lookeng_lemma --backend lookeng
-
-# Verify
-cat results/traces/*/dialog.json | python -m json.tool | grep -A 2 lookeng
-# Expected: "is_fallback": false
-```
-
-**Common issues**:
-
-- *Module not found after `pip install -e`* → the `[lookeng]` extras only install the wrapper; the backing Lean 4 setup needs Mathlib already built (Step 2 of main install).
-- *Lemma cache not hit* → the cache key is `(running_context_hash, lemma_statement)`. Identical lemma statements proved in different contexts won't share the cache. This is by design.
-
-### 4. vLLM / SGLang for high-throughput inference
-
-The Anthropic API is fine for single-problem demos but caps your throughput. For RL roll-outs or parallel `--profile heterogeneous`, run a local LLM server.
-
-**Option A: vLLM**
-
-```bash
-# Requires CUDA 11.8+, ~24 GB VRAM for 7B models, ~80 GB for 70B
-pip install vllm
-
-# Serve a model that's been fine-tuned on Lean (recommended starting points:
-# DeepSeek-Prover-V2-7B, Goedel-Prover-7B, Kimina-Prover-Distill-7B)
-vllm serve deepseek-ai/DeepSeek-Prover-V2-7B \
-    --port 8001 --max-model-len 4096
-
-# Health check
-curl http://localhost:8001/v1/models
-
-# Point AI4Math at it via the OpenAI-compatible interface
-export OPENAI_BASE_URL=http://localhost:8001/v1
-export OPENAI_API_KEY=dummy
-python run_unified.py --builtin nat_add_comm \
-    --profile whole_proof --provider openai
-```
-
-**Option B: SGLang (faster for short-context proving)**
-
-```bash
-pip install "sglang[all]"
-
-python -m sglang.launch_server \
-    --model-path deepseek-ai/DeepSeek-Prover-V2-7B \
-    --port 8002
-
-# Same OpenAI-compatible interface
-export OPENAI_BASE_URL=http://localhost:8002/v1
-export OPENAI_API_KEY=dummy
-python run_unified.py --builtin nat_add_comm --provider openai
-```
-
-**Common issues**:
-
-- *CUDA OOM* → reduce `--max-model-len`, use a smaller model, or pass `--quantization awq` / `--quantization gptq` if quantized weights are available.
-- *Slow first request* → both vLLM and SGLang JIT-compile their CUDA kernels on first request. Warm up with one dummy call before benchmarking.
-- *Different GPU layout* → for multi-GPU, vLLM takes `--tensor-parallel-size N`; SGLang takes `--tp-size N`.
-
-### 5. RL trainer (Stage 4 of the RL flywheel)
-
-`scripts/rl_pipeline.py` runs four stages: **eval → collect trajectories → format SFT JSONL → train**. The first three are fully automated; Stage 4 (training) is delegated because trainer choice matters more than framework opinion. Pick one:
-
-**Option A: TRL (HuggingFace, simplest)**
-
-```bash
-pip install trl peft accelerate bitsandbytes
-
-# Save this as scripts/sft_trl.sh
-cat > scripts/sft_trl.sh <<'EOF'
-#!/bin/bash
-trl sft \
-    --model_name_or_path deepseek-ai/DeepSeek-Prover-V2-7B \
-    --dataset_name "$1" \
-    --dataset_text_field "text" \
-    --max_seq_length 4096 \
-    --output_dir "$2" \
-    --num_train_epochs 1 \
-    --per_device_train_batch_size 1 \
-    --gradient_accumulation_steps 8 \
-    --learning_rate 1e-5 \
-    --logging_steps 10 \
-    --save_steps 200 \
-    --bf16
-EOF
-chmod +x scripts/sft_trl.sh
-
-# Run the full pipeline
-bash scripts/rl_loop.sh \
-    --benchmark minif2f \
-    --profile whole_proof_repair \
-    --train-cmd 'bash scripts/sft_trl.sh {sft_jsonl} {model_out}'
-```
-
-**Option B: verl (Volcano-Engine RL, recommended for PPO/GRPO)**
-
-```bash
-git clone https://github.com/volcengine/verl.git
-cd verl && pip install -e .
-
-# verl uses YAML configs — write one for your run
-cat > configs/ai4math_grpo.yaml <<'EOF'
-data:
-  train_files: ["{sft_jsonl}"]
-  max_prompt_length: 2048
-  max_response_length: 2048
-algorithm:
-  algo: grpo
-trainer:
-  total_epochs: 1
-  default_local_dir: "{model_out}"
-EOF
-
-# Then point rl_pipeline at it
-bash scripts/rl_loop.sh \
-    --benchmark minif2f \
-    --train-cmd 'python -m verl.trainer.main_ppo --config configs/ai4math_grpo.yaml'
-```
-
-**Option C: slime (Tongyi-DeepResearch, lightweight)**
-
-```bash
-pip install slime-trainer
-slime sft --data {sft_jsonl} --output {model_out} --epochs 1
-```
-
-**Common issues**:
-
-- *Stage 4 prints `no --train-cmd provided; SFT JSONL ready at ...`* → that's the correct skip behaviour when you didn't pass `--train-cmd`. The JSONL is on disk; you can train offline at your leisure.
-- *Trainer crashes with OOM* → reduce `--per_device_train_batch_size` to 1, increase `--gradient_accumulation_steps`. For 7B model, 24 GB VRAM is the realistic minimum.
-- *Trained model's pass@k worse than the base* → check the JSONL: it should contain only solved trajectories. `jq '.result.success' results/traces/*/dialog.json | sort | uniq -c` to spot-check the success ratio.
-
-### 6. Sentence-transformers (better retrieval)
-
-The default retriever uses TF-IDF + BM25 over Mathlib lemma names and statements. For domain-specific runs (e.g. number theory benchmarks), dense embeddings often retrieve better:
-
-```bash
-pip install "sentence-transformers>=2.0" torch
-
-# AI4Math's PremiseSelector auto-detects sentence-transformers if installed:
-python -c "
-from prover.premise.premise_selector import PremiseSelector
-sel = PremiseSelector(mode='dense')
-print(sel.backend_kind)  # should print 'sentence_transformers'
-"
-
-python run_unified.py --builtin nat_add_comm \
-    --profile reprover \
-    --retriever-mode dense
-```
-
-**Common issues**:
-
-- *Slow first call* → the embedding model (default: `all-MiniLM-L6-v2`) downloads ~80 MB on first import. Cached after.
-- *CPU-only too slow* → set `--retriever-mode hybrid` to use dense + TF-IDF together; dense candidates re-ranked by TF-IDF gives ~80% of dense quality at TF-IDF speed.
-
-### Verifying which backend actually ran
-
-After **any** run, check `dialog.json`:
-
-```bash
-cat results/traces/<problem_id>/dialog.json | \
-    python -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d['meta'].get('backends', {}), indent=2))"
-```
-
-Expected output for a healthy Pantograph run:
-
-```json
-{
-  "kimina":     {"present": false},
-  "pantograph": {"present": true, "is_fallback": false, "mode": "pypantograph"},
-  "lookeng":    {"present": false},
-  "lean_pool":  {"present": true, "kind": "AsyncLeanPool", "size": 4}
-}
-```
-
-If you see `"is_fallback": true` for any backend you intended to use, the integration didn't take — re-check the corresponding section above.
-
-### What we deliberately do **not** do
-
-These are out of scope for AI4Math itself; we don't ship integrations because they're either separate domains or actively-changing landscapes:
-
-- **Coq / Isabelle / HOL Light backends** — AI4Math is Lean-4-specific by design. Adding another ITP means a new project, not a new backend.
-- **End-to-end RL trainer with GPU orchestration** — TRL/verl/slime/axolotl all want different GPU layouts and dataset formats. We provide the data, you pick the trainer.
-- **GFlowNet sampling, expert-iteration policy gradient, search-tree distillation** — these are training-side techniques; the framework provides the trajectory data, the technique is yours to pick.
-- **Production model serving (TGI, Triton)** — vLLM/SGLang above are dev/research-grade. Production deployments add their own ops constraints we can't predict for you.
-
-The `dialog.json` produced by AI4Math is the universal currency: any of the above techniques can consume it.
-
----
-
-## Benchmarks
-
-AI4Math ships with **6,826 problems** across 7 benchmarks covering the full difficulty spectrum:
-
-| Benchmark | Problems | Difficulty | Description |
-|-----------|----------|------------|-------------|
-| **builtin** | 5 | Easy–Medium | Smoke tests (recommended for first-time users) |
-| **miniF2F** | 488 | AMC → IMO | Most widely used formal math benchmark |
-| **PutnamBench** | 672 | Collegiate | 1962–2024 Putnam competition problems |
-| **ProofNet** | 360 | Undergrad | Analysis, algebra, topology core curriculum |
-| **FATE-M/H/X** | 350 | Undergrad → PhD | Abstract algebra, full difficulty coverage |
-| **FormalMATH** | 5,560 | Mixed | Multi-domain, multi-difficulty |
-
-### Current SOTA comparison (miniF2F-test, 244 problems)
-
-| Method | Pass@32 | Type |
-|--------|---------|------|
-| Goedel-Prover-V2-32B | **90.4%** | Full-proof generation |
-| Kimina-Prover-72B | 84.0% | Full-proof generation |
-| DeepSeek-Prover-V2-671B | 82.4% | Full-proof generation |
-| **AI4Math (Claude Opus 4.6)** | *Evaluation in progress* | Agent platform |
-
-> AI4Math is an **orthogonal contribution**: it is the platform these generators can plug into, not a competing generator. Any model can serve as AI4Math's proof engine.
-
----
-
-## Architecture
-
-> **Interactive version →** See the [full architecture visualization](https://ai4math.github.io/ai4math#pillars) with animated data flow and the [data flow diagram](https://ai4math.github.io/ai4math#flowDiagram) with hover-to-explore components.
-
-AI4Math is built on four layers that form a self-reinforcing flywheel:
-
-| Layer | Module | Lines | Purpose |
-|-------|--------|-------|---------|
-| **④ Agent Society** | `agent/`, `prover/pipeline/` | ~11K | 11 specialized roles, parallel exploration, real-time broadcast |
-| **③ World Model** | `engine/world_model.py` | ~1K | Internalized Lean 4 state dynamics, predict tactic effects without calling the prover |
-| **② Living Knowledge** | `knowledge/` | ~2.2K | 4-layer pyramid (traces → tactics → strategies → concepts), decay & evolution |
-| **① Verification OS** | `engine/` | ~15K | REPL pool, 3-tier verification, elastic scaling, incremental compilation |
-
-**Knowledge flows as a flywheel:**
-
-```
-④ explores → ① verifies → ② deposits knowledge → ③ trains world model → ④ uses knowledge → …
-```
-
-A static architecture diagram is also available at [`docs/architecture.svg`](docs/architecture.svg).
-
----
-
-## v3 Unified Pipeline (Profile-driven)
-
-> **TL;DR — Every mainstream theorem-proving method except MCTS is reproducible through `prover.unified` by switching the `--profile` flag. No code changes.**
-
-### Design essence
-
-Modern LLM-based theorem proving methods differ along just three dimensions:
-1. **`max_turns`** — how many LLM calls per session
-2. **`tools`** — what the LLM can call
-3. **`system_prompt` + initial user message** — what work mode the LLM enters
-
-These three live in a single `Profile` dataclass executed by `UnifiedProofRunner`. Same code, same `dialog.json` schema, six different algorithms.
-
-### Active presets
-
-V6 ships **14 active presets**. The six core families below are the most commonly invoked. The community-backend derivatives (`kimina_batch`, `pantograph_dsp`, `lookeng_lemma`, `nfl_hybrid`), tree-search profiles (`mcts`, `best_first`, `beam`), and V6's `conjecture_driven` are all in `prover/unified/profiles.py`. Every preset has a YAML template in `config/profiles/`.
-
-| Profile | Method | `max_turns` | `tools` | Status |
-|---|---|---|---|---|
-| `whole_proof` | DeepSeek-Prover · Kimina · Goedel | 1 | `[]` | ✅ complete |
-| `whole_proof_repair` | Compile-and-fix loop (project default) | 6 | `[lean_verify]` | ✅ complete |
-| `dsp` | Draft-Sketch-Prove | 10 | `[decompose, premise_search, lean_verify]` | ✅ complete |
-| `reprover` | ReProver (RAG + step-level) | 30 | `[premise_search, tactic_apply, goal_inspect]` | ✅ complete |
-| `leandojo` | LeanDojo (pure step-level) | 50 | `[tactic_apply, goal_inspect, lean_auto]` | ✅ complete |
-| `heterogeneous` | AI4Math 4-way parallel + broadcast | 4 | sub-profiles + `broadcast` | ✅ complete |
-| `conjecture_driven` (v6) | Active auxiliary-lemma proposal + stepping-stone proof | 15 | `[conjecture_propose, lean_verify, premise_search, lemma_bank, decompose]` | ✅ complete |
-
-### How each algorithm is parameterised
-
-#### `whole_proof` ↔ DeepSeek-Prover / Kimina / Goedel
-
-```python
-Profile(
-    tools=[],                            # no tools = forced single-shot
-    max_turns=1,
-    framing="whole_proof",               # "Output one ```lean block. Do NOT call tools."
-    observation=ObservationPolicy(
-        inject_few_shot=True,            # 5 representative Mathlib examples
-        inject_premises_in_prompt=True,  # top-N retrieved lemmas pre-injected
-        auto_inject_lean_compile=True,   # runtime force-verifies emitted code
-    ),
-)
-```
-**Coverage**: ✅ single-shot ✅ pass@k via `--max-samples K` (i.i.d.) ✅ few-shot from `common/prompt_builder.py` ✅ premise injection via `PremiseSelector` ✅ Lean4 final verify. ⚠️ No explicit chain-of-thought scaffolding (relies on underlying model's reasoning ability).
-
-#### `whole_proof_repair` ↔ Compile-and-fix loop
-
-```python
-Profile(
-    tools=[ToolKit.LEAN_VERIFY],
-    max_turns=6,
-    framing="whole_proof_repair",        # "Submit proof, see errors, fix, repeat."
-    observation=ObservationPolicy(
-        compress_errors_budget=1200,     # error compression via lane.summary_compressor
-        auto_inject_lean_compile=True,
-    ),
-)
-```
-**Coverage**: ✅ multi-round closure ✅ structured error feedback ✅ real Lean4 verification ✅ full dialog history.
-
-#### `dsp` ↔ Draft-Sketch-Prove
-
-```python
-Profile(
-    tools=[ToolKit.DECOMPOSE, ToolKit.PREMISE_SEARCH, ToolKit.LEAN_VERIFY],
-    max_turns=10,
-    framing="dsp",                        # explicit phases A-E in system prompt
-)
-```
-**Coverage**: ✅ phase A (sketch via comment block) ✅ phase B (`DecomposeSubgoalTool` calls `prover/decompose/goal_decomposer.py`) ✅ phase C (premise search) ✅ phases D-E (formalize + repair). ⚠️ Original DSP used informal-to-formal training data; this framework is zero-shot DSP via system prompt.
-
-#### `reprover` ↔ ReProver
-
-```python
-Profile(
-    tools=[ToolKit.PREMISE_SEARCH, ToolKit.TACTIC_APPLY, ToolKit.GOAL_INSPECT],
-    max_turns=30,
-    framing="step_level_with_retrieval",
-    observation=ObservationPolicy(
-        auto_inject_goal_state=True,      # tactic_apply natively returns new goals
-        inject_premises_in_prompt=False,   # ReProver retrieves on-demand
-        inject_few_shot=False,
-    ),
-)
-```
-**Coverage**: ✅ true step-level via `TacticApplyTool` (real REPL apply, returns `remaining_goals` + `is_proof_complete`) ✅ on-demand retrieval ✅ 30-turn horizon. ⚠️ Retriever is TF-IDF/BM25 hybrid; original ReProver used ColBERT fine-tuned on LeanDojo data.
-
-#### `leandojo` ↔ LeanDojo
-
-```python
-Profile(
-    tools=[ToolKit.TACTIC_APPLY, ToolKit.GOAL_INSPECT, ToolKit.LEAN_AUTO],
-    max_turns=50,
-    framing="step_level_pure",
-)
-```
-**Coverage**: ✅ pure step-level (shares `TacticApplyTool` with reprover) ✅ Mathlib hammer (`exact?`/`apply?`/`aesop`/`polyrith`) ✅ 50-turn horizon. ⚠️ Original LeanDojo also had a best-first search wrapper — that part lives in `EXPERIMENTAL_PRESETS["best_first"]` (set aside per scope).
-
-#### `heterogeneous` ↔ AI4Math project flagship
-
-```python
-Profile(
-    search=SearchConfig(
-        kind="parallel",
-        parallel_profiles=["whole_proof", "reprover", "leandojo", "whole_proof_repair"],
-    ),
-    tools=[ToolKit.LEAN_VERIFY, ToolKit.BROADCAST],
-)
-```
-**Coverage**: ✅ true parallelism via `asyncio.gather` ✅ shared `BroadcastBus` for cross-direction discoveries ✅ heterogeneous (4 different framings/tools/turns) ✅ `ResultFuser` cross-fusion ✅ backward-compat with v2 `assembly.py` constructor.
-
-### How the code becomes a unified base
-
-```
-┌────────────────────────────────────────────────────────────────┐
-│                UnifiedProofRunner (single entry)                 │
-│                                                                  │
-│   prove(problem, profile)                                        │
-│      ── build initial prompt (theorem + few-shot + premises)     │
-│      ── AgentLoop                                                 │
-│           ├── system_prompt = framing[X]                          │
-│           ├── tools = ToolKit → Tool instances                   │
-│           ├── max_turns = N                                       │
-│           └── multi-turn: LLM → tool call → tool result → ...    │
-│      ── auto_verify (safety net)                                  │
-│      ── dialog.json (uniform output)                              │
-└────────────────────────────────────────────────────────────────┘
-```
-
-**One data path for all methods**:
-1. **Entry**: `UnifiedProofRunner.run(problem, profile)`
-2. **Core loop**: `agent.runtime.AgentLoop`
-3. **Tools**: `agent.tools.ToolRegistry`
-4. **Persistence**: `dialog.json` schema v2.0
-5. **Bridge**: `prover.unified.adapters` for legacy `ProofAttempt`/`AgentResult` compat
-
-**Adding a new method = adding one Profile** in `prover/unified/profiles.py` (or registering from YAML). No changes to runner / loop / tools / pipeline.
-
-### Honest implementation-vs-paper diff
-
-| Profile | Implemented | Differs from paper |
-|---|---|---|
-| `whole_proof` | full single-shot + few-shot + premise + final verify | no forced CoT scaffold |
-| `whole_proof_repair` | full closure | — |
-| `dsp` | all 5 phases via tools | zero-shot DSP (no I2F training data) |
-| `reprover` | step-level + on-demand retrieval | TF-IDF/BM25 instead of fine-tuned ColBERT |
-| `leandojo` | pure step-level + hammer | search wrapper in `EXPERIMENTAL_PRESETS` |
-| `heterogeneous` | full parallel + broadcast + fusion | — |
-| `mcts` / `beam` / `best_first` | code complete in `EXPERIMENTAL_PRESETS` | not yet merged into linear-dialog mainline (v4) |
-
-### CLI
-
-```bash
-# Switch method by changing --profile only
-python run_unified.py --builtin nat_add_comm --profile whole_proof
+# Prove one theorem; switch method by changing one flag
 python run_unified.py --builtin nat_add_comm --profile whole_proof_repair
-python run_unified.py --builtin nat_add_comm --profile dsp
 python run_unified.py --builtin nat_add_comm --profile reprover
-python run_unified.py --builtin nat_add_comm --profile leandojo
 python run_unified.py --builtin nat_add_comm --profile heterogeneous
-
-# Benchmark eval supports --profile too
-python run_eval.py --benchmark minif2f --provider anthropic --profile reprover
-
-# YAML-defined profiles
-python run_unified.py --profile-yaml my_method.yaml --profile my_method --builtin nat_add_comm
-
-# Opt-in to experimental search presets
-python -c "from prover.unified import enable_experimental_search_presets; enable_experimental_search_presets()"
 python run_unified.py --builtin nat_add_comm --profile mcts
+
+# Batch evaluation
+bash eval.sh --benchmark builtin                       # mock, no Lean
+bash eval.sh --real --benchmark minif2f --samples 8    # full
 ```
 
-### Test coverage
+Every run produces `results/traces/<problem_id>/dialog.json` — the single
+canonical output. Open one file, see everything (system prompt, tools, every
+turn, final result, search tree if applicable).
 
-```bash
-$ python -m pytest tests/ -q
-1429 passed, 2 skipped in 9s
+## Community Lean backends
+
+| Backend | Profile | Setup |
+|---|---|---|
+| Kimina Lean Server | `kimina_batch` | `docker run projectnumina/kimina-lean-server:2.0.0` |
+| Pantograph | `pantograph_dsp` | `pip install pypantograph` |
+| LooKeng | `lookeng_lemma` | clone seed-prover, `pip install -e ".[lookeng]"` |
+
+`dialog.json` records `meta.backends.<name>.is_fallback` so you can verify the
+backend actually engaged (vs silently degrading to local).
+
+## Adding a new method
+
+```python
+# 1. prover/unified/profiles.py
+PRESETS["my_method"] = Profile(
+    name="my_method",
+    tools=[ToolKit.LEAN_VERIFY, ToolKit.PREMISE_SEARCH],
+    max_turns=8,
+    framing="my_framing",
+    temperature=0.5,
+)
+
+# 2. prover/unified/system_prompts.py
+FRAMING_PROMPTS["my_framing"] = "You are a Lean 4 prover. Output..."
+
+# 3. python run_unified.py --profile my_method
 ```
 
-See [`REFACTOR_REPORT.md`](REFACTOR_REPORT.md) for the full migration analysis, and [`INFRA_MERGE_V6_REPORT.md`](INFRA_MERGE_V6_REPORT.md) for the most recent infrastructure pass.
+No changes to `runner.py`, `agent_loop.py`, or `tools/`.
 
----
-
-## Project Structure
+## Layout
 
 ```
-ai4math/                        264 source files · 56,000+ lines
-├── engine/                     ① Verification OS
-│   ├── lane/                      Lane runtime: state machine, policy, recovery, compression
-│   ├── async_lean_pool.py         Async REPL connection pool
-│   ├── async_verification_scheduler.py
-│   └── broadcast.py               Cross-agent real-time communication
-├── knowledge/                  ② Living Knowledge System
-│   ├── store.py                   SQLite 4-layer pyramid
-│   ├── reader.py / writer.py      Read/write pipeline
-│   └── evolver.py                 Decay, GC, revive
-├── prover/                     Proof orchestration
-│   ├── pipeline/                  State-machine-driven proof pipeline
-│   ├── verifier/                  Lean checker, sorry detector, integrity
-│   ├── repair/                    Error diagnosis + auto-repair
-│   ├── premise/                   BM25 + embedding hybrid retrieval
-│   ├── decompose/                 Goal decomposition
-│   └── codegen/                   Tactic generation, scaffold, import resolver
-├── agent/                      ④ Agent Layer
-│   ├── brain/                     LLM providers (Claude, mock)
-│   ├── runtime/                   Sub-agent pool, result fusion, mailbox
-│   ├── strategy/                  Direction planner, meta-controller, reflection
-│   └── tools/                     CAS bridge, premise search, lean automation
-├── common/                     Shared types
-├── benchmarks/                 7 benchmark loaders + metrics
-├── data/                       6,826 problems (miniF2F, Putnam, ProofNet, FATE, FormalMATH)
-├── tests/                      797 passing tests
-├── plugins/                    Domain strategy plugins (algebra, number theory, analysis)
-├── docker/                     Lean4+Mathlib Docker setup
-├── config/default.yaml         Full configuration schema
-├── run_single_lane.py          Single-problem interactive debugger (recommended)
-├── run_eval.py                 Batch evaluation entry point
-└── eval.sh                     One-command evaluation script
+engine/      Lean 4 REPL pool, three-level verification, error intelligence
+             + reserved B (world_model.py) + reserved C (broadcast.py)
+agent/       AgentLoop, tools, brain (LLM), persistence (dialog.json)
+prover/      Profile-driven runner; conjecture/decompose/premise/verifier
+sampler/     RL interfaces (ProofEnv, verl/slime/TRL adapters, tree rollouts)
+knowledge/   reserved A — four-layer SQLite pyramid
+benchmarks/  miniF2F + PutnamBench + ProofNet + FATE + FormalMATH loaders
+config/      profile YAML templates (one per active method)
+data/        benchmark problems
+docs/        ARCHITECTURE.md + CHANGELOG.md + dialog.json schema
+tests/       760 mock tests; live integration tests run when ANTHROPIC_API_KEY set
 ```
 
-### Key entry points
+Start reading at [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-| File | Purpose |
-|------|---------|
-| `run_single_lane.py` | **Recommended** — single problem, full pipeline trace |
-| `eval.sh` | One-command benchmark evaluation |
-| `engine/lane/integration.py` | `LaneProofRunner` — main async proof loop |
-| `prover/pipeline/proof_pipeline.py` | `ProofPipeline` — sync state-machine proof pipeline |
-| `prover/assembly.py` | Full system assembler |
+## What this project does *not* do
 
----
+Honesty over marketing:
 
-## Configuration
+- **No open-ended math discovery.** All 1631 theorems come from the 7 built-in
+  benchmarks. The `conjecture_driven` profile lets the LLM invent *auxiliary
+  lemmas* on the path to a *given* theorem; it does not invent the theorem
+  itself.
+- **No published SOTA numbers.** AI4Math's pass@k on these benchmarks is
+  "evaluation in progress" — we are infrastructure, not a leaderboard
+  contender.
+- **The RL flywheel is 3/4 closed.** Stages 1–3 (eval → collect → world-model)
+  run end-to-end. Stage 4 hands a ready-to-train JSONL to your trainer of
+  choice (verl / slime / TRL).
+- **The "world model" is sklearn LogisticRegression.** Trainable, works as a
+  tactic-success-prior — not the full state-dynamics network the architecture
+  diagram suggests. Replace it with one constructor arg.
+- **The cross-problem community broadcast is not yet built.** v13 wired
+  the *intra-run* heterogeneous broadcast (4 sub-profiles share a bus). The
+  global persistent bus + auth layer (the "community of mathematicians" goal)
+  is reserved interface C's next step.
 
-All settings are in `config/default.yaml`. Key options:
+## v14 — 备胎复活: 4 项关键模块回归并接通主路径
 
-```yaml
-agent:
-  brain:
-    provider: "anthropic"              # LLM provider
-    model: "claude-sonnet-4-20250514"  # Model name
-    extended_thinking: true            # Enable Claude extended thinking
-  strategy:
-    default: "adaptive"                # light → medium → heavy auto-escalation
+v13 砍掉死代码后,我们重新审视了初版仓库里所有"未接通备胎",筛选出 4 项
+**对应真实问题**且**契合三件核心 + 三个预留接口**的模块,回归到 v14 主路径。
+每一项都做到「调用方真在用」,不再是基础设施摆设:
 
-prover:
-  pipeline:
-    samples_per_round: 8              # Parallel proof candidates per round
-    max_rounds: 4                     # Max rounds before giving up
-    max_samples: 128                  # Total sample budget
-  verifier:
-    mode: "docker"                    # "docker" or "local"
-    timeout_seconds: 300
-```
+- **项① · `engine/summary_compressor.py`**: Lean 错误 + AgentFeedback + 跨方向广播
+  消息的三个 LLM-readable 压缩器。压缩比 ~9× (实测 4520 → 396 chars)。接通到
+  `LoopConfig.compress_tool_results=True` (默认开) 和 `BroadcastTool` 收发。
+- **项② · `engine/policy/`**: PolicyEngine + RecoveryRegistry +
+  ProofTaskStateMachine 三件套 + 5 条内置规则。把 agent_loop 里硬编码的"何时
+  升级 / 何时切角色 / 何时放弃"挪到声明式 PolicyRule。接通到
+  `AgentLoop(policy_engine=)` + 每轮失败后自动评估。
+- **项③ · `prover/lemma_bank/`**: 跨问题/跨会话的 SQLite + BM25 引理库。直接
+  对应**预留接口 A 知识库**的 lemma 维度。接通到 `LemmaBankTool` BM25 fallback
+  路径 + `ConjectureProposeTool` 后置写入。
+- **项④ · `prover/plugins/` + `plugins/strategies/{algebra,analysis,number-theory}/`**:
+  YAML-driven 领域插件系统。`framing` 是 profile-level (整套推理风格),
+  `plugin` 是 problem-level (按定理领域注入额外引理 + few-shot + 战略提示)。
+  接通到 `_build_initial_message` 在 problem 入口拿得分最高的插件,把 few-shot
+  / extra_premises / strategic_hint 注入首条 user message。
 
-Override via environment variables:
+**未做** (按数据驱动决策原则,等 Sprint 1 真实 pass@k 出来再决定):
+- ⑤ 长上下文压缩(基于 Anthropic prompt caching 重写)
+- ⑥ DirectionPlanner(只在 heterogeneous 真低于 best-of-4 时回归)
+- ⑦ 规则化修复(只在某类错误占失败 >40% 时回归)
 
-```bash
-MODEL=claude-opus-4-6 MAX_SAMPLES=64 bash eval.sh --real --benchmark builtin
-```
+完整的迭代计划见 [`docs/IMPROVEMENT_PLAN.md`](docs/IMPROVEMENT_PLAN.md) (5 名
+工程师 × 4 Sprint 的详细分工)。
 
----
+测试: `760 → 786 passed (+26 v14 smoke, 零回归)`。
 
-## Testing
+## v13 — focus
 
-```bash
-# Run all tests
-PYTHONPATH=. python -m pytest tests/ -q
+Removed ~6,500 lines of dead Python + ~6,300 lines of redundant HTML/SVG/docs.
+Fixed one more latent bug of the same async-call-from-sync pattern that v10/v11/v12
+already squashed 8 of (`GoalDecomposer.decompose` was still sync). Wired the
+`heterogeneous` broadcast bus that had been load-bearing-in-name-only since v6.
+Slimmed `common/roles.py` from 11 roles to the 2 that have callers.
 
-# Run specific test suites
-PYTHONPATH=. python -m pytest tests/test_lane.py -v               # Lane runtime
-PYTHONPATH=. python -m pytest tests/test_all_fixes_v2.py -v       # All recent fixes
-PYTHONPATH=. python -m pytest tests/test_prover/ -v               # Prover layer
+The bar after v13 is: every line in this repo is on the path to one of the
+**three core** items or one of the **three reserved interfaces**. Anything
+that isn't, leaves.
 
-# Smoke test (verifies all imports and basic wiring)
-python scripts/smoke_test.py
-```
-
----
-
-## Docker Deployment
-
-For production evaluation with real Lean 4 verification:
-
-```bash
-# 1. Build Lean4+Mathlib image (first time: ~30 min)
-cd docker && docker compose build
-
-# 2. Start Lean REPL daemon
-docker compose up -d lean
-
-# 3. Run evaluation with real verification
-docker compose run --rm agent \
-  python run_eval.py \
-    --benchmark builtin \
-    --provider anthropic \
-    --lean-mode real
-
-# 4. One-command full pipeline
-docker compose run --rm agent bash eval.sh --real --lean
-```
-
----
-
-## Roadmap
-
-- [ ] Full miniF2F/PutnamBench pass@k benchmarks with real Lean compilation
-- [ ] Dense embedding retrieval (replace n-gram fallback with sentence-transformers)
-- [ ] World model training using collected proof trajectories
-- [ ] Multi-backend support for Coq and Isabelle via `Transport(ABC)`
-- [ ] Distributed agent pool across multiple machines
-- [ ] Web UI for interactive proof exploration
-
----
-
-## Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. **Fork** the repository and create a feature branch
-2. **Write tests** for new functionality
-3. **Run** `PYTHONPATH=. python -m pytest tests/ -q` to verify no regressions
-4. **Submit** a pull request with a clear description
-
-Areas where help is especially welcome: Lean 4 tactic integration, new benchmark loaders, dense embedding retrieval, and multi-backend support.
-
----
+See [`docs/CHANGELOG.md`](docs/CHANGELOG.md) for the full diff and migration
+notes.
 
 ## Citation
 
 ```bibtex
 @software{ai4math2026,
-  title   = {AI4Math: An Agent Operating System for Formal Theorem Proving},
-  year    = {2026},
-  url     = {https://github.com/ai4math/ai4math}
+  title = {AI4Math: An Agent Operating System for Formal Theorem Proving},
+  year  = {2026},
+  url   = {https://github.com/ai4math/ai4math}
 }
 ```
 
----
-
-## Acknowledgments
-
-AI4Math builds upon and is inspired by:
-
-- [Lean 4](https://lean-lang.org) and [Mathlib](https://leanprover-community.github.io/) — the formal verification foundation
-- [miniF2F](https://github.com/openai/miniF2F), [PutnamBench](https://github.com/trishullab/PutnamBench), [ProofNet](https://github.com/zhangir-azerbayev/ProofNet), [FATE](https://github.com/fate-ubw), [FormalMATH](https://github.com/FormalMATH), [NuminaMath-LEAN](https://huggingface.co/datasets/AI-MO/NuminaMath-LEAN) — benchmark datasets
-- [DeepSeek-Prover](https://github.com/deepseek-ai/DeepSeek-Prover-V2), [Goedel-Prover](https://github.com/Goedel-LM/Goedel-Prover), [Kimina-Prover](https://github.com/MoonshotAI/Kimina) — pioneering proof generation work
-- [Lean REPL](https://github.com/leanprover-community/repl) (leanprover-community), [Kimina Lean Server](https://github.com/project-numina/kimina-lean-server) (Numina/Kimi), [Pantograph / pypantograph](https://github.com/lenianiva/PyPantograph) (Aniva et al., Numina/Stanford/CMU), and the LooKeng interface from Seed-Prover 1.5 (Tongyi DeepResearch) — Lean 4 verification infrastructure that AI4Math integrates as pluggable backends. See `INFRA_MERGE_REPORT.md`.
-- [NFL-HR](https://aclanthology.org/2025.emnlp-main) (Yao et al., EMNLP 2025) — natural-formal hybrid reasoning paradigm
-
----
-
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
-
----
-
-<div align="center"><sub>📖 <a href="README_zh.md">中文版</a> · <a href="https://ai4math.github.io/ai4math">Interactive Demo</a></sub></div>
+[MIT](LICENSE)

@@ -7,13 +7,13 @@ definition.
 
 The generated files are valid, round-trippable inputs to
 ``load_profile_from_yaml`` — the test
-``tests/test_v5_yaml_profile_templates.py`` pins this round-trip.
+``tests/test_yaml_profile_templates.py`` pins this round-trip.
 """
 from __future__ import annotations
 
 import os
 import sys
-from dataclasses import asdict, fields
+from dataclasses import asdict
 
 # Make the project importable when run from the repo root.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -21,8 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import yaml
 
 from prover.unified.profiles import (
-    PRESETS, Profile, ObservationPolicy, SearchConfig, StopCondition,
-    ToolKit,
+    PRESETS, Profile, ToolKit,
 )
 
 

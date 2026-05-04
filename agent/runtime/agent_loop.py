@@ -48,8 +48,8 @@ from dataclasses import dataclass, field
 from typing import Optional, Callable
 
 from agent.brain.async_llm_provider import AsyncLLMProvider
-from agent.brain.llm_provider import LLMResponse
-from agent.tools.base import ToolContext, ToolResult
+from agent.brain.async_llm_provider import LLMResponse
+from agent.tools.base import ToolContext
 from agent.tools.registry import ToolRegistry
 from common.response_parser import extract_lean_code
 from prover.verifier.sorry_detector import detect_sorry
@@ -70,6 +70,12 @@ class LoopConfig:
     stop_on_text_only: bool = True     # Stop when LLM returns no tool calls
     # Budget
     max_total_tokens: int = 200_000
+    # v14: Lean 错误压缩 (engine.summary_compressor)
+    # 多轮 repair / 长 reprover/leandojo profile 下, tool_result 累积塞爆
+    # context。打开后, 每轮 verify-类 tool 失败的 content 用 compress_feedback
+    # 压到 ``compress_budget`` 字符内再 inject。
+    compress_tool_results: bool = True
+    compress_budget: int = 1200
 
 
 @dataclass
@@ -166,11 +172,18 @@ class AgentLoop:
         tools: ToolRegistry,
         config: LoopConfig = None,
         on_turn: Optional[Callable] = None,
+        policy_engine=None,
     ):
+        """
+        v14: ``policy_engine`` 可选 ``engine.policy.PolicyEngine`` 实例。
+        如果传入, 每轮 verify 失败后引擎评估是否应该提前升级 / 切换 / 终止,
+        而不是死等 ``max_turns``。不传则保持 v13 行为 (硬 max_turns 终止)。
+        """
         self.llm = llm
         self.tools = tools
         self.config = config or LoopConfig()
         self.on_turn = on_turn  # callback(turn_number, message)
+        self.policy_engine = policy_engine  # v14: optional PolicyEngine
 
     async def run(
         self,
@@ -298,10 +311,28 @@ class AgentLoop:
             # Append tool results using proper Claude API format
             tool_result_blocks = []
             for tc, tr in zip(tool_calls, tool_results):
+                content = tr["content"]
+                # v14: 失败的 verify-类 tool 输出 (Lean 错误堆栈) 在多轮场景下
+                # 容易塞爆 context。compress_feedback 走启发式去重 + 类别保留
+                # + 硬上限。详见 engine/summary_compressor.py 的 docstring。
+                if (config.compress_tool_results
+                        and tr.get("is_error", False)
+                        and isinstance(content, str)
+                        and len(content) > config.compress_budget):
+                    try:
+                        from engine.summary_compressor import compress_feedback
+                        # compress_feedback returns plain str (not a result obj)
+                        content = compress_feedback(content,
+                                                     budget=config.compress_budget)
+                    except Exception:
+                        # Compression must never break the loop — fall back to
+                        # raw content. Failures during compression are rare
+                        # but should be visible in metrics.
+                        pass
                 tool_result_blocks.append({
                     "type": "tool_result",
                     "tool_use_id": tc.get("id", f"tool_{tc['name']}"),
-                    "content": tr["content"],
+                    "content": content,
                     "is_error": tr.get("is_error", False),
                 })
             messages.append({
@@ -313,10 +344,79 @@ class AgentLoop:
                 role="tool_result",
                 tool_results=[tr["content"] for tr in tool_results]))
 
+            # v14: PolicyEngine 评估 — declarative early termination/escalation
+            # 而不是死等 max_turns。
+            if self.policy_engine is not None:
+                try:
+                    decision = self._evaluate_policy(
+                        tool_calls, tool_results, turn=len(history))
+                    if decision is not None and decision.action.name in (
+                            "ABORT", "ESCALATE_STRATEGY"):
+                        return self._make_result(
+                            last_content, last_proof, history, len(history),
+                            total_tokens, start_time, tools_called,
+                            f"policy_{decision.action.name.lower()}")
+                except Exception:
+                    # Policy must never break the loop.
+                    pass
+
         # Max turns reached
         return self._make_result(
             last_content, last_proof, history, config.max_turns,
             total_tokens, start_time, tools_called, "max_turns")
+
+    def _evaluate_policy(self, tool_calls, tool_results, turn: int):
+        """v14: 把 (tool_calls, tool_results) 喂给 PolicyEngine, 拿决策。
+
+        返回 ``PolicyDecision`` 或 None (无可用规则触发)。
+        """
+        try:
+            from engine.policy import (
+                ProofTaskStateMachine, TaskEvent, TaskFailure,
+                ProofFailureClass, TaskStatus,
+            )
+        except ImportError:
+            return None
+
+        # Build/refresh a state machine on first call
+        if not hasattr(self, "_task_sm"):
+            from engine.policy import TaskContext
+            self._task_sm = ProofTaskStateMachine(
+                task_id="agent_loop",
+                context=TaskContext(theorem_name="", formal_statement=""))
+        sm = self._task_sm
+
+        # Translate tool failures into TaskEvents (轻量映射, 仅用于规则判断)
+        events = []
+        for tc, tr in zip(tool_calls, tool_results):
+            if tr.get("is_error", False) and tc.get("name") == "lean_verify":
+                content = (tr.get("content", "") or "").lower()
+                if "type mismatch" in content:
+                    cls = ProofFailureClass.TYPE_MISMATCH
+                elif "timeout" in content:
+                    cls = ProofFailureClass.TIMEOUT
+                elif "unknown" in content:
+                    cls = ProofFailureClass.UNKNOWN_IDENTIFIER
+                elif "sorry" in content:
+                    cls = ProofFailureClass.SORRY_DETECTED
+                elif "tactic" in content:
+                    cls = ProofFailureClass.TACTIC_FAILED
+                else:
+                    cls = ProofFailureClass.SYNTAX_ERROR
+                ev = TaskEvent(
+                    seq=turn,
+                    event_name="verify_failed",
+                    prev_status=TaskStatus.VERIFYING,
+                    new_status=TaskStatus.VERIFYING,
+                    failure=TaskFailure(
+                        failure_class=cls, message=tr.get("content", "")[:200]),
+                )
+                events.append(ev)
+
+        if not events:
+            return None
+
+        return self.policy_engine.evaluate(sm, events)
 
     async def _call_llm_with_messages(
         self,

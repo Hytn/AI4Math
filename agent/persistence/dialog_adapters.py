@@ -1,6 +1,6 @@
 """agent/persistence/dialog_adapters.py — Adapters from legacy formats
 
-Bridges the four pre-existing trajectory representations in AI4Math
+Bridges the three pre-existing trajectory representations in AI4Math
 into the canonical wrapped Dialog format defined in
 ``dialog_format.py``.
 
@@ -23,22 +23,23 @@ Legacy formats covered:
   3. ``prover/models.py::ProofTrace`` / ``ProofAttempt``
         Multi-attempt single-shot prover trace.
 
-  4. ``agent/persistence/session_store.py::SessionData.messages``
-        Free-form list of dicts.
-
-In all four cases the goal is the same: produce the wrapped Dialog
+In all three cases the goal is the same: produce the wrapped Dialog
 that matches the schema in dialog_format.py — a single self-contained
 record of the run.
+
+v13: ``from_session_messages`` adapter (covering the v9-deleted
+``agent/persistence/session_store.py``) was removed — 0 production
+callers remained after the lane subsystem was deleted.
 """
 from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Iterable, Optional, Union
+from typing import Any, Optional, Union
 
 from agent.persistence.dialog_format import (
-    SCHEMA_VERSION, DEFAULT_SERVER_MAP,
-    DialogBuilder, Message, ToolCall,
+    DEFAULT_SERVER_MAP,
+    DialogBuilder, ToolCall,
     is_tool_response_user_msg, strip_tool_response_wrapper,
     messages_of,
 )
@@ -514,23 +515,6 @@ def _proof_attempt_payload(attempt: Any) -> str:
 # 4. SessionData.messages  →  Dialog
 # ─────────────────────────────────────────────────────────────────────────
 
-def from_session_messages(
-    messages: list[dict],
-    *,
-    wrapped: bool = False,
-    meta: Optional[dict] = None,
-    result: Optional[dict] = None,
-) -> Union[list[dict], dict]:
-    """Pass a free-form ``SessionData.messages`` list through
-    normalization."""
-    return from_loop_messages(
-        messages or [], wrapped=wrapped, meta=meta, result=result)
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# Reverse direction
-# ─────────────────────────────────────────────────────────────────────────
-
 def to_openai_messages(dialog: Any) -> list[dict]:
     """Project a dialog to the OpenAI / Claude messages-array shape.
     Drops ``thought`` (training-only signal). Accepts wrapped or plain."""
@@ -560,5 +544,5 @@ def to_openai_messages(dialog: Any) -> list[dict]:
 
 __all__ = [
     "from_loop_messages", "from_trajectory", "from_proof_trace",
-    "from_session_messages", "to_openai_messages",
+    "to_openai_messages",
 ]

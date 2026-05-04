@@ -11,14 +11,11 @@ import logging
 import os
 import shutil
 import time
-from typing import Optional
 
-from engine.prefilter import PreFilter, FilterResult
-from engine.async_lean_pool import AsyncLeanPool
-from engine.lean_pool import TacticFeedback, FullVerifyResult
+from engine.prefilter import PreFilter
+from engine._core import VerificationResult, FullVerifyResult
 from engine.error_intelligence import ErrorIntelligence, AgentFeedback
 from engine.broadcast import BroadcastBus, BroadcastMessage
-from engine.verification_scheduler import VerificationResult
 
 logger = logging.getLogger(__name__)
 

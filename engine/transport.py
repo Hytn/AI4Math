@@ -13,7 +13,7 @@ Key improvements over v1:
   - Health check heartbeat: periodic #check Nat to verify REPL is alive
   - Auto-restart: transparent restart on process death (up to max_restarts)
   - Request timeout with cancellation
-  - Structured protocol: uses REPLRequest/REPLResponse from repl_protocol.py
+  - Structured protocol: JSON over stdin/stdout per Lean 4 REPL conventions
   - Metrics: tracks latency, error rate, restart count
 """
 from __future__ import annotations
@@ -23,7 +23,7 @@ import logging
 import os
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from engine._core import which as _which
@@ -623,127 +623,3 @@ class MockTransport(REPLTransport):
         self._call_count = 0
 
 
-# ─── HTTPTransport ────────────────────────────────────────────
-
-class HTTPTransport(REPLTransport):
-    """REST-API transport — adapter to any HTTP-fronted Lean 4 verifier.
-
-    The canonical target is the Kimina Lean Server (Numina/Kimi) which
-    exposes ``POST /api/verify`` and ``POST /api/extract_tactics`` over
-    a FastAPI front-end with a server-side LRU import cache. This
-    transport is a thin wrapper that delegates to
-    ``engine.backends.kimina_server.KiminaServerBackend``.
-
-    We keep ``HTTPTransport`` as the public entry point in
-    ``engine.transport`` so:
-
-    1. The factory in ``engine.async_factory`` can pick a transport by
-       name (``--backend http``) without knowing about backend modules.
-    2. Future HTTP-fronted servers (e.g. a future LeanInteract REST API)
-       can subclass ``HTTPTransport`` without circular imports.
-
-    The actual REST translation lives in ``KiminaServerBackend``, which
-    is doing the work; this is intentionally a delegating wrapper, not
-    a duplicate implementation.
-    """
-
-    def __init__(self,
-                 base_url: str = None,
-                 api_key: str = None,
-                 default_preamble: str = "import Mathlib",
-                 timeout_seconds: int = 300,
-                 max_concurrent: int = 16):
-        # Lazy import so this module stays cheap to load.
-        from engine.backends.kimina_server import KiminaServerBackend
-        self._inner = KiminaServerBackend(
-            base_url=base_url,
-            api_key=api_key,
-            default_preamble=default_preamble,
-            timeout_seconds=timeout_seconds,
-            max_concurrent=max_concurrent)
-
-    async def start(self) -> bool:
-        return await self._inner.start()
-
-    async def send(self, cmd: dict) -> Optional[dict]:
-        return await self._inner.send(cmd)
-
-    async def close(self):
-        await self._inner.close()
-
-    @property
-    def is_alive(self) -> bool:
-        return self._inner.is_alive
-
-    @property
-    def is_fallback(self) -> bool:
-        return self._inner.is_fallback
-
-    def get_stats(self) -> dict:
-        d = self._inner.get_stats()
-        d["transport"] = "HTTPTransport"
-        return d
-
-    async def verify_batch(self, proofs: list[str],
-                            preamble: str = None) -> list:
-        """Pass-through to the backend's batch API.
-
-        Returns ``BatchVerifyResult`` objects. Callers that want to
-        consume them as plain dicts should use
-        ``r.raw`` after each result.
-        """
-        return await self._inner.verify_batch(proofs, preamble=preamble)
-
-    async def extract_tactics(self, proof: str,
-                               preamble: str = "import Mathlib") -> list:
-        """Pass-through to ``KiminaServerClient.extract_tactics``.
-
-        Returns the infotree-extracted tactic trace for a proof that
-        already verified. Useful for offline knowledge ingestion when
-        the agent loop has already moved on. Returns ``[]`` when the
-        backend is in fallback mode or the server doesn't expose
-        ``/api/extract_tactics`` (any pre-v2.x Kimina build).
-        """
-        client = getattr(self._inner, "_client", None)
-        if client is None:
-            return []
-        try:
-            return await client.extract_tactics(proof, preamble=preamble)
-        except Exception as e:
-            logger.debug(f"HTTPTransport.extract_tactics: {e}")
-            return []
-
-
-# ─── Sync Adapter ─────────────────────────────────────────────
-
-class SyncTransportAdapter:
-    """Wraps an async Transport for synchronous code."""
-
-    def __init__(self, transport: REPLTransport):
-        self._transport = transport
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-
-    def _get_loop(self) -> asyncio.AbstractEventLoop:
-        if self._loop is None or self._loop.is_closed():
-            self._loop = asyncio.new_event_loop()
-        return self._loop
-
-    def start(self) -> bool:
-        return self._get_loop().run_until_complete(self._transport.start())
-
-    def send(self, cmd: dict) -> Optional[dict]:
-        return self._get_loop().run_until_complete(self._transport.send(cmd))
-
-    def close(self):
-        loop = self._get_loop()
-        loop.run_until_complete(self._transport.close())
-        loop.close()
-        self._loop = None
-
-    @property
-    def is_alive(self) -> bool:
-        return self._transport.is_alive
-
-    @property
-    def is_fallback(self) -> bool:
-        return self._transport.is_fallback

@@ -197,7 +197,7 @@ $env:ANTHROPIC_API_KEY = "sk-ant-api03-你的密钥粘贴在这里"
 这是最简单的开始方式，用来验证安装是否正确：
 
 ```bash
-python3 run_single.py --builtin nat_add_comm --provider mock
+python3 run_unified.py --builtin nat_add_comm --profile whole_proof_repair --provider mock
 ```
 
 你会看到类似这样的输出：
@@ -208,33 +208,35 @@ python3 run_single.py --builtin nat_add_comm --provider mock
 ```
 
 这说明系统工作正常！（mock 模式下 AI 会生成一个 sorry 占位证明）
+最终结果保存在 `results/unified/<problem_id>/dialog.json`。
 
 ### 方式二：真实 AI 模式（需要 API 密钥）
 
 确保你已经设置了 `ANTHROPIC_API_KEY`，然后：
 
 ```bash
-python3 run_single.py --builtin nat_add_comm --provider anthropic
+python3 run_unified.py --builtin nat_add_comm --profile whole_proof_repair --provider anthropic
 ```
 
-AI 会尝试证明 `∀ n m : Nat, n + m = m + n`。你会看到：
+AI 会尝试证明 `∀ a b : Nat, a + b = b + a`。你会看到：
 
 ```
 [nat_add_comm] 正在生成证明...
 [nat_add_comm] AI 建议的证明:
   := by
-    induction n with
+    induction a with
     | zero => simp
-    | succ n ih => simp [Nat.succ_add, ih]
-[nat_add_comm] Lean 验证 → 需要安装 Lean 4 进行验证
+    | succ a ih => simp [Nat.succ_add, ih]
+[nat_add_comm] Lean 验证 → 需要 --lean 标志连接真实 Lean 4 REPL
 ```
 
 ### 方式三：完整验证模式（需要 API 密钥 + Lean 4）
 
-如果你安装了 Lean 4（见第 9 节），可以运行完整流程：
+如果你安装了 Lean 4（见第 9 节），加上 `--lean` 标志启用真实验证：
 
 ```bash
-python3 run_single.py --builtin nat_add_comm --provider anthropic --lean-mode local
+python3 run_unified.py --builtin nat_add_comm --profile whole_proof_repair \
+    --provider anthropic --lean
 ```
 
 ---
@@ -244,59 +246,73 @@ python3 run_single.py --builtin nat_add_comm --provider anthropic --lean-mode lo
 ### 直接在命令行输入
 
 ```bash
-python3 run_single.py \
+python3 run_unified.py \
   --theorem "theorem my_thm (n : Nat) : n + 0 = n" \
+  --profile whole_proof_repair \
   --provider anthropic
 ```
 
 ### 证明更复杂的定理
 
+`run_unified.py` 一次只跑一个 sample。如果想跑多次取最好（pass@k），改用
+`run_eval.py`，它专门支持批量与 `--max-samples`：
+
 ```bash
-python3 run_single.py \
-  --theorem "theorem add_comm_int (a b : Int) : a + b = b + a" \
-  --provider anthropic \
-  --samples 8
+# 把你的定理放进一个 mini benchmark,然后用 run_eval.py
+# 简单做法是把它作为 --theorem 跑多次,每次独立采样:
+for i in 1 2 3 4 5 6 7 8; do
+  python3 run_unified.py \
+    --theorem "theorem add_comm_int (a b : Int) : a + b = b + a" \
+    --profile whole_proof_repair \
+    --provider anthropic \
+    --out "results/unified_run_$i"
+done
 ```
 
-`--samples 8` 表示让 AI 尝试 8 次（不同的随机策略），取最好的一个。
+或者把题目加入内置题库 `benchmarks/datasets/builtin/problems.py`,然后:
+
+```bash
+python3 run_eval.py --benchmark builtin --profile whole_proof_repair \
+    --provider anthropic --max-samples 8 --lean-mode real
+```
 
 ### 从文件输入
 
-创建一个文本文件 `my_theorem.lean`，写入你的定理：
-
-```lean
-theorem my_cool_theorem (n m : Nat) : n * m = m * n
-```
-
-然后运行：
+`run_unified.py` 当前不直接支持 `--file`。变通做法是用 shell 把文件内容作为
+`--theorem` 的值传入:
 
 ```bash
-python3 run_single.py --file my_theorem.lean --provider anthropic
+python3 run_unified.py \
+  --theorem "$(cat my_theorem.lean)" \
+  --profile whole_proof_repair \
+  --provider anthropic
 ```
 
-### 参数说明
+### 参数说明（`run_unified.py`）
 
 | 参数 | 含义 | 默认值 |
 |------|------|--------|
 | `--builtin NAME` | 使用内置题库中的题目 | — |
 | `--theorem "..."` | 直接输入定理声明 | — |
-| `--file PATH` | 从文件读取定理 | — |
-| `--provider` | AI 提供商：`anthropic` 或 `mock` | `mock` |
-| `--samples N` | 尝试次数（越多越可能成功） | 8 |
-| `--lean-mode` | Lean 验证模式：`local`、`docker`、`skip` | `skip` |
+| `--benchmark NAME` | 从基准取第一题 | — |
+| `--profile` | 算法 profile（见 README） | `whole_proof_repair` |
+| `--provider` | AI 提供商：`anthropic` 或 `mock` | `anthropic` |
+| `--lean` | 连真实 Lean 4 REPL（否则 mock） | 关 |
+| `--out` | 输出目录 | `results/unified` |
+
+`run_eval.py` 另支持 `--max-samples N`（pass@k）和 `--lean-mode real/skip`。
 
 ### 内置题库
 
-你可以用 `--builtin` 快速测试这些预设题目：
+当前内置 5 道题（见 `benchmarks/datasets/builtin/problems.py`）：
 
 ```bash
-# 查看所有内置题目
-python3 run_single.py --list-builtins
-
 # 一些例子
-python3 run_single.py --builtin nat_add_comm --provider anthropic    # n + m = m + n
-python3 run_single.py --builtin nat_add_assoc --provider anthropic   # 加法结合律
-python3 run_single.py --builtin p_implies_p --provider anthropic     # P → P
+python3 run_unified.py --builtin nat_add_comm --profile whole_proof_repair --provider anthropic    # a + b = b + a
+python3 run_unified.py --builtin int_mul_comm --profile whole_proof_repair --provider anthropic    # a * b = b * a
+python3 run_unified.py --builtin abs_nonneg --profile whole_proof_repair --provider anthropic      # 0 ≤ |a|
+python3 run_unified.py --builtin sum_first_n --profile whole_proof_repair --provider anthropic     # 高斯求和公式
+python3 run_unified.py --builtin amgm_two --profile whole_proof_repair --provider anthropic        # AM-GM 不等式
 ```
 
 ---
@@ -342,11 +358,13 @@ docker compose up -d lean
 ### 使用完整验证模式
 
 ```bash
-# 本地 Lean
-python3 run_single.py --builtin nat_add_comm --provider anthropic --lean-mode local
+# 本地 Lean (默认 backend=local)
+python3 run_unified.py --builtin nat_add_comm --profile whole_proof_repair \
+    --provider anthropic --lean
 
-# Docker Lean
-python3 run_single.py --builtin nat_add_comm --provider anthropic --lean-mode docker
+# Docker Lean (启动 docker-compose 后,backend=socket 走 lean.sock)
+python3 run_unified.py --builtin nat_add_comm --profile whole_proof_repair \
+    --provider anthropic --lean --backend socket
 ```
 
 ---
@@ -389,7 +407,8 @@ venv\Scripts\activate      # Windows
 这是正常的——你没有安装 Lean 4，所以无法验证。证明**可能是对的**，但没有被机器确认。安装 Lean 4 见第 9 步。
 
 ### Q: AI 尝试了很多次都证不出来
-- 增加尝试次数：`--samples 32`
+- 用 `run_eval.py` 增加尝试次数: `--max-samples 32`
+  (`run_unified.py` 是单题入口, 没有这个旗; 要 pass@k 请走 `run_eval.py`)
 - 你的定理可能太难了（目前 AI 对 IMO 级别的题目仍有困难）
 - 确保定理声明是合法的 Lean 4 语法
 
@@ -451,21 +470,21 @@ Anthropic API 按使用量计费。大约：
 │    export ANTHROPIC_API_KEY="sk-ant-你的密钥"                │
 │                                                             │
 │  证明一个定理：                                             │
-│    python3 run_single.py \                                  │
+│    python3 run_unified.py \                                 │
 │      --theorem "theorem t (n : Nat) : n + 0 = n" \         │
-│      --provider anthropic                                   │
+│      --profile whole_proof_repair --provider anthropic      │
 │                                                             │
 │  用内置题库：                                               │
-│    python3 run_single.py --builtin nat_add_comm \           │
-│      --provider anthropic                                   │
+│    python3 run_unified.py --builtin nat_add_comm \          │
+│      --profile whole_proof_repair --provider anthropic      │
 │                                                             │
 │  纯测试（不花钱）：                                         │
-│    python3 run_single.py --builtin nat_add_comm \           │
-│      --provider mock                                        │
+│    python3 run_unified.py --builtin nat_add_comm \          │
+│      --profile whole_proof_repair --provider mock           │
 │                                                             │
 │  批量评测：                                                 │
 │    python3 run_eval.py --benchmark builtin \                │
-│      --provider anthropic                                   │
+│      --profile whole_proof_repair --provider anthropic      │
 └─────────────────────────────────────────────────────────────┘
 ```
 

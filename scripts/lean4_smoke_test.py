@@ -27,7 +27,6 @@ Exit codes:
 """
 import argparse
 import asyncio
-import json
 import os
 import sys
 import time
@@ -35,8 +34,9 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from engine.transport import LocalTransport, SocketTransport
-from engine.async_lean_pool import AsyncLeanPool, AsyncLeanSession
-from engine.proof_session import ProofSessionManager
+from engine.async_lean_pool import AsyncLeanPool
+# v9 删除了 engine.proof_session.ProofSessionManager (0 主路径调用方),
+# 它对应的 test_proof_session 也已停用 — 跳过, 不再 import。
 from engine._core import assemble_code
 
 
@@ -281,22 +281,11 @@ async def test_pool_integration(project_dir: str):
 # ─── Test: Proof Session ─────────────────────────────────────
 
 async def test_proof_session(project_dir: str):
-    """Test ProofSessionManager with real Lean4."""
-    async with AsyncLeanPool(
-            pool_size=1,
-            project_dir=project_dir,
-            preamble="#check Nat") as pool:
-
-        if pool.stats()["all_fallback"]:
-            results.skip("proof_session", "fallback mode")
-            return False
-
-        async with ProofSessionManager(pool) as mgr:
-            session = await mgr.begin_proof("theorem t : True := by")
-            stats = session.tree_stats()
-            results.record("proof_session", True,
-                           f"nodes={stats['total_nodes']}")
-            return True
+    """v9: ProofSessionManager 已被删 (0 主路径调用方);
+    此 smoke test 步骤已禁用, 替换为 no-op 占位."""
+    results.skip("proof_session",
+                  "ProofSessionManager removed in v9 cleanup")
+    return False
 
 
 # ─── Main ─────────────────────────────────────────────────────

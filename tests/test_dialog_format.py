@@ -39,7 +39,6 @@ from agent.persistence.dialog_adapters import (
     from_loop_messages,
     from_trajectory,
     from_proof_trace,
-    from_session_messages,
     to_openai_messages,
 )
 from agent.persistence.sft_export import (

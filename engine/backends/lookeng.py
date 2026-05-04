@@ -73,7 +73,6 @@ self-contained Lean snippet is a valid execution layer.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from dataclasses import dataclass, field

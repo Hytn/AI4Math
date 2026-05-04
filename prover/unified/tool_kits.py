@@ -34,30 +34,15 @@ def build_tool_registry(profile: Profile, *,
                           kimina_backend=None,
                           pantograph_backend=None,
                           lookeng_backend=None,
+                          persistent_lemma_bank=None,
                           llm=None) -> ToolRegistry:
     """根据 profile.tools 组装一个 ToolRegistry.
 
-    `search_state` 仅在 profile.search.kind != "none" 时由 runner 注入,
-    用来让 LLM 通过 tree_view / tree_select 工具看到/操作搜索树。
-
-    `knowledge_writer` 是 v4 新参数 — 当 profile 含 TACTIC_APPLY 时,
-    每次 tactic 应用都会自动 deposit 到 Layer 1. 不传也能跑, 缺省走
-    knowledge_store.writer (如果该属性存在).
-
-    `world_model` 是 v4 新参数 — 当 profile 含 TACTIC_APPLY 时,
-    每次 tactic 应用前先问 world model "这个 tactic 大概率会失败吗?",
-    高置信度 (默认 ≥ 0.85) 预测失败的会被 short-circuit, 不发给 Lean.
-    传 ``MockWorldModel`` 就是启发式; 传 ``TrainedWorldModel("x.pkl")``
-    就用训练过的 sklearn 分类器; 不传则不做 gating.
-
-    `kimina_backend` / `pantograph_backend` / `lookeng_backend` 由 runner
-    在选择对应 backend 时注入, 启用基础设施大一统的工具. 当对应 backend
-    未配置时, 工具会以 fallback 模式注册 — 其 execute() 返回结构化错误,
-    不会破坏 agent loop。
-
-    `llm` 是 v6 新参数 — 当 profile 含 CONJECTURE_PROPOSE 时, 工具需要
-    LLM 调用做猜想生成. 不传也能跑 (执行时会从 ctx.shared_state['llm']
-    兜底获取); 显式传入则路径更直接.
+    `persistent_lemma_bank` 是 v14 新参数 — 当 profile 含 LEMMA_BANK 或
+    CONJECTURE_PROPOSE 时, 把 SQLite + BM25 引理库接到对应 tool。
+    LemmaBankTool 走它做"跨问题/跨会话 lemma 检索"的 fallback 路径;
+    ConjectureProposeTool 后置写入提议引理。不传则保持 v13 行为
+    (LemmaBankTool 仅查 knowledge_store)。
     """
     registry = ToolRegistry()
 
@@ -74,7 +59,9 @@ def build_tool_registry(profile: Profile, *,
                                kimina_backend=kimina_backend,
                                pantograph_backend=pantograph_backend,
                                lookeng_backend=lookeng_backend,
-                               llm=llm)
+                               persistent_lemma_bank=persistent_lemma_bank,
+                               llm=llm,
+                               integrity_strict=profile.integrity_strict)
             if tool is not None:
                 registry.register(tool)
         except Exception as e:
@@ -91,11 +78,29 @@ def _build_tool(kit: ToolKit, *, lean_pool, knowledge_store,
                 world_model=None,
                 kimina_backend=None, pantograph_backend=None,
                 lookeng_backend=None,
-                llm=None):
-    """单个 ToolKit → 单个 Tool 实例."""
+                persistent_lemma_bank=None,
+                llm=None,
+                integrity_strict: bool = False):
+    """单个 ToolKit → 单个 Tool 实例.
+
+    v14: ``persistent_lemma_bank`` 接 LemmaBankTool 的跨问题路径 +
+    ConjectureProposeTool 的提议引理后置写入。"""
 
     if kit == ToolKit.LEAN_VERIFY:
-        return LeanVerifyTool(lean_pool=lean_pool)
+        # v10: thread an ErrorIntelligence into the tool so failed
+        # whole-proof submissions get structured AgentFeedback (the
+        # README-promised ~100 bits) instead of truncated stderr.
+        # ErrorIntelligence works lazily; if its construction fails
+        # (e.g. import error in a stripped environment), we fall back
+        # to the tool's built-in minimal feedback path.
+        ei = None
+        try:
+            from engine.error_intelligence import ErrorIntelligence
+            ei = ErrorIntelligence(lean_pool=lean_pool)
+        except Exception as _e:  # noqa: BLE001
+            logger.debug(f"ErrorIntelligence unavailable: {_e}")
+        return LeanVerifyTool(lean_pool=lean_pool, error_intelligence=ei,
+                                integrity_strict=integrity_strict)
 
     if kit == ToolKit.TACTIC_APPLY:
         # 现有项目里没有这个工具 —— 我们在 builtin 下新增了 tactic_apply.py
@@ -135,11 +140,15 @@ def _build_tool(kit: ToolKit, *, lean_pool, knowledge_store,
 
     if kit == ToolKit.DECOMPOSE:
         from prover.unified.tools_extra import DecomposeSubgoalTool
-        return DecomposeSubgoalTool()
+        # v12: thread the runner's LLM through, same pattern as
+        # ConjectureProposeTool. Without this, every call hit
+        # ``GoalDecomposer(None).generate(...)``→AttributeError.
+        return DecomposeSubgoalTool(llm=llm)
 
     if kit == ToolKit.LEMMA_BANK:
         from prover.unified.tools_extra import LemmaBankTool
-        return LemmaBankTool(knowledge_store=knowledge_store)
+        return LemmaBankTool(knowledge_store=knowledge_store,
+                              persistent_bank=persistent_lemma_bank)
 
     if kit == ToolKit.BROADCAST:
         from prover.unified.tools_extra import BroadcastTool
@@ -182,6 +191,9 @@ def _build_tool(kit: ToolKit, *, lean_pool, knowledge_store,
         # the tool — that's the cleanest path. If it didn't (older
         # callers, tests), the tool's execute() will pull from ctx
         # metadata at call time.
-        return ConjectureProposeTool(llm=llm)
+        # v14: 把 persistent_lemma_bank 接到提议工具, 让提议出来的引理
+        # 写入跨问题 SQLite 库 (即使本次没证出来)。
+        return ConjectureProposeTool(
+            llm=llm, persistent_bank=persistent_lemma_bank)
 
     raise ValueError(f"Unknown ToolKit: {kit}")

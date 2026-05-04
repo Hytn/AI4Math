@@ -1,13 +1,15 @@
 """tests/test_unified_storage.py — Tests for unified knowledge storage
 
 Validates:
-  1. Protocol abstraction (KnowledgeBackend)
-  2. Episodes in SQLite (replaces JSONL)
-  3. Persistent knowledge in SQLite (replaces JSON)
-  4. RL-aligned reinforce()
-  5. Batch trajectory export
-  6. Decay and GC
-  7. Backward-compatible EpisodicMemory and PersistentKnowledge
+  1. Episodes in SQLite (replaces JSONL)
+  2. Persistent knowledge in SQLite (replaces JSON)
+  3. RL-aligned reinforce()
+  4. Batch trajectory export
+  5. Decay and GC
+  6. Backward-compatible EpisodicMemory and PersistentKnowledge
+
+(v10: KnowledgeBackend Protocol abstraction removed alongside knowledge.backend
+ module — the Protocol had no main-path consumer.)
 """
 import asyncio
 import os
@@ -19,7 +21,6 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from knowledge.store import UnifiedKnowledgeStore
-from knowledge.backend import KnowledgeBackend
 from knowledge.types import LemmaRecord, StrategyPattern
 
 
@@ -32,12 +33,8 @@ def store():
 
 
 class TestProtocol:
-    def test_store_satisfies_protocol(self, store):
-        """UnifiedKnowledgeStore must implement KnowledgeBackend."""
-        assert isinstance(store, KnowledgeBackend)
-
-    def test_protocol_methods_exist(self):
-        """All Protocol methods must be defined."""
+    def test_store_has_required_methods(self):
+        """All previously-Protocol methods must remain on UnifiedKnowledgeStore."""
         required = [
             "upsert_tactic_effectiveness", "query_tactic_effectiveness",
             "upsert_error_pattern", "query_error_patterns",
@@ -199,62 +196,7 @@ class TestExportTrajectories:
             assert count == 0  # No data to export
 
 
-class TestBackwardCompatEpisodicMemory:
-    def test_legacy_jsonl_mode(self):
-        """EpisodicMemory without unified_store uses JSONL."""
-        from agent.memory.episodic_memory import EpisodicMemory, Episode
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "ep.jsonl")
-            mem = EpisodicMemory(store_path=path)
-            mem.add(Episode("nat", "easy", "simp", ["simp"], "trivial", 100))
-            assert len(mem.episodes) == 1
-            assert os.path.exists(path)
-
-    def test_unified_store_mode(self):
-        """EpisodicMemory with unified_store uses SQLite."""
-        from agent.memory.episodic_memory import EpisodicMemory, Episode
-        store = UnifiedKnowledgeStore(":memory:")
-        mem = EpisodicMemory(unified_store=store)
-        mem.add(Episode("nat", "easy", "simp", ["simp"], "trivial", 100))
-        assert len(mem.episodes) == 1
-        # Verify it's in SQLite
-        rows = store._query_episodes_sync("nat", "", 5)
-        assert len(rows) == 1
-        store.close()
-
-    def test_retrieve_similar(self):
-        from agent.memory.episodic_memory import EpisodicMemory, Episode
-        store = UnifiedKnowledgeStore(":memory:")
-        mem = EpisodicMemory(unified_store=store)
-        mem.add(Episode("number_theory", "hard", "induction",
-                        ["omega"], "strong induction", 5000))
-        mem.add(Episode("algebra", "easy", "ring",
-                        ["ring"], "use ring tactic", 100))
-
-        results = mem.retrieve_similar("number_theory", top_k=1)
-        assert len(results) == 1
-        assert results[0].problem_type == "number_theory"
-        store.close()
-
-
-class TestBackwardCompatPersistentKnowledge:
-    def test_legacy_json_mode(self):
-        from agent.memory.persistent_knowledge import PersistentKnowledge
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "kb.json")
-            kb = PersistentKnowledge(filepath=path)
-            kb.record_failure("ring", "ℕ subtraction")
-            kb.save()
-            assert os.path.exists(path)
-
-    def test_unified_store_mode(self):
-        from agent.memory.persistent_knowledge import PersistentKnowledge
-        store = UnifiedKnowledgeStore(":memory:")
-        kb = PersistentKnowledge(unified_store=store)
-        kb.record_failure("ring", "ℕ subtraction")
-        kb.record_failure("ring", "ℕ subtraction")
-        kb.record_failure("ring", "ℕ subtraction")
-
-        suggestions = kb.get_suggestions(goal_type="ℕ subtraction")
-        assert any("AVOID" in s for s in suggestions)
-        store.close()
+# (TestBackwardCompatEpisodicMemory and TestBackwardCompatPersistentKnowledge
+#  removed in v9: agent/memory/{episodic_memory.py, persistent_knowledge.py}
+#  had 0 main-path callers and were deleted. Their unified-store SQLite
+#  paths are still exercised by TestPersistentKnowledgeInSQLite above.)

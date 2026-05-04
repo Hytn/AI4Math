@@ -23,10 +23,9 @@ Usage::
     pred = model.predict("⊢ n + 0 = n", "omega")
 """
 from __future__ import annotations
-import json, logging, os, pickle, re, time
+import json, logging, os, pickle, re
 from collections import Counter
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 import numpy as np
 
 from engine.world_model import WorldModelPredictor, WorldModelPrediction, MockWorldModel

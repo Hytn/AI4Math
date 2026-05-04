@@ -21,16 +21,30 @@ Usage::
 """
 from __future__ import annotations
 
-import asyncio
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Optional, Callable, Awaitable
+from typing import Any
 
 from sampler.proof_env import ProofEnv, ProofEnvConfig
 from sampler.base_sampler import BaseSampler, SamplerConfig, PolicyFn
 from sampler.trajectory import Trajectory
 
 logger = logging.getLogger(__name__)
+
+# v7: detect slime availability. SLIME (https://github.com/THUDM/slime)
+# typically exposes a CustomGenerator / Env protocol. We probe a few
+# known import paths and expose SLIME_AVAILABLE so callers can branch
+# on it. When slime is missing, the wrappers in this module remain
+# fully functional via the BaseSampler trajectory protocol — they just
+# don't auto-register as slime extensions.
+SLIME_AVAILABLE = False
+try:
+    import slime  # type: ignore  # noqa: F401
+    SLIME_AVAILABLE = True
+    logger.info("sampler.slime_sampler: slime detected, real integration active")
+except ImportError:
+    logger.debug(
+        "sampler.slime_sampler: slime not installed, running in stub mode "
+        "(install with `pip install -r requirements-rl.txt`)")
 
 
 class SlimeSampler(BaseSampler):
@@ -92,17 +106,38 @@ class SlimeProofEnvFactory:
         self._shared_pool = None
 
     async def setup_shared_pool(self):
-        """Initialize a shared Lean pool for all environments."""
+        """Initialize a shared Lean pool for all environments.
+
+        v7: honour ``ProofEnvConfig.backend``. Previously this method
+        ignored the backend selector and always built a LocalTransport
+        pool — meaning slime users couldn't reach Kimina/Pantograph/
+        LooKeng even after they set ``backend="kimina"`` on the config.
+        That bug let the slime side silently degrade to local for any
+        non-trivial RL throughput run.
+
+        We reuse ``ProofEnv._make_transport_factory()`` so backend
+        semantics live in exactly one place — anything ProofEnv learns
+        to do (new backend, fallback rules, error handling) the slime
+        factory inherits for free.
+        """
         if self._shared_pool is not None:
             return
 
         from engine.async_lean_pool import AsyncLeanPool
+
+        transport_factory = None
+        if self.config.backend not in ("", "local", None):
+            tmp_env = ProofEnv(self.config)
+            transport_factory = tmp_env._make_transport_factory()
+
         self._shared_pool = AsyncLeanPool(
             pool_size=self.config.pool_size,
             project_dir=self.config.project_dir,
+            preamble=self.config.preamble,
             timeout_seconds=self.config.lean_timeout_s,
+            transport_factory=transport_factory,
         )
-        await self._shared_pool.start(preamble=self.config.preamble)
+        await self._shared_pool.start()
 
     async def create(self) -> SlimeProofEnv:
         """Create a slime-compatible proof environment instance."""

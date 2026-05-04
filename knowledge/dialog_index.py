@@ -75,7 +75,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Optional, Union
+from typing import Iterator, Optional, Union
 
 from knowledge.tfidf_retriever import KnowledgeTFIDFRetriever
 

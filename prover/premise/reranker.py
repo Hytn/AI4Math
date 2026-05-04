@@ -6,8 +6,6 @@
 3. 多信号融合 (RRF: Reciprocal Rank Fusion)
 """
 from __future__ import annotations
-import re
-from collections import Counter
 from prover.premise.bm25_retriever import tokenize
 
 

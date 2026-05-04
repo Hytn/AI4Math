@@ -6,8 +6,6 @@ from prover.premise.bm25_retriever import BM25Retriever, tokenize
 from prover.premise.embedding_retriever import EmbeddingRetriever
 from prover.premise.reranker import PremiseReranker
 from prover.premise.selector import PremiseSelector
-from prover.premise.tactic_suggester import (
-    suggest_tactics, classify_goal, _type_matches)
 
 
 # ── BM25 Retriever ──
@@ -161,38 +159,3 @@ class TestPremiseSelector:
 
 # ── Tactic Suggester ──
 
-class TestTacticSuggester:
-    def test_classify_forall(self):
-        assert classify_goal("∀ (n : Nat), P n") == "forall"
-
-    def test_classify_implication(self):
-        assert classify_goal("P → Q") == "implication"
-
-    def test_classify_conjunction(self):
-        assert classify_goal("P ∧ Q") == "conjunction"
-
-    def test_classify_equality(self):
-        assert classify_goal("a + b = b + a") == "equality"
-
-    def test_classify_inequality(self):
-        assert classify_goal("a ≤ b") == "le"
-
-    def test_suggest_for_implication(self):
-        tactics = suggest_tactics("P → Q")
-        assert "intro" in tactics
-
-    def test_suggest_for_equality(self):
-        tactics = suggest_tactics("n + m = m + n")
-        assert any(t in tactics for t in ["rfl", "ring", "omega", "simp"])
-
-    def test_suggest_includes_fallbacks(self):
-        tactics = suggest_tactics("SomeRandomGoal")
-        assert len(tactics) > 0
-
-    def test_max_suggestions(self):
-        tactics = suggest_tactics("P → Q → R", max_suggestions=3)
-        assert len(tactics) <= 3
-
-    def test_type_matches(self):
-        assert _type_matches("h : P", "P")
-        assert not _type_matches("h : P", "Q")

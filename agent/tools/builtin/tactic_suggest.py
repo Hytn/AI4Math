@@ -1,8 +1,28 @@
-"""agent/tools/builtin/tactic_suggest.py — Suggest tactics for current goal"""
+"""agent/tools/builtin/tactic_suggest.py — Suggest tactics for current goal
+
+v11: fixed two latent bugs (same class as v10's ``pool.check_proof`` fix):
+
+  1. The pool method was called as ``pool.try_tactic(tactic, context=...,
+     timeout=...)`` but ``AsyncLeanPool.try_tactic`` is ``async`` and its
+     signature is ``try_tactic(env_id: int, tactic: str) -> TacticFeedback``.
+     The previous call would have raised TypeError on every invocation,
+     except no test exercised the live path so it stayed unnoticed.
+  2. The result was used as a dict (``r.get("success")``) but
+     ``TacticFeedback`` is a dataclass.
+
+The tool now feature-detects async/sync, awaits coroutines, and reads
+TacticFeedback dataclass fields. The heuristic fallback path is unchanged.
+"""
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
+import logging
+
 from agent.tools.base import Tool, ToolContext, ToolResult, ToolPermission
+
+logger = logging.getLogger(__name__)
 
 
 class TacticSuggestTool(Tool):
@@ -44,36 +64,56 @@ class TacticSuggestTool(Tool):
     async def execute(self, input: dict, ctx: ToolContext) -> ToolResult:
         tactics = input.get("tactics_to_try", self.AUTO_TACTICS)
         goal = input["goal_state"]
-        partial = input.get("partial_proof", "")
+        partial = input.get("partial_proof", "")  # noqa: F841 — kept for future REPL state binding
 
         if not self._pool:
             # Heuristic mode without REPL
             suggestions = self._heuristic_suggest(goal)
             return ToolResult.success(json.dumps(suggestions, indent=2))
 
+        # v11: real-pool path. Use the same env_id resolution as
+        # tactic_apply: prefer pool.base_env_id (set by pool.start()),
+        # fall back to 0 if the pool doesn't expose it.
+        env_id = getattr(self._pool, "base_env_id", 0)
+
         results = []
         for tactic in tactics:
             try:
-                r = self._pool.try_tactic(tactic, context=partial, timeout=10)
-                if r and r.get("success"):
+                r = await self._call_try_tactic(env_id, tactic)
+            except Exception as e:
+                logger.debug(f"tactic_suggest({tactic!r}) failed: {e}")
+                continue
+            if r is None:
+                continue
+            success = bool(getattr(r, "success", False))
+            if success:
+                remaining = getattr(r, "remaining_goals", []) or []
+                results.append({
+                    "tactic": tactic,
+                    "success": True,
+                    "remaining_goals": len(remaining),
+                })
+            else:
+                err = (getattr(r, "error_message", "") or "")[:200]
+                if err:
                     results.append({
                         "tactic": tactic,
-                        "success": True,
-                        "remaining_goals": r.get("remaining_goals", 0),
+                        "success": False,
+                        "error_hint": err,
                     })
-                else:
-                    error = r.get("error", "") if r else ""
-                    if error and len(error) < 200:
-                        results.append({
-                            "tactic": tactic,
-                            "success": False,
-                            "error_hint": error[:200],
-                        })
-            except Exception:
-                continue
 
         return ToolResult.success(json.dumps(results, indent=2),
                                  count=len(results))
+
+    async def _call_try_tactic(self, env_id: int, tactic: str):
+        """Pool may expose try_tactic as sync or async; handle both."""
+        fn = getattr(self._pool, "try_tactic", None)
+        if fn is None:
+            raise RuntimeError("lean_pool has no try_tactic method")
+        out = fn(env_id, tactic)
+        if inspect.iscoroutine(out):
+            out = await out
+        return out
 
     def _heuristic_suggest(self, goal: str) -> list[dict]:
         """Heuristic suggestions without REPL."""

@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-from functools import lru_cache
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -170,7 +169,7 @@ _STOP_WORDS = frozenset({
     "this", "it", "all", "any", "some", "have", "has",
     # Lean keywords
     "theorem", "lemma", "def", "example", "instance",
-    "where", "let", "fun", "show", "calc", "have", "suffices",
+    "where", "let", "fun", "show", "calc", "suffices",
     "import", "open", "namespace", "section", "variable",
 })
 

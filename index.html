@@ -1058,21 +1058,21 @@ footer p { font-size: 0.88rem; color: var(--text3); }
   <div class="hero-grid"></div>
   <p class="hero-eyebrow">Formal Theorem Proving · Agent Operating System</p>
   <h1>数学的<em>操作系统</em></h1>
-  <p class="hero-sub">别人在让 LLM 更会写 Lean4 代码，AI4Math 在构建让智能体群落自主探索数学前沿的基底平台。<br><span style="color:var(--green2);font-size:0.88rem">验证操作系统 · 活知识金字塔 · 世界模型 · 数学家社会</span></p>
+  <p class="hero-sub">别人在让 LLM 更会写 Lean4 代码，AI4Math 在构建让智能体群落自主探索数学前沿的基底平台。<br><span style="color:var(--green2);font-size:0.88rem">大一统推理 · Lean 验证基础设施 · RL infra 接口 · 三个上层预留接口</span></p>
   <div class="hero-cta">
     <a class="btn btn-primary" href="#demo">观看证明过程 →</a>
-    <a class="btn btn-ghost" href="#pillars">四层架构</a>
+    <a class="btn btn-ghost" href="#pillars">核心架构</a>
     <a class="btn btn-ghost" href="#flowDiagram">数据流全景</a>
   </div>
 </div>
 
 <!-- ═══════════ METRICS ═══════════ -->
 <div class="metric-bar"><div class="metric-row">
-  <div class="metric"><div class="num">4</div><div class="lab">架构支柱</div></div>
-  <div class="metric"><div class="num">56K+</div><div class="lab">行代码</div></div>
-  <div class="metric"><div class="num">797</div><div class="lab">测试通过</div></div>
+  <div class="metric"><div class="num">3+3</div><div class="lab">核心 + 预留接口</div></div>
+  <div class="metric"><div class="num">14</div><div class="lab">推理 Profile</div></div>
+  <div class="metric"><div class="num">786</div><div class="lab">测试通过</div></div>
   <div class="metric"><div class="num">7</div><div class="lab">评测基准</div></div>
-  <div class="metric"><div class="num">6,826</div><div class="lab">内置题目</div></div>
+  <div class="metric"><div class="num">1,631</div><div class="lab">内置题目</div></div>
 </div></div>
 
 <!-- ═══════════ PARADIGM SHIFT ═══════════ -->
@@ -1105,7 +1105,7 @@ footer p { font-size: 0.88rem; color: var(--text3); }
 <section id="demo"><div class="wrap">
   <p class="sec-eyebrow">实时演示</p>
   <h2 class="sec-title">看一道 Putnam 竞赛题如何被攻克</h2>
-  <p class="sec-desc">Putnam 是北美最难的本科数学竞赛，中位数得分为 0。观看四层架构如何协同工作 —— 知识注入、多方向并行探索、失败即刻广播、跨方向融合、三级验证确认。</p>
+  <p class="sec-desc">Putnam 是北美最难的本科数学竞赛，中位数得分为 0。观看 heterogeneous profile 如何协同工作 —— 知识注入、4 路异构并行探索、失败即刻通过 BroadcastBus 广播、跨方向融合、三级验证确认。这是 v13 第一次让广播总线在主路径真正活起来。</p>
 
 
   <!-- Problem box -->
@@ -1503,82 +1503,114 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 
 <!-- ═══════════ FOUR PILLARS ═══════════ -->
 <section id="pillars"><div class="wrap">
-  <p class="sec-eyebrow">四层架构</p>
-  <h2 class="sec-title">不是更好的证明器，是证明器的操作系统</h2>
-  <p class="sec-desc">AI4Math 构建四层基础设施，形成自增强的飞轮。任何 LLM 都可以作为上层的证明引擎插入这个平台。</p>
+  <p class="sec-eyebrow">核心架构</p>
+  <h2 class="sec-title">三件核心 · 三个预留接口</h2>
+  <p class="sec-desc">v13 起项目核心定位明确化。这个智能体的核心 = 大一统所有推理方式 + Lean 验证基础设施 + 暴露给 RL infra（vLLM/slime）。在此之上，预留三个上层功能接口：经验知识库、世界模型、多智能体广播（数学家 community）。**不属于这两组的代码全部清掉**。</p>
+
+  <div style="margin:0 0 .8rem;font-family:var(--mono);font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.18em">─── 核心 (Core) ───</div>
 
   <div class="pillar-stack">
-    <div class="pillar-card" style="border-color:rgba(34,211,238,0.15)">
-      <div style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--cyan)"></div>
-      <div class="pillar-num" style="color:var(--cyan)">LAYER ④ · agent/ + prover/pipeline/</div>
-      <h4 style="color:var(--cyan)">数学家社会 — 异构智能体的自组织协作</h4>
-      <p>数百个角色各异的 AI 数学家分工合作：证明生成器、规划师、修复专家、批评家、分解器... 通过广播总线实时共享发现，动态角色分配实现探索-利用的全局最优。</p>
-      <div class="pillar-tags">
-        <span class="pillar-tag" style="background:var(--cyan-dim);color:var(--cyan);border:1px solid rgba(34,211,238,0.2)">11 种角色</span>
-        <span class="pillar-tag" style="background:var(--cyan-dim);color:var(--cyan);border:1px solid rgba(34,211,238,0.2)">实时广播</span>
-        <span class="pillar-tag" style="background:var(--cyan-dim);color:var(--cyan);border:1px solid rgba(34,211,238,0.2)">生产-消费流水线</span>
-        <span class="pillar-tag" style="background:var(--cyan-dim);color:var(--cyan);border:1px solid rgba(34,211,238,0.2)">钩子系统 × 9 事件</span>
-      </div>
-    </div>
-    <div class="pillar-card" style="border-color:rgba(251,191,36,0.15)">
-      <div style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--amber)"></div>
-      <div class="pillar-num" style="color:var(--amber)">LAYER ③ · 训练数据管道就绪</div>
-      <h4 style="color:var(--amber2)">世界模型 — 证明器的心智模拟器</h4>
-      <p>完整内化 Lean4 状态转移动力学。智能体无需调用证明器，即可在心智空间中预判策略效果 —— 预见目标变化、类型约束传播、子目标分裂。将暴力搜索转化为有引导的创造性推理。</p>
-      <div class="pillar-tags">
-        <span class="pillar-tag" style="background:var(--amber-dim);color:var(--amber);border:1px solid rgba(251,191,36,0.2)">RichProofTrajectory</span>
-        <span class="pillar-tag" style="background:var(--amber-dim);color:var(--amber);border:1px solid rgba(251,191,36,0.2)">状态转移记录</span>
-        <span class="pillar-tag" style="background:var(--amber-dim);color:var(--amber);border:1px solid rgba(251,191,36,0.2)">零标注成本</span>
-      </div>
-    </div>
     <div class="pillar-card" style="border-color:rgba(124,108,240,0.15)">
       <div style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)"></div>
-      <div class="pillar-num" style="color:var(--accent2)">LAYER ② · knowledge/ · 2,193 行</div>
-      <h4 style="color:var(--accent2)">活知识系统 — 自演化的数学记忆</h4>
-      <p>四层金字塔：原始轨迹 → 战术知识 → 策略模式 → 概念图谱。每次证明尝试（无论成败）自动沉淀经验。具备衰减、遗忘、修正能力。知识贯穿整条证明管道 —— 读取端注入 prompt，写入端自动沉淀。</p>
+      <div class="pillar-num" style="color:var(--accent2)">CORE ① · prover/unified/ · 14 个 Profile</div>
+      <h4 style="color:var(--accent2)">大一统推理 — 所有方法走同一个 AgentLoop</h4>
+      <p>DeepSeek-Prover 风格 whole-proof、ReProver RAG、LeanDojo step-level、MCTS / best-first / beam、DSP、Pantograph drafting、Conjecture-driven —— 14 种推理方式收敛到一个 Profile 驱动的 AgentLoop。换算法 = 换 <code>--profile</code>，不动 runner / agent_loop / tools 任何代码。加新方法 = 在 PRESETS 里加一项。</p>
       <div class="pillar-tags">
-        <span class="pillar-tag" style="background:var(--accent-dim);color:var(--accent2);border:1px solid rgba(124,108,240,0.2)">SQLite + WAL</span>
-        <span class="pillar-tag" style="background:var(--accent-dim);color:var(--accent2);border:1px solid rgba(124,108,240,0.2)">衰减遗忘</span>
-        <span class="pillar-tag" style="background:var(--accent-dim);color:var(--accent2);border:1px solid rgba(124,108,240,0.2)">审计追踪</span>
-        <span class="pillar-tag" style="background:var(--accent-dim);color:var(--accent2);border:1px solid rgba(124,108,240,0.2)">跨智能体共享</span>
+        <span class="pillar-tag" style="background:var(--accent-dim);color:var(--accent2);border:1px solid rgba(124,108,240,0.2)">Profile 声明式</span>
+        <span class="pillar-tag" style="background:var(--accent-dim);color:var(--accent2);border:1px solid rgba(124,108,240,0.2)">14 内置 Profile</span>
+        <span class="pillar-tag" style="background:var(--accent-dim);color:var(--accent2);border:1px solid rgba(124,108,240,0.2)">framing × tools × max_turns</span>
+        <span class="pillar-tag" style="background:var(--accent-dim);color:var(--accent2);border:1px solid rgba(124,108,240,0.2)">零硬编码分支</span>
       </div>
     </div>
     <div class="pillar-card" style="border-color:rgba(52,211,153,0.15)">
       <div style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--green)"></div>
-      <div class="pillar-num" style="color:var(--green2)">LAYER ① · engine/ · 11,779 行</div>
-      <h4 style="color:var(--green2)">验证操作系统 — 无限弹性的算力基底</h4>
-      <p>智能体的"物理世界"。REPL 连接池 + 弹性伸缩支撑大规模并发；三级验证（语法 ~1μs → REPL ~50ms → 全编译 ~3s）在到达 Lean4 前过滤 95% 无效尝试；增量编译复用已验证前缀；持久化上下文支撑跨会话恢复。</p>
+      <div class="pillar-num" style="color:var(--green2)">CORE ② · engine/ · 6,699 行</div>
+      <h4 style="color:var(--green2)">Lean 验证基础设施 — 智能体的物理世界</h4>
+      <p>把 Lean 4 REPL 包装成高性能、可编程的交互环境。AsyncLeanPool 长连接 + env_id fork 实现 ~50ms 增量验证；三级预过滤（语法 ~1μs → REPL ~50ms → 全编译 ~3s）在到达 Lean 之前过滤 95% 无效尝试；ErrorIntelligence 把 stderr 变成 ~100 bits 结构化反馈。四个 backend（Local / Kimina / Pantograph / LooKeng）即插即用。</p>
       <div class="pillar-tags">
         <span class="pillar-tag" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-border)">REPL 池</span>
         <span class="pillar-tag" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-border)">三级验证</span>
-        <span class="pillar-tag" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-border)">弹性伸缩</span>
-        <span class="pillar-tag" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-border)">增量编译</span>
-        <span class="pillar-tag" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-border)">持久化</span>
+        <span class="pillar-tag" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-border)">~100 bits 反馈</span>
+        <span class="pillar-tag" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-border)">4 个社区 backend</span>
+      </div>
+    </div>
+    <div class="pillar-card" style="border-color:rgba(251,191,36,0.15)">
+      <div style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--amber)"></div>
+      <div class="pillar-num" style="color:var(--amber)">CORE ③ · sampler/ · 3,200 行</div>
+      <h4 style="color:var(--amber2)">RL infra 接口 — 飞向 vLLM / slime / verl</h4>
+      <p>暴露 ProofEnv + BaseSampler 给主流 RL 框架直接对接：verl / slime / TRL / vLLM 驱动的 trainer。每条 trajectory 落盘为标准 dialog.json，SFT 导出一行命令。MCTS / best-first / beam 树搜索作为 sampler 子模式。这是把"基础设施"变成"飞轮"的关键接口。</p>
+      <div class="pillar-tags">
+        <span class="pillar-tag" style="background:var(--amber-dim);color:var(--amber);border:1px solid rgba(251,191,36,0.2)">ProofEnv</span>
+        <span class="pillar-tag" style="background:var(--amber-dim);color:var(--amber);border:1px solid rgba(251,191,36,0.2)">VeRLProofAgentLoop</span>
+        <span class="pillar-tag" style="background:var(--amber-dim);color:var(--amber);border:1px solid rgba(251,191,36,0.2)">SlimeSampler</span>
+        <span class="pillar-tag" style="background:var(--amber-dim);color:var(--amber);border:1px solid rgba(251,191,36,0.2)">dialog.json → SFT</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin:2.4rem 0 .8rem;font-family:var(--mono);font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.18em">─── 预留接口 (Reserved Interfaces) ───</div>
+
+  <div class="pillar-stack">
+    <div class="pillar-card" style="border-color:rgba(34,211,238,0.15)">
+      <div style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--cyan)"></div>
+      <div class="pillar-num" style="color:var(--cyan)">RESERVED A · knowledge/ · 3,220 行</div>
+      <h4 style="color:var(--cyan)">活知识系统 — 经验知识库的管理检索与归纳</h4>
+      <p>四层金字塔的 SQLite schema：原始轨迹 → 战术效用 → 策略模式 → 概念图谱。Layer 0/1（trajectory + tactic_effectiveness）在主路径接通：每次 verify 自动写入，prompt 自动注入相似已成功 dialog。Layer 2/3 schema 已就位但写入路径留给上层调用方按真实数据决定。</p>
+      <div class="pillar-tags">
+        <span class="pillar-tag" style="background:var(--cyan-dim);color:var(--cyan);border:1px solid rgba(34,211,238,0.2)">SQLite + WAL</span>
+        <span class="pillar-tag" style="background:var(--cyan-dim);color:var(--cyan);border:1px solid rgba(34,211,238,0.2)">四层 schema</span>
+        <span class="pillar-tag" style="background:var(--cyan-dim);color:var(--cyan);border:1px solid rgba(34,211,238,0.2)">跨问题 dialog 注入</span>
+        <span class="pillar-tag" style="background:var(--cyan-dim);color:var(--cyan);border:1px solid rgba(34,211,238,0.2)">归纳总结接口</span>
+      </div>
+    </div>
+    <div class="pillar-card" style="border-color:rgba(167,139,250,0.15)">
+      <div style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent2)"></div>
+      <div class="pillar-num" style="color:var(--accent3)">RESERVED B · engine/world_model.py</div>
+      <h4 style="color:var(--accent3)">世界模型 — tactic-success-prior 预测</h4>
+      <p>tactic_apply 之前可选 gate：在调用 Lean 之前预测 p_success，命中阈值才落到验证池。当前 SklearnWorldModel = LR + 手工特征（可训）；MockWorldModel = 规则启发式（兜底）。换成 transformer / GNN 只需一个构造参数 <code>world_model=</code> —— 接口已稳。这是把暴力搜索变成有引导推理的关键。</p>
+      <div class="pillar-tags">
+        <span class="pillar-tag" style="background:rgba(167,139,250,0.06);color:var(--accent3);border:1px solid rgba(167,139,250,0.2)">make_world_model()</span>
+        <span class="pillar-tag" style="background:rgba(167,139,250,0.06);color:var(--accent3);border:1px solid rgba(167,139,250,0.2)">sklearn 默认实现</span>
+        <span class="pillar-tag" style="background:rgba(167,139,250,0.06);color:var(--accent3);border:1px solid rgba(167,139,250,0.2)">单接口替换</span>
+      </div>
+    </div>
+    <div class="pillar-card" style="border-color:rgba(96,165,250,0.15)">
+      <div style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--blue)"></div>
+      <div class="pillar-num" style="color:var(--blue)">RESERVED C · engine/broadcast.py · v13 接通</div>
+      <h4 style="color:var(--blue)">多智能体 rollout 实时广播 — 数学家 community</h4>
+      <p>v13 第一次真接通主路径：heterogeneous profile 的 4 个 sub-profile 共享一个 BroadcastBus，一个方向写"avoid: ring 在 ℕ 减法上无效"，其他三个立刻 read 到。下一步：跨 problem 的全局持久化总线 —— 一个 solver 的引理帮另一个 solver，形成数学家社会。当前是 intra-run 广播，扩到 inter-problem 需要持久化 + 鉴权。</p>
+      <div class="pillar-tags">
+        <span class="pillar-tag" style="background:var(--blue-dim);color:var(--blue);border:1px solid rgba(96,165,250,0.2)">BroadcastBus</span>
+        <span class="pillar-tag" style="background:var(--blue-dim);color:var(--blue);border:1px solid rgba(96,165,250,0.2)">heterogeneous 4 路并行</span>
+        <span class="pillar-tag" style="background:var(--blue-dim);color:var(--blue);border:1px solid rgba(96,165,250,0.2)">跨方向发现共享</span>
+        <span class="pillar-tag" style="background:var(--blue-dim);color:var(--blue);border:1px solid rgba(96,165,250,0.2)">global community 路径</span>
       </div>
     </div>
   </div>
 
   <!-- Flywheel -->
-  <div style="text-align:center;padding:1.5rem 0;font-family:var(--mono);font-size:0.78rem;color:var(--text3);line-height:2.2">
-    <span style="color:var(--cyan)">④ 社会探索</span> → <span style="color:var(--green)">① 验证 OS</span> → <span style="color:var(--accent2)">② 知识沉淀</span> → <span style="color:var(--amber)">③ 世界模型训练</span> → <span style="color:var(--cyan)">④ 知识注入</span> → <span style="color:var(--text)">飞轮自转</span>
+  <div style="text-align:center;padding:1.5rem 0 .5rem;font-family:var(--mono);font-size:0.78rem;color:var(--text3);line-height:2.2">
+    <span style="color:var(--accent2)">① 大一统推理</span> → <span style="color:var(--green)">② 验证基础设施</span> → <span style="color:var(--amber)">③ RL infra</span> <span style="color:var(--text3)">↑</span><br>
+    <span style="color:var(--cyan)">A 知识沉淀</span> · <span style="color:var(--accent3)">B 世界模型</span> · <span style="color:var(--blue)">C 广播总线</span> <span style="color:var(--text)">→ 飞轮自转</span>
   </div>
 
   <!-- Key interfaces -->
   <div class="api-sig">
-<span class="api-fn">AsyncOrchestrator.prove</span>(problem) → <span class="api-ret">ProofTrace</span>         <span style="color:var(--text3)">// 端到端证明</span>
-<span class="api-fn">AsyncLeanPool.try_tactic</span>(env_id, tactic) → <span class="api-ret">TacticFeedback</span>  <span style="color:var(--text3)">// tactic 级交互</span>
-<span class="api-fn">VerificationScheduler.verify</span>(candidate) → <span class="api-ret">L0|L1|L2</span>      <span style="color:var(--text3)">// 三级验证</span>
-<span class="api-fn">KnowledgeReader.render_for_prompt</span>(goal) → <span class="api-ret">知识注入</span>       <span style="color:var(--text3)">// 读取端</span>
-<span class="api-fn">KnowledgeBroadcaster.on_tactic_result</span>(r) → <span class="api-ret">沉淀+广播</span>   <span style="color:var(--text3)">// 写入端</span>
-<span class="api-fn">BroadcastBus.publish</span>(channel, msg) → <span class="api-ret">跨智能体通信</span>     <span style="color:var(--text3)">// 实时广播</span>
+<span class="api-fn">UnifiedProofRunner.run</span>(problem, profile_name) → <span class="api-ret">UnifiedResult</span>  <span style="color:var(--text3)">// 核心 ① 入口</span>
+<span class="api-fn">AsyncLeanPool.try_tactic</span>(env_id, tactic) → <span class="api-ret">TacticFeedback</span>     <span style="color:var(--text3)">// 核心 ② 单步交互</span>
+<span class="api-fn">VerificationScheduler.verify</span>(candidate) → <span class="api-ret">L0|L1|L2</span>         <span style="color:var(--text3)">// 三级验证</span>
+<span class="api-fn">ProofEnv.step</span>(action) → <span class="api-ret">obs, reward, done</span>                  <span style="color:var(--text3)">// 核心 ③ RL gym 接口</span>
+<span class="api-fn">KnowledgeReader.render_for_prompt</span>(goal) → <span class="api-ret">prompt 注入</span>      <span style="color:var(--text3)">// 预留 A</span>
+<span class="api-fn">make_world_model</span>(kind, config) → <span class="api-ret">WorldModelPredictor</span>         <span style="color:var(--text3)">// 预留 B</span>
+<span class="api-fn">BroadcastBus.publish</span>(channel, msg) → <span class="api-ret">跨智能体共享</span>          <span style="color:var(--text3)">// 预留 C</span>
   </div>
 </div></section>
 
 <!-- ═══════════ GLOBAL DATA FLOW DIAGRAM ═══════════ -->
 <section class="flow-section" id="flowDiagram"><div class="wrap">
   <p class="sec-eyebrow">数据流全景</p>
-  <h2 class="sec-title">一道定理在四层架构中的完整旅程</h2>
-  <p class="sec-desc">从读题、知识注入、多方向探索、三级验证、跨方向广播到知识沉淀 —— 追踪数据如何在验证 OS、活知识系统、数学家社会之间流动。悬停节点查看详情。</p>
+  <h2 class="sec-title">一道定理在系统中的完整旅程</h2>
+  <p class="sec-desc">从读题、知识注入、多方向探索、三级验证、跨方向广播到知识沉淀 —— 追踪数据如何在验证基础设施、活知识系统、广播总线之间流动。悬停节点查看详情。</p>
 
   <div class="flow-container" id="flowCont">
     <canvas class="flow-canvas" id="flowCanvas"></canvas>
@@ -1769,31 +1801,31 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 <section><div class="wrap">
   <p class="sec-eyebrow" style="color:var(--green2)">工程验证</p>
   <h2 class="sec-title">每个组件都经过严格测试</h2>
-  <p class="sec-desc">264 个源文件、40+ 个核心组件全部通过自动化验证。7 大真实基准涵盖 6,826 道题，覆盖从高中竞赛到博士级代数的全难度谱系。</p>
+  <p class="sec-desc">161 个 Python 模块 / ~40k 行代码全部通过自动化验证。7 大真实基准涵盖 1,631 道题，覆盖从高中竞赛到研究级代数的全难度谱系。v13 起，每行代码都在「三件核心」或「三个预留接口」的路径上 —— 不在路径上的, 已删除。</p>
 
 
 
   <!-- Verification stats bar -->
   <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:1rem;margin-bottom:3rem">
     <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.5rem;text-align:center">
-      <div style="font-family:var(--mono);font-size:2rem;font-weight:500;color:var(--green)">99/99</div>
-      <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:.2rem">组件验证</div>
+      <div style="font-family:var(--mono);font-size:2rem;font-weight:500;color:var(--green)">786/787</div>
+      <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:.2rem">单元测试通过</div>
     </div>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.5rem;text-align:center">
-      <div style="font-family:var(--mono);font-size:2rem;font-weight:500;color:var(--green)">797</div>
-      <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:.2rem">单元测试</div>
+      <div style="font-family:var(--mono);font-size:2rem;font-weight:500;color:var(--green)">14</div>
+      <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:.2rem">推理 Profile</div>
     </div>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.5rem;text-align:center">
-      <div style="font-family:var(--mono);font-size:2rem;font-weight:500;color:var(--accent2)">27μs</div>
-      <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:.2rem">Tactic 延迟</div>
+      <div style="font-family:var(--mono);font-size:2rem;font-weight:500;color:var(--accent2)">~50ms</div>
+      <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:.2rem">增量验证延迟</div>
     </div>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.5rem;text-align:center">
-      <div style="font-family:var(--mono);font-size:2rem;font-weight:500;color:var(--accent2)">12.7k</div>
-      <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:.2rem">搜索 nodes/s</div>
+      <div style="font-family:var(--mono);font-size:2rem;font-weight:500;color:var(--accent2)">~100bits</div>
+      <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:.2rem">结构化反馈</div>
     </div>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.5rem;text-align:center">
-      <div style="font-family:var(--mono);font-size:2rem;font-weight:500;color:var(--green)">97%</div>
-      <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:.2rem">组件就绪</div>
+      <div style="font-family:var(--mono);font-size:2rem;font-weight:500;color:var(--green)">4</div>
+      <div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:.2rem">社区 Backend</div>
     </div>
   </div>
 
@@ -1801,60 +1833,75 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:2rem">
     <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2rem;position:relative;overflow:hidden">
       <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--green)"></div>
-      <h4 style="font-size:.9rem;font-weight:500;color:var(--green);margin-bottom:.8rem">✓ Engine Layer · 类型论内核</h4>
+      <h4 style="font-size:.9rem;font-weight:500;color:var(--green);margin-bottom:.8rem">✓ Engine Layer · 验证基础设施</h4>
       <div style="font-size:.8rem;color:var(--text2);line-height:1.8">
-        <div>• Expr 9 种构造器 + de Bruijn 操作 (lift/instantiate/abstract)</div>
-        <div>• Type Checker: β/δ/ζ/η 归约 + Unifier (含 WHNF + occurs check)</div>
-        <div>• 18 tactics: intro / rfl / simp / cases / induction / constructor / contradiction ...</div>
-        <div>• 4 种搜索策略: BFS / DFS / best-first / MCTS+UCB1 + virtual loss</div>
+        <div>• AsyncLeanPool: 长连接 + env_id fork，~50ms 增量 verify</div>
+        <div>• 三级 PreFilter: L0 syntax (~1μs) → L1 REPL (~50ms) → L2 full (~3s)</div>
+        <div>• ErrorIntelligence: stderr → AgentFeedback (~100 bits / 14 类错误)</div>
+        <div>• 4 个 backend: Local / Kimina / Pantograph / LooKeng (Transport 抽象)</div>
       </div>
     </div>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2rem;position:relative;overflow:hidden">
       <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent)"></div>
       <h4 style="font-size:.9rem;font-weight:500;color:var(--accent2);margin-bottom:.8rem">✓ Agent Layer · 智能体层</h4>
       <div style="font-size:.8rem;color:var(--text2);line-height:1.8">
-        <div>• LLM Provider: 重试退避 + 单例 client + 线程安全缓存 (含 tools 键隔离)</div>
-        <div>• 11 个角色的详细 system prompt + few-shot 示例</div>
-        <div>• 4 级策略自动升级: sequential → light → medium → heavy</div>
-        <div>• Budget: sample / token / wall-time 三重限制，4000 次并发验证通过</div>
+        <div>• AsyncLLMProvider: 重试退避 + 单例 + 缓存装饰器（含 tools 键隔离）</div>
+        <div>• AgentLoop (单文件 ~458 行): 多轮 LLM↔tool dispatch + persistence</div>
+        <div>• 9 个 builtin tool: lean_verify / premise_search / decompose / cas / ...</div>
+        <div>• dialog.json schema v3: 单文件包含 system + tools + 每轮 + result</div>
       </div>
     </div>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2rem;position:relative;overflow:hidden">
       <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--amber)"></div>
-      <h4 style="font-size:.9rem;font-weight:500;color:var(--amber);margin-bottom:.8rem">✓ Prover Layer · 证明推理层</h4>
+      <h4 style="font-size:.9rem;font-weight:500;color:var(--amber);margin-bottom:.8rem">✓ Prover Layer · 大一统推理</h4>
       <div style="font-size:.8rem;color:var(--text2);line-height:1.8">
-        <div>• Error Parser: 结构化提取 expected / actual type + 修复建议</div>
-        <div>• Repair: 50+ 条 Lean3→4 标识符映射 + 语法修复规则库</div>
-        <div>• Premise: BM25 + n-gram 混合检索，70 条内置库，RRF 融合排序</div>
-        <div>• LemmaBank: JSONL 持久化 + 去重 + 线程安全 + 跨问题复用</div>
+        <div>• UnifiedProofRunner + 14 Profile（whole-proof / RAG / step-level / MCTS / DSP / ...）</div>
+        <div>• Premise: BM25 + n-gram 混合 + RRF 融合，支持 dense embedding</div>
+        <div>• Conjecture-driven: LLM 提议引理 → 文本级 verify → 写入 lemma bank</div>
+        <div>• IntegrityChecker: 反 sorry / 反 axiom 注入 / 反假定理</div>
       </div>
     </div>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2rem;position:relative;overflow:hidden">
       <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--cyan)"></div>
-      <h4 style="font-size:.9rem;font-weight:500;color:var(--cyan);margin-bottom:.8rem">✓ Pipeline Layer · 端到端管线</h4>
+      <h4 style="font-size:.9rem;font-weight:500;color:var(--cyan);margin-bottom:.8rem">✓ Sampler Layer · RL infra 接口</h4>
       <div style="font-size:.8rem;color:var(--text2);line-height:1.8">
-        <div>• Orchestrator: 策略驱动 + decompose + conjecture + reflection 集成</div>
-        <div>• DualEngine: APE 搜索 (∀P, P→P 三步证明, &lt;1ms) + Lean4 编译验证</div>
-        <div>• ProofLoop: 生成 → 验证 → 修复 + 引理自动提取</div>
-        <div>• Config: 字段 / 范围 / 枚举 三类校验，5 数据集 + pass@k 分难度指标</div>
+        <div>• ProofEnv: gym 风格 step/reset，复用 engine/ 的 lean pool</div>
+        <div>• VeRLProofAgentLoop: 直接对接 verl rollout pipeline</div>
+        <div>• SlimeSampler: slime/vLLM driven trainer 的 sampler 适配</div>
+        <div>• TreeRolloutSampler: best-first / UCB / beam 三种树搜索</div>
       </div>
     </div>
   </div>
 
-  <!-- Performance benchmarks -->
-  <div style="background:var(--card);border:1px solid var(--green-border);border-radius:14px;padding:2rem;margin-bottom:1rem">
-    <h4 style="font-size:.9rem;font-weight:500;color:var(--green2);margin-bottom:1rem">⚡ 性能基准</h4>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1.5rem;font-size:.8rem;color:var(--text2)">
-      <div><span style="font-family:var(--mono);color:var(--green)">27μs</span><br>Tactic 执行 (avg)</div>
-      <div><span style="font-family:var(--mono);color:var(--green)">54μs</span><br>Tactic 执行 (p99)</div>
-      <div><span style="font-family:var(--mono);color:var(--green)">12,700</span><br>搜索 nodes/sec</div>
-      <div><span style="font-family:var(--mono);color:var(--green)">2.0ms</span><br>Premise 检索 (avg)</div>
+  <!-- v14 highlight -->
+  <div style="background:var(--card);border:1px solid rgba(167,139,250,0.18);border-radius:14px;padding:2rem;margin-bottom:1rem">
+    <h4 style="font-size:.9rem;font-weight:500;color:var(--accent3);margin-bottom:1rem">⚡ v14 重点 — 4 项备胎复活并接通主路径</h4>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:1.5rem;font-size:.78rem;color:var(--text2);line-height:1.7">
+      <div>
+        <span style="font-family:var(--mono);color:var(--green);font-size:.72rem;display:block;margin-bottom:.35rem">项 ① · ENGINE / 错误压缩</span>
+        engine/summary_compressor.py 回归 (490 行)。Lean 错误堆栈 + AgentFeedback + 4 路广播都走 ~9× 压缩。LoopConfig.compress_tool_results 默认开。
+      </div>
+      <div>
+        <span style="font-family:var(--mono);color:var(--blue);font-size:.72rem;display:block;margin-bottom:.35rem">项 ② · ENGINE / 策略引擎</span>
+        engine/policy/ 整目录 (~880 行)。13 类 ProofFailureClass + 5 条声明式规则。AgentLoop(policy_engine=) 可选注入,每轮失败后真做 declarative early-termination。
+      </div>
+      <div>
+        <span style="font-family:var(--mono);color:var(--cyan);font-size:.72rem;display:block;margin-bottom:.35rem">项 ③ · PROVER / 跨会话引理库</span>
+        prover/lemma_bank/ 整目录 (643 行)。SQLite + BM25。LemmaBankTool fallback + ConjectureProposeTool 后置写入。<b>预留接口 A 的 lemma 维度第一次有真调用方</b>。
+      </div>
+      <div>
+        <span style="font-family:var(--mono);color:var(--amber);font-size:.72rem;display:block;margin-bottom:.35rem">项 ④ · PROVER / 领域插件</span>
+        YAML-driven 领域插件 (algebra/analysis/number-theory)。_build_initial_message 注入 few-shot/premises/strategic_hint。<b>ℕ减法等领域 bug 从硬编码挪成 declarative</b>。
+      </div>
+    </div>
+    <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border);font-size:.72rem;color:var(--text3);text-align:center">
+      v13 → v14: 760 → 786 测试通过 (+26 v14 smoke, 零回归) · 完整迭代计划见 <code style="color:var(--accent3)">docs/IMPROVEMENT_PLAN.md</code>
     </div>
   </div>
 
   <p style="text-align:center;font-size:.8rem;color:var(--text3);margin-top:2rem">
-    验证套件: <code style="font-family:var(--mono);color:var(--accent2)">python verification/run_full_verification.py</code>
-    &nbsp;·&nbsp; Lean4 本地验证: <code style="font-family:var(--mono);color:var(--accent2)">bash verification/verify_lean4_local.sh</code>
+    跑测试: <code style="font-family:var(--mono);color:var(--accent2)">pytest tests/ -q</code>
+    &nbsp;·&nbsp; 单题验证: <code style="font-family:var(--mono);color:var(--accent2)">python run_unified.py --builtin nat_add_comm --profile heterogeneous</code>
   </p>
 </div></section>
 
@@ -1863,8 +1910,8 @@ CAS 结果:  最大值 4/27 在 (a,b,c) = (2/3, 1/3, 0) 及其轮换处取得
 <!-- ═══════════ FOOTER ═══════════ -->
 <footer>
   <div class="f-logo">AI4Math</div>
-  <p>形式化定理证明的智能体操作系统 · 验证 OS · 活知识 · 世界模型 · 数学家社会</p>
-  <p style="margin-top:0.5rem;font-size:0.72rem;color:var(--text3)">MIT License · 264 files · 56K+ lines · 797 tests · 7 benchmarks · 6,826 problems</p>
+  <p>形式化定理证明的智能体操作系统 · 大一统推理 · 验证基础设施 · RL infra · 三个预留接口</p>
+  <p style="margin-top:0.5rem;font-size:0.72rem;color:var(--text3)">MIT License · ~170 files · ~42K lines · 786 tests · 7 benchmarks · 1,631 problems · v14</p>
 </footer>
 
 

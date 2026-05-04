@@ -21,9 +21,8 @@ from __future__ import annotations
 import re
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
 
-from engine.lean_pool import LeanPool, TacticFeedback
+from engine._core import TacticFeedback
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +188,7 @@ class ErrorIntelligence:
         prompt_text = feedback.to_prompt()
     """
 
-    def __init__(self, lean_pool: LeanPool = None,
+    def __init__(self, lean_pool=None,
                  premise_index=None):
         self.pool = lean_pool
         self.premises = premise_index

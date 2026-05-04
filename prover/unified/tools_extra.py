@@ -38,16 +38,43 @@ class DecomposeSubgoalTool(Tool):
         "required": ["goal"],
     }
 
+    def __init__(self, llm=None):
+        # v12 fix: previously this tool hard-coded ``GoalDecomposer(None)``
+        # so every invocation hit ``NoneType has no attribute 'generate'``
+        # and returned a "decompose failed" error. The runner now binds
+        # its LLM here via ``build_tool_registry`` (mirroring
+        # ConjectureProposeTool's pattern).
+        self._llm = llm
+
     async def execute(self, input: dict, ctx: ToolContext) -> ToolResult:
+        # Resolve LLM: tool-bound → ctx.shared_state → ctx.llm
+        llm = self._llm
+        if llm is None:
+            ss = getattr(ctx, "shared_state", None) or {}
+            llm = ss.get("llm") if isinstance(ss, dict) else None
+        if llm is None:
+            llm = getattr(ctx, "llm", None)
+        if llm is None:
+            return ToolResult.error(
+                "decompose_subgoal: no LLM available. The runner must be "
+                "constructed with `llm=...` for this tool to work.")
+
         try:
             from prover.decompose.goal_decomposer import GoalDecomposer
-            decomposer = GoalDecomposer(None)
-            subgoals = decomposer.decompose(input["goal"]) or []
-            payload = [
-                {"statement": getattr(sg, "statement", str(sg)),
-                 "kind": getattr(sg, "kind", "subgoal")}
-                for sg in subgoals
-            ]
+            decomposer = GoalDecomposer(llm)
+            # v13: GoalDecomposer.decompose 已改为 async (修复 v12 漏掉的
+            # sync-call-async latent bug, 参见 goal_decomposer.py docstring)。
+            subgoals = await decomposer.decompose(input["goal"]) or []
+            # v12 fix: SubGoal dataclass has fields name/statement/
+            # difficulty/proved/proof — NOT 'kind'. Stop pretending it
+            # does. Surface the real fields the LLM can use.
+            payload = []
+            for sg in (subgoals or []):
+                payload.append({
+                    "name": getattr(sg, "name", ""),
+                    "statement": getattr(sg, "statement", str(sg)),
+                    "difficulty": getattr(sg, "difficulty", "unknown"),
+                })
             return ToolResult.success(json.dumps(payload, ensure_ascii=False))
         except Exception as e:
             return ToolResult.error(f"decompose failed: {e}")
@@ -77,31 +104,54 @@ class LemmaBankTool(Tool):
         "required": ["query"],
     }
 
-    def __init__(self, knowledge_store=None):
+    def __init__(self, knowledge_store=None, persistent_bank=None):
+        """
+        v14: ``persistent_bank`` 是可选 ``PersistentLemmaBank`` 实例
+        (跨问题/跨会话, SQLite + BM25)。当 ``knowledge_store`` 没结果
+        或 None 时, 走 persistent_bank 兜底; 两者都没结果时返回 []。
+        这是预留接口 A 知识库的"lemma 维度"主路径。
+        """
         self._store = knowledge_store
+        self._persistent_bank = persistent_bank
 
     async def execute(self, input: dict, ctx: ToolContext) -> ToolResult:
-        if not self._store:
-            return ToolResult.success(
-                json.dumps([], ensure_ascii=False),
-                count=0)
-        try:
-            from knowledge.reader import KnowledgeReader
-            reader = KnowledgeReader(self._store)
-            top_k = input.get("top_k", 5)
-            lemmas = await reader.find_lemmas(
-                goal=input["query"], top_k=top_k)
-            payload = [
-                {"name": lm.name, "statement": lm.statement,
-                 "proof": lm.proof, "times_cited": lm.times_cited,
-                 "relevance": lm.relevance_score}
-                for lm in lemmas
-            ]
-            return ToolResult.success(
-                json.dumps(payload, ensure_ascii=False),
-                count=len(payload))
-        except Exception as e:
-            return ToolResult.error(f"lemma_bank query failed: {e}")
+        top_k = input.get("top_k", 5)
+        query = input["query"]
+        results: list = []
+
+        # Path 1: knowledge store (Layer 0/1 — 当前 run 的 lemma)
+        if self._store:
+            try:
+                from knowledge.reader import KnowledgeReader
+                reader = KnowledgeReader(self._store)
+                lemmas = await reader.find_lemmas(goal=query, top_k=top_k)
+                results = [
+                    {"name": lm.name, "statement": lm.statement,
+                     "proof": lm.proof, "times_cited": lm.times_cited,
+                     "relevance": lm.relevance_score, "source": "store"}
+                    for lm in lemmas
+                ]
+            except Exception as e:
+                logger.debug("knowledge_store path failed: %s", e)
+
+        # Path 2: persistent bank (跨问题/跨会话 fallback)
+        if not results and self._persistent_bank is not None:
+            try:
+                lemmas = self._persistent_bank.search(query, top_k=top_k)
+                results = [
+                    {"name": lm.name, "statement": lm.statement,
+                     "proof": lm.proof,
+                     "times_cited": getattr(lm, "times_cited", 0),
+                     "relevance": getattr(lm, "score", 0.0),
+                     "source": "persistent"}
+                    for lm in lemmas
+                ]
+            except Exception as e:
+                return ToolResult.error(
+                    f"lemma_bank persistent path failed: {e}")
+
+        return ToolResult.success(
+            json.dumps(results, ensure_ascii=False), count=len(results))
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -148,12 +198,30 @@ class BroadcastTool(Tool):
                  "content": getattr(m, "content", str(m))}
                 for m in msgs
             ]
+            # v14: 4 路 sub-profile 累积广播容易塞爆 reader 的 context window。
+            # compress_broadcast 走 dedup + 类别保留, 硬上限 1500 字符。
+            try:
+                from engine.summary_compressor import compress_broadcast
+                joined = json.dumps(payload, ensure_ascii=False)
+                if len(joined) > 1500:
+                    return ToolResult.success(
+                        compress_broadcast(joined, budget=1500))
+            except Exception:
+                pass
             return ToolResult.success(json.dumps(payload, ensure_ascii=False))
         else:  # share
             try:
                 from engine.broadcast import BroadcastMessage
                 kind = input.get("kind", "positive")
                 content = input.get("content", "")
+                # v14: 单条 publish content 也限长, 防止某个 sub-profile 把
+                # 整段 stderr 直接 share 出去。
+                if len(content) > 800:
+                    try:
+                        from engine.summary_compressor import compress_feedback
+                        content = compress_feedback(content, budget=800)
+                    except Exception:
+                        content = content[:800] + " …[truncated]"
                 fn = {
                     "positive": getattr(BroadcastMessage, "positive", None),
                     "negative": getattr(BroadcastMessage, "negative", None),
@@ -305,14 +373,17 @@ class ConjectureProposeTool(Tool):
         "required": ["theorem"],
     }
 
-    def __init__(self, llm=None, lean_env=None):
-        # ``llm`` and ``lean_env`` are the two upstream dependencies of
-        # ``ConjectureProposer``. We accept them at construction so
-        # ``_build_tool`` can wire the runner's LLM in directly. They
-        # remain optional so existing code paths that build registries
-        # without an LLM (e.g. tests) still construct successfully.
+    def __init__(self, llm=None, lean_env=None, persistent_bank=None):
+        """
+        v14: ``persistent_bank`` 是可选 ``PersistentLemmaBank``。如果传入,
+        提议出的 conjecture 在通过文本级 verifier 过滤后, 会作为"待证引理"
+        写入 bank (proof 字段为空, 标 status='proposed')。下一题查到这条
+        statement 但没 proof 时会跳过; 如果未来真证出来了, 由主路径
+        lean_verify 之后另外 ``deposit_proved`` 写回。
+        """
         self._llm = llm
         self._lean_env = lean_env
+        self._persistent_bank = persistent_bank
 
     async def execute(self, input: dict, ctx: ToolContext) -> ToolResult:
         # Resolve LLM in priority order:
@@ -352,19 +423,36 @@ class ConjectureProposeTool(Tool):
 
         try:
             proposer = ConjectureProposer(llm=llm, lean_env=self._lean_env)
-            # We deliberately disable on-tool verification to avoid
-            # the proposer's verifier doing a Lean roundtrip — the
-            # runner has its own verification gate. We rely on the
-            # proposer's textual filtering only.
-            statements = proposer.propose(
+            # v13: ConjectureVerifier 已精简为纯文本级过滤 (parse 不通过 /
+            # 平凡 / 与目标无关), 不再依赖 Lean env。开 verify=True 让它筛
+            # 掉显然无用的猜想; 真 Lean 验证仍由主路径 lean_verify 负责。
+            statements = await proposer.propose(
                 theorem=theorem,
                 existing_lemmas=existing,
                 n=n,
-                verify=False,
+                verify=True,
             )
         except Exception as e:
             return ToolResult.error(
                 f"conjecture_propose: proposer failed: {e}")
+
+        # v14: 后置写入到 PersistentLemmaBank。提议引理本身没有 proof, 但
+        # 写入后下次同样 problem 出现时, BM25 检索会命中, 让 LLM 知道
+        # "这个 conjecture 已经被提议过", 减少重复提议的浪费。
+        if self._persistent_bank is not None and statements:
+            try:
+                from prover.lemma_bank import ProvedLemma
+                for s in statements:
+                    if not isinstance(s, str) or not s.strip():
+                        continue
+                    self._persistent_bank.add(ProvedLemma(
+                        name="proposed",
+                        statement=s,
+                        proof="",  # not yet proved
+                        verified=False,
+                    ))
+            except Exception as e:
+                logger.debug("persistent_bank write skipped: %s", e)
 
         # The proposer returns a flat list of strings; package as
         # objects so future extensions (e.g. relevance score) don't

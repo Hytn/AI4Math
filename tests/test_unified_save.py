@@ -186,90 +186,13 @@ class TestLoopResultUnified:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# 4. SessionStore sidecar (single dialog.json with meta + result)
+# 4. (TestSessionStoreSidecar deleted in v11: agent/persistence/session_store.py removed.)
 # ─────────────────────────────────────────────────────────────────────────
-
-class TestSessionStoreSidecar:
-    def test_dialog_sidecar_is_wrapped(self, tmp_path):
-        from agent.persistence.session_store import (
-            FileSessionStore, SessionData,
-        )
-        store = FileSessionStore(base_dir=str(tmp_path))
-        data = SessionData(
-            session_id="sess_test",
-            theorem="theorem t : True := trivial",
-            problem_id="t01",
-            model="qwen3",
-            messages=[
-                {"role": "user", "content": "Prove True"},
-                {"role": "assistant",
-                 "content": "```lean\ntheorem t : True := trivial\n```"},
-            ],
-            best_proof="theorem t : True := trivial",
-            proof_verified=True,
-            total_tokens=20,
-            total_turns=1,
-        )
-        store.save(data)
-
-        sidecar = tmp_path / "sess_test.dialog.json"
-        assert sidecar.exists()
-
-        loaded = json.loads(sidecar.read_text("utf-8"))
-        # Wrapped object with meta and result
-        assert loaded["schema_version"] == SCHEMA_VERSION
-        assert loaded["meta"]["model"] == "qwen3"
-        assert loaded["meta"]["problem_id"] == "t01"
-        assert loaded["meta"]["theorem_statement"] == \
-               "theorem t : True := trivial"
-        assert loaded["result"]["success"] is True
-        assert loaded["result"]["successful_proof"] == \
-               "theorem t : True := trivial"
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# 5. ProofSessionSnapshot.save_unified
+# 5. (TestSnapshotUnified deleted in v9: engine/lane/ removed.)
 # ─────────────────────────────────────────────────────────────────────────
-
-class TestSnapshotUnified:
-    def test_single_file(self, tmp_path):
-        from engine.lane.proof_session_store import ProofSessionSnapshot
-        snap = ProofSessionSnapshot(
-            problem_id="snap01",
-            problem_name="add_zero",
-            theorem_statement="theorem t (n : ℕ) : n + 0 = n",
-            round_number=2,
-            strategy_name="aggressive",
-            trace_attempts=[
-                {"generated_proof": ":= by ring",
-                 "lean_result": "lean_error",
-                 "lean_errors": [{"category": "tactic_failed",
-                                  "message": "ring failed"}]},
-                {"generated_proof": ":= by simp",
-                 "lean_result": "success",
-                 "lean_errors": []},
-            ],
-            solved=True,
-            trace_total_tokens=1234,
-        )
-        task_dir = tmp_path / "snap01"
-        snap.save_unified(task_dir, model="qwen3-32b")
-
-        # Only dialog.json
-        assert sorted(p.name for p in task_dir.iterdir()) \
-               == [DIALOG_FILENAME]
-
-        d = load_task(task_dir)
-        assert validate_dialog(d) == []
-        # Meta carries snapshot identity
-        assert meta_of(d)["problem_id"] == "snap01"
-        assert meta_of(d)["extra"]["round_number"] == 2
-        assert meta_of(d)["extra"]["strategy_name"] == "aggressive"
-        # Two attempts → two assistant proofs + two tool responses
-        roles = [m["role"] for m in messages_of(d)]
-        assert roles.count("assistant") == 2
-        assert roles.count("tool") == 2
-        assert result_of(d)["success"] is True
 
 
 # ─────────────────────────────────────────────────────────────────────────

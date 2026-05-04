@@ -50,8 +50,6 @@ search:
 observation:
   auto_inject_lean_compile: false      # step-level — no full compile
   auto_inject_goal_state: true         # tactic_apply already returns this
-  compress_errors_budget: 1200
-  visible_history_turns: -1
   include_search_state_in_prompt: true # show ancestors/siblings in user msg
   include_knowledge_briefing: true     # static briefing prepended once
 
@@ -62,6 +60,3 @@ stop:
   on_all_goals_closed: true
   max_total_tokens: 400000
   timeout_seconds: 600.0
-
-# 7. ── (optional) domain plugins to also register ──────────────────────
-plugins: []

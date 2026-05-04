@@ -21,8 +21,7 @@ import math
 import re
 import logging
 from collections import Counter
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -196,7 +195,7 @@ def enhance_knowledge_store_search(store, query_goal: str, query_theorem: str = 
 
     替代 store._search_lemmas_sync 的纯 keyword overlap 检索。
     """
-    import json, sqlite3
+    import json
 
     retriever = KnowledgeTFIDFRetriever()
 

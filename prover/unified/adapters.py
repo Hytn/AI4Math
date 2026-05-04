@@ -1,30 +1,17 @@
-"""prover/unified/adapters.py — Unified ↔ Legacy 数据桥
+"""prover/unified/adapters.py — Unified → ProofAttempt adapter
 
-让 ``UnifiedProofRunner`` 的输出 (``UnifiedResult`` + ``LoopResult``)
-能无缝喂给现有的 ``ProofPipeline`` / ``HeterogeneousEngine`` /
-``ResultFuser`` 等组件 —— 它们仍然消费 ``ProofAttempt`` / ``AgentResult``。
+把 ``UnifiedResult`` 转成 ``ProofAttempt`` (旧 ProofTrace 数据模型) ，让
+``run_eval.py`` 在 unified 路径下能继续用 ProofTrace 累积 pass@k 统计。
 
-数据形状对应::
-
-    LoopResult.messages         ──┐
-    UnifiedResult.profile_name    ├─→ dialog.json (持久化主格式)
-    UnifiedResult.search_summary ──┘
-
-    UnifiedResult.success         ──┐
-    UnifiedResult.proof_code       ├─→ ProofAttempt   (ProofPipeline 内部)
-    LoopResult.total_tokens       ──┘
-
-    UnifiedResult.success         ──┐
-    UnifiedResult.proof_code       ├─→ AgentResult    (HeterogeneousEngine fan-in)
-    UnifiedResult.profile_name    ──┘
-
-所有重构对外都不破坏旧 API: 旧测试、旧持久化、旧 SFT 导出脚本继续工作。
+历史: v8 之前还有 ``unified_to_agent_result`` 喂给 ``HeterogeneousEngine``
+和 ``ResultFuser``, 但那两个组件 (依赖 SubAgent / AgentResult) 已在 v9
+随 ``agent/runtime/{sub_agent,async_agent_pool,result_fuser}.py`` 一起
+删除。本文件只剩 ``unified_to_attempt`` 一个函数。
 """
 from __future__ import annotations
 
 import logging
 import time
-from typing import Optional
 
 from prover.models import (
     ProofAttempt, AttemptStatus, LeanError, ErrorCategory,
@@ -34,16 +21,12 @@ from prover.unified.runner import UnifiedResult
 logger = logging.getLogger(__name__)
 
 
-# ══════════════════════════════════════════════════════════════════════
-# UnifiedResult → ProofAttempt
-# ══════════════════════════════════════════════════════════════════════
-
 def unified_to_attempt(
     result: UnifiedResult,
     *,
     attempt_number: int = 1,
 ) -> ProofAttempt:
-    """``UnifiedResult`` → ``ProofAttempt`` (ProofPipeline 兼容路径)。
+    """``UnifiedResult`` → ``ProofAttempt`` (ProofTrace 兼容路径)。
 
     错误从 dialog.messages 中的 tool_result 抽取; 如果 LoopResult 不可用
     则保留空错误列表。
@@ -70,7 +53,7 @@ def unified_to_attempt(
             f"turns={loop.turns_used if loop else 0} "
             f"tools={','.join(loop.tools_called) if loop else ''}"
         ),
-        llm_model=_get_loop_model(loop),
+        llm_model="",
         llm_tokens_in=0,
         llm_tokens_out=loop.total_tokens if loop else 0,
         llm_latency_ms=loop.total_latency_ms if loop else result.total_duration_ms,
@@ -85,54 +68,6 @@ def unified_to_attempt(
     )
 
 
-# ══════════════════════════════════════════════════════════════════════
-# UnifiedResult → AgentResult (heterogeneous engine fan-in)
-# ══════════════════════════════════════════════════════════════════════
-
-def unified_to_agent_result(result: UnifiedResult, *, agent_name: str = ""):
-    """``UnifiedResult`` → ``AgentResult`` (异构方向并行兼容)。
-
-    ``HeterogeneousEngine`` 的下游 (ResultFuser / BroadcastBus / confidence
-    sort) 全部消费 AgentResult, 这个 adapter 把统一 runtime 的输出"装扮"成
-    旧 SubAgent 的输出形状。
-    """
-    from prover.pipeline._agent_deps import AgentResult
-    from common.roles import AgentRole
-
-    loop = result.loop_result
-    name = agent_name or f"unified.{result.profile_name}"
-    proof_code = result.proof_code or (loop.proof_code if loop else "")
-    confidence = _confidence_heuristic(result)
-
-    return AgentResult(
-        agent_name=name,
-        role=AgentRole.PROOF_GENERATOR,
-        content=loop.content if loop else "",
-        proof_code=proof_code,
-        tool_calls=[{"tools_used": loop.tools_called if loop else []}],
-        tokens_used=loop.total_tokens if loop else 0,
-        latency_ms=loop.total_latency_ms if loop else result.total_duration_ms,
-        confidence=confidence,
-        success=result.success,
-        error=("" if result.success
-               else (loop.stopped_reason if loop else "no_result")),
-        metadata={
-            "profile_name": result.profile_name,
-            "stopped_reason": loop.stopped_reason if loop else "",
-            "turns_used": loop.turns_used if loop else 0,
-            "search_summary": result.search_summary,
-            "verification": {
-                "success": result.success,
-                "level": "L2" if result.success else "L1",
-            },
-        },
-    )
-
-
-# ══════════════════════════════════════════════════════════════════════
-# helpers
-# ══════════════════════════════════════════════════════════════════════
-
 def _extract_lean_errors_from_loop(loop) -> tuple[list, str]:
     """从 LoopResult.messages 的 tool_result 内容里翻出 Lean 错误。"""
     if loop is None or not loop.messages:
@@ -142,7 +77,6 @@ def _extract_lean_errors_from_loop(loop) -> tuple[list, str]:
     stderr_parts = []
 
     for msg in loop.messages:
-        # LoopMessage.tool_results 是字符串列表
         results = getattr(msg, "tool_results", None) or []
         for r in results:
             text = str(r) if r is not None else ""
@@ -160,38 +94,27 @@ def _extract_lean_errors_from_loop(loop) -> tuple[list, str]:
 
 
 def _classify_category(text_lower: str) -> ErrorCategory:
-    if "type mismatch" in text_lower or "expected type" in text_lower:
+    """v11: route through engine._core.classify_error for consistency
+    with LeanVerifyTool / ErrorIntelligence. The string returned by
+    classify_error is mapped onto the legacy ErrorCategory enum."""
+    try:
+        from engine._core import classify_error
+        cat = classify_error(text_lower or "")
+    except Exception:
+        cat = ""
+    if cat in ("type_mismatch", "app_type_mismatch"):
         return ErrorCategory.TYPE_MISMATCH
-    if "unknown identifier" in text_lower or "unknown constant" in text_lower:
+    if cat == "unknown_identifier":
         return ErrorCategory.UNKNOWN_IDENTIFIER
-    if "tactic" in text_lower and "failed" in text_lower:
+    if cat == "tactic_failed":
         return ErrorCategory.TACTIC_FAILED
-    if "syntax" in text_lower or "expected" in text_lower:
+    if cat == "syntax_error":
         return ErrorCategory.SYNTAX_ERROR
-    if "timeout" in text_lower:
+    if cat == "timeout":
         return ErrorCategory.TIMEOUT
+    # Unrecognised / "other" / classifier failed → fall back to the
+    # original keyword scan as a last resort.
     if "import" in text_lower:
         return ErrorCategory.IMPORT_ERROR
     return ErrorCategory.OTHER
 
-
-def _get_loop_model(loop) -> str:
-    if loop is None:
-        return ""
-    # LoopResult 没有 model 字段; 从 messages 找最后一条 assistant 推断
-    return ""
-
-
-def _confidence_heuristic(result: UnifiedResult) -> float:
-    """启发式: 验证通过 → 高; 仅产出代码 → 中; 失败 → 低。"""
-    if result.success:
-        return 0.95
-    if result.proof_code:
-        loop = result.loop_result
-        if loop and loop.stopped_reason == "text_only":
-            return 0.5
-        return 0.4
-    if result.loop_result is not None:
-        if result.loop_result.stopped_reason in ("timeout", "token_budget"):
-            return 0.1
-    return 0.2

@@ -1,10 +1,15 @@
-"""tests/test_prover/test_verifier.py — 验证器模块测试"""
+"""tests/test_prover/test_verifier.py — 验证器模块测试
+
+v11: ``goal_extractor`` and ``error_parser`` were deleted (zero main-path
+callers, replaced by ``engine.error_intelligence``). Their TestGoalExtractor
+and TestErrorParser classes have been removed along with them.
+``sorry_detector`` and ``integrity_checker`` are kept (the former is wired
+into AgentLoop; the latter is wired into LeanVerifyTool as of v11).
+"""
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-import pytest
-from prover.verifier.sorry_detector import detect_sorry, count_sorries, SorryReport
-from prover.verifier.goal_extractor import extract_goals, ExtractedGoal
-from prover.verifier.error_parser import parse_lean_errors
+
+from prover.verifier.sorry_detector import detect_sorry, count_sorries
 from prover.verifier.integrity_checker import check_integrity
 
 
@@ -56,70 +61,6 @@ class TestSorryDetector:
         code = "theorem t := by\n  sorry\n  sorry\n  sorry"
         report = detect_sorry(code)
         assert len(report.locations) == 3
-
-
-# ── Goal Extractor ──
-
-class TestGoalExtractor:
-    def test_simple_goal(self):
-        output = "n : Nat\n⊢ n = n"
-        goals = extract_goals(output)
-        assert len(goals) >= 1
-        assert goals[0].target == "n = n"
-        assert len(goals[0].hypotheses) == 1
-        assert goals[0].hypotheses[0]["name"] == "n"
-
-    def test_case_goal(self):
-        output = "case zero\n⊢ 0 = 0"
-        goals = extract_goals(output)
-        assert len(goals) >= 1
-        assert goals[0].case_name == "zero"
-
-    def test_unsolved_goals(self):
-        output = "error: unsolved goals\nn : Nat\nm : Nat\n⊢ n + m = m + n"
-        goals = extract_goals(output)
-        assert len(goals) >= 1
-
-    def test_format_for_prompt(self):
-        goal = ExtractedGoal(
-            index=0, target="n = n",
-            hypotheses=[{"name": "n", "type": "Nat"}])
-        s = goal.to_string()
-        assert "n : Nat" in s
-        assert "⊢ n = n" in s
-
-    def test_no_goals(self):
-        goals = extract_goals("All goals completed!")
-        assert goals == []
-
-
-# ── Error Parser ──
-
-class TestErrorParser:
-    def test_parse_type_mismatch(self):
-        stderr = "Test.lean:5:4: error: type mismatch\n  expected Nat, got Bool"
-        errors = parse_lean_errors(stderr)
-        assert len(errors) == 1
-        assert errors[0].category.value == "type_mismatch"
-        assert errors[0].line == 5
-
-    def test_parse_unknown_identifier(self):
-        stderr = "Test.lean:3:10: error: unknown identifier 'foo'"
-        errors = parse_lean_errors(stderr)
-        assert len(errors) == 1
-        assert errors[0].category.value == "unknown_identifier"
-
-    def test_parse_tactic_failed(self):
-        stderr = "Test.lean:7:2: error: tactic 'simp' failed"
-        errors = parse_lean_errors(stderr)
-        assert len(errors) == 1
-        assert errors[0].category.value == "tactic_failed"
-
-    def test_parse_multiple_errors(self):
-        stderr = ("Test.lean:1:0: error: unknown identifier 'x'\n"
-                  "Test.lean:3:0: error: type mismatch at h")
-        errors = parse_lean_errors(stderr)
-        assert len(errors) == 2
 
 
 # ── Integrity Checker ──

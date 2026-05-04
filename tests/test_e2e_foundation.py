@@ -17,87 +17,12 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from engine.transport import MockTransport, LocalTransport, FallbackTransport
-from engine.repl_protocol import REPLRequest, REPLResponse, build_sorry_theorem
 from engine._core import (
     TacticFeedback, FullVerifyResult, CompileCache,
     classify_error, assemble_code, make_cache_key,
 )
 from engine.async_lean_pool import AsyncLeanSession, AsyncLeanPool
-from engine.proof_session import ProofSessionManager, ProofSession
 from engine.prefilter import PreFilter
-
-
-# ═══════════════════════════════════════════════════════════════
-# Layer 1: REPL Protocol
-# ═══════════════════════════════════════════════════════════════
-
-class TestREPLProtocol:
-    """Test the wire protocol data structures."""
-
-    def test_command_request(self):
-        req = REPLRequest.command("import Mathlib", env=0)
-        d = req.to_dict()
-        assert d == {"cmd": "import Mathlib", "env": 0}
-
-    def test_tactic_request(self):
-        req = REPLRequest.tactic_step("simp", proof_state=3)
-        d = req.to_dict()
-        assert d == {"tactic": "simp", "proofState": 3}
-
-    def test_response_parsing_success(self):
-        raw = {
-            "env": 5,
-            "messages": [],
-            "goals": [],
-            "sorries": [],
-        }
-        resp = REPLResponse.from_dict(raw)
-        assert resp.env == 5
-        assert not resp.has_errors
-        assert resp.is_proof_complete
-
-    def test_response_parsing_error(self):
-        raw = {
-            "env": 3,
-            "messages": [
-                {"severity": "error",
-                 "data": "type mismatch",
-                 "pos": {"line": 1, "column": 5}}
-            ],
-            "goals": ["⊢ Nat"],
-        }
-        resp = REPLResponse.from_dict(raw)
-        assert resp.has_errors
-        assert resp.error_messages == ["type mismatch"]
-        assert not resp.is_proof_complete
-
-    def test_response_with_sorries(self):
-        raw = {
-            "env": 2,
-            "messages": [],
-            "goals": [],
-            "sorries": [
-                {"proofState": 1, "goal": "⊢ True",
-                 "pos": {"line": 1, "column": 0},
-                 "endPos": {"line": 1, "column": 5}},
-            ],
-        }
-        resp = REPLResponse.from_dict(raw)
-        assert resp.has_sorry
-        goals = resp.interactive_goals
-        assert len(goals) == 1
-        assert goals[0] == (1, "⊢ True")
-
-    def test_build_sorry_theorem(self):
-        assert build_sorry_theorem("theorem t : True") == \
-            "theorem t : True := by sorry"
-        # Already has body
-        assert build_sorry_theorem("theorem t : True := trivial") == \
-            "theorem t : True := trivial"
-
-    def test_response_from_invalid_json(self):
-        resp = REPLResponse.from_json("{invalid")
-        assert resp.has_errors
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -362,51 +287,11 @@ class TestAsyncLeanPool:
 # Layer 5: ProofSession State Tree
 # ═══════════════════════════════════════════════════════════════
 
-class TestProofSession:
-    """Test proof session state tree management.
-
-    Uses a pool with MockTransport sessions to simulate
-    realistic env_id state transitions.
-    """
-
-    @pytest.mark.asyncio
-    async def test_session_manager_begin_proof(self):
-        pool = AsyncLeanPool(pool_size=1, project_dir=".")
-        await pool.start()
-
-        async with ProofSessionManager(pool) as mgr:
-            session = await mgr.begin_proof("theorem t : True := by")
-            assert session is not None
-            assert session.current_env_id >= 0
-            assert not session.is_solved
-
-    @pytest.mark.asyncio
-    async def test_proof_session_rewind(self):
-        pool = AsyncLeanPool(pool_size=1, project_dir=".")
-        await pool.start()
-
-        async with ProofSessionManager(pool) as mgr:
-            session = await mgr.begin_proof("theorem t : True := by")
-            initial = session.current_env_id
-
-            # Try a step (will fail in fallback, but state tree still updates)
-            await session.try_step("intro h")
-
-            # Rewind
-            rewound = session.rewind(steps=1)
-            assert rewound == initial
-
-    @pytest.mark.asyncio
-    async def test_proof_session_tree_stats(self):
-        pool = AsyncLeanPool(pool_size=1, project_dir=".")
-        await pool.start()
-
-        async with ProofSessionManager(pool) as mgr:
-            session = await mgr.begin_proof("theorem t : True := by")
-            stats = session.tree_stats()
-            assert "total_nodes" in stats
-            assert "max_depth" in stats
-            assert stats["solved"] is False
+# ═══════════════════════════════════════════════════════════════
+# (TestProofSession deleted in v9: ProofSessionManager / ProofSession
+#  runtime classes had 0 main-path callers and were removed.
+#  EnvNode / ProofSessionState dataclasses moved to proof_context_store.)
+# ═══════════════════════════════════════════════════════════════
 
 
 # ═══════════════════════════════════════════════════════════════

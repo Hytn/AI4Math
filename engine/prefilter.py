@@ -10,8 +10,7 @@
 from __future__ import annotations
 import re
 import logging
-from dataclasses import dataclass, field
-from typing import Optional, Callable
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 

@@ -25,7 +25,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from sampler.trajectory import (
@@ -50,6 +50,30 @@ class ProofEnvConfig:
     pool_size: int = 4
     preamble: str = "import Mathlib"
     lean_timeout_s: int = 30
+
+    # ── v7: Verification backend selection ───────────────────────────
+    # Picks which Lean transport backs every session in the pool.
+    # ``"local"`` (default) preserves V1–V6 behaviour; the others reach
+    # the community backends merged in V1–V6 but previously unreachable
+    # from the RL sampler. Each pool session gets an independent
+    # transport built by ``_make_transport_factory`` below.
+    #
+    # Supported values:
+    #   "local"      — bare Lean 4 REPL subprocess (legacy default)
+    #   "socket"     — Unix socket to docker/lean_daemon.py
+    #   "kimina"     — Kimina Lean Server REST API (recommended for RL)
+    #   "http"       — alias of "kimina"
+    #   "pantograph" — Pantograph backend (mvar focus, drafting)
+    #   "lookeng"    — LooKeng outer wrapper (lemma cache)
+    #   "mock"       — deterministic in-process transport (tests)
+    #   "auto"       — probe local→socket→http and pick the first to start
+    backend: str = "local"
+    backend_url: Optional[str] = None        # for kimina/http
+    backend_api_key: Optional[str] = None    # for kimina/http
+    backend_socket_path: Optional[str] = None  # for socket
+    # When backend == "lookeng", what to use as the inner verifier.
+    # None = LooKeng's default LocalTransport; "kimina" = production chain.
+    backend_inner_kind: Optional[str] = None
 
     # Reward shaping
     reward_success: float = 1.0        # Full proof accepted
@@ -98,6 +122,12 @@ class ProofEnv:
         """Initialize Lean pool and verification infrastructure.
 
         Call once before any reset/step. Safe to call multiple times.
+
+        v7: honours ``ProofEnvConfig.backend`` — when set to anything
+        other than ``"local"``, every pool session gets a transport
+        built by ``_make_transport_factory`` below. This is the wire
+        that finally connects the V1–V6 community backends
+        (Kimina/Pantograph/LooKeng) to the RL sampler.
         """
         if self._pool is not None:
             return
@@ -112,12 +142,24 @@ class ProofEnv:
         self._error_intel = ErrorIntelligence()
         self._broadcast = BroadcastBus()
 
+        # v7: build a transport factory if a non-default backend is requested.
+        # The factory is invoked once per session by AsyncLeanPool, so each
+        # session ends up with its own transport — safe for stateful backends
+        # like LocalTransport that must not be shared across sessions, and
+        # equally safe for stateless REST clients like Kimina (each session
+        # gets its own client object pointing at the same server).
+        transport_factory = None
+        if self.config.backend not in ("", "local", None):
+            transport_factory = self._make_transport_factory()
+
         self._pool = AsyncLeanPool(
             pool_size=self.config.pool_size,
             project_dir=self.config.project_dir,
+            preamble=self.config.preamble,  # set on the pool, not on start()
             timeout_seconds=self.config.lean_timeout_s,
+            transport_factory=transport_factory,
         )
-        await self._pool.start(preamble=self.config.preamble)
+        await self._pool.start()
 
         self._verifier = AsyncVerificationScheduler(
             prefilter=self._prefilter,
@@ -126,7 +168,87 @@ class ProofEnv:
             broadcast=self._broadcast,
             project_dir=self.config.project_dir,
         )
-        logger.info("ProofEnv: setup complete, pool_size=%d", self.config.pool_size)
+        logger.info(
+            "ProofEnv: setup complete, pool_size=%d backend=%s",
+            self.config.pool_size, self.config.backend)
+
+    def _make_transport_factory(self):
+        """Build a session-id → REPLTransport factory for non-local backends.
+
+        Returns a *sync* factory that constructs the right transport
+        class but does NOT start it. ``AsyncLeanSession.start()`` will
+        await the transport's ``start()`` itself — this is the
+        documented contract on the session, and it neatly avoids the
+        "nested event loop" trap (the factory is invoked from inside
+        ``AsyncLeanPool.start()`` which is already on an event loop).
+
+        Falls back to None (which AsyncLeanPool handles by constructing
+        a default LocalTransport) for unrecognised backends.
+        """
+        cfg = self.config
+
+        def _factory(session_id: int):
+            try:
+                if cfg.backend == "mock":
+                    from engine.transport import MockTransport
+                    return MockTransport()
+                if cfg.backend == "fallback":
+                    from engine.transport import FallbackTransport
+                    return FallbackTransport()
+                if cfg.backend in ("kimina", "http"):
+                    # v11: HTTPTransport (thin delegating wrapper) was
+                    # deleted; use KiminaServerBackend directly. Same
+                    # interface, one less indirection.
+                    from engine.backends.kimina_server import (
+                        KiminaServerBackend)
+                    return KiminaServerBackend(
+                        base_url=cfg.backend_url,
+                        api_key=cfg.backend_api_key,
+                        timeout_seconds=cfg.lean_timeout_s * 5)
+                if cfg.backend == "socket":
+                    from engine.transport import SocketTransport
+                    path = cfg.backend_socket_path or \
+                        "/workspace/exchange/lean.sock"
+                    return SocketTransport(
+                        socket_path=path,
+                        timeout_seconds=cfg.lean_timeout_s)
+                if cfg.backend == "pantograph":
+                    from engine.backends.pantograph import PantographBackend
+                    return PantographBackend(
+                        project_dir=cfg.project_dir,
+                        timeout_seconds=cfg.lean_timeout_s)
+                if cfg.backend == "lookeng":
+                    from engine.backends.lookeng import LooKengBackend
+                    # inner_kind support: if user wants the production
+                    # chain (LooKeng outer → Kimina inner), build the
+                    # inner transport here too. Inner is constructed
+                    # un-started, same contract.
+                    inner = None
+                    if cfg.backend_inner_kind in ("kimina", "http"):
+                        from engine.backends.kimina_server import (
+                            KiminaServerBackend)
+                        inner = KiminaServerBackend(
+                            base_url=cfg.backend_url,
+                            api_key=cfg.backend_api_key,
+                            timeout_seconds=cfg.lean_timeout_s * 5)
+                    return LooKengBackend(
+                        inner=inner, project_dir=cfg.project_dir)
+                # Unknown / "auto" / unsupported here → return None so
+                # AsyncLeanPool falls back to LocalTransport. We log so
+                # the operator can spot a typo.
+                if cfg.backend not in ("local", "auto", "", None):
+                    logger.warning(
+                        "ProofEnv: unknown backend %r — falling back to local",
+                        cfg.backend)
+                return None
+            except Exception as e:
+                logger.error(
+                    "ProofEnv backend %r factory(%d) raised %r — "
+                    "session will fall back to LocalTransport",
+                    cfg.backend, session_id, e)
+                return None
+
+        return _factory
 
     async def reset(self, problem: dict[str, Any]) -> str:
         """Start a new episode for the given problem.

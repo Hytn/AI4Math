@@ -148,7 +148,6 @@ class ToolRegistry:
         try:
             loop = asyncio.get_running_loop()
             # If we're already in an async context, use run_coroutine_threadsafe
-            import concurrent.futures
             future = asyncio.run_coroutine_threadsafe(
                 self.execute(name, input, ctx), loop)
             result = future.result(timeout=30)

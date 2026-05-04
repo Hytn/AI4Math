@@ -45,13 +45,38 @@ Core concepts:
 from sampler.trajectory import Trajectory, Turn, RewardInfo
 from sampler.proof_env import ProofEnv, ProofEnvConfig
 from sampler.base_sampler import BaseSampler, SamplerConfig
-from sampler.verl_sampler import VeRLProofInteraction, VeRLProofAgentLoop
-from sampler.slime_sampler import SlimeSampler
+from sampler.verl_sampler import (
+    VeRLProofInteraction, VeRLProofAgentLoop, VERL_AVAILABLE,
+)
+from sampler.slime_sampler import (
+    SlimeSampler, SLIME_AVAILABLE,
+    SlimeProofEnvFactory, SlimeProofEnv,
+)
+from sampler.tree_rollout_sampler import (
+    TreeRolloutSampler, TreeRolloutConfig,
+)
+from sampler.policy_adapter import (
+    MockPolicy, OpenAIPolicy, CallablePolicy, build_policy,
+    DEFAULT_SYSTEM_PROMPT,
+)
+from sampler.batch_export import (
+    to_grpo_batch, to_sft_jsonl, to_ppo_batch, save_batch_jsonl,
+)
 
 __all__ = [
+    # Core types
     "Trajectory", "Turn", "RewardInfo",
     "ProofEnv", "ProofEnvConfig",
     "BaseSampler", "SamplerConfig",
-    "VeRLProofInteraction", "VeRLProofAgentLoop",
-    "SlimeSampler",
+    # RL framework adapters
+    "VeRLProofInteraction", "VeRLProofAgentLoop", "VERL_AVAILABLE",
+    "SlimeSampler", "SLIME_AVAILABLE",
+    "SlimeProofEnvFactory", "SlimeProofEnv",
+    # Tree rollout (v7)
+    "TreeRolloutSampler", "TreeRolloutConfig",
+    # Policy adapters (v7.1)
+    "MockPolicy", "OpenAIPolicy", "CallablePolicy",
+    "build_policy", "DEFAULT_SYSTEM_PROMPT",
+    # Batch export (v7.1)
+    "to_grpo_batch", "to_sft_jsonl", "to_ppo_batch", "save_batch_jsonl",
 ]

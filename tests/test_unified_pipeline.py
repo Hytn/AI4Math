@@ -43,7 +43,7 @@ class FakeMockLLM:
         return self._mk_response()
 
     def _mk_response(self):
-        from agent.brain.llm_provider import LLMResponse
+        from agent.brain.async_llm_provider import LLMResponse
         return LLMResponse(
             content="Here's the proof:\n```lean\nby simp\n```",
             model="fake-mock",
@@ -62,27 +62,26 @@ class TestUnifiedAPI:
         from prover.unified import (
             UnifiedProofRunner, UnifiedResult,
             Profile, ToolKit, get_profile, PRESETS,
-            EXPERIMENTAL_PRESETS,
-            unified_to_attempt, unified_to_agent_result,
-            enable_experimental_search_presets,
+            unified_to_attempt,
         )
         assert UnifiedProofRunner is not None
-        assert PRESETS is not EXPERIMENTAL_PRESETS
+        assert isinstance(PRESETS, dict) and PRESETS
 
     def test_active_presets_include_tree_search(self):
         """v4: MCTS / beam / best_first 已合流到 active PRESETS.
 
         合流契约: dialog.json schema 3.0 的 ``meta.search_tree`` 块
         让树搜索的元数据原生进主存储, 三个 profile 因此不再需要
-        explicit opt-in。EXPERIMENTAL_PRESETS 仍保留作为未来的扩展点,
-        但当前应为空。
+        explicit opt-in。
+
+        v11: EXPERIMENTAL_PRESETS / enable_experimental_search_presets 已删除
+        (空字典 + no-op 函数, 自 v4 起就没有用途)。如果将来需要 gating, 可
+        重新引入。
         """
-        from prover.unified import PRESETS, EXPERIMENTAL_PRESETS
+        from prover.unified import PRESETS
         for required in ("mcts", "beam", "best_first"):
             assert required in PRESETS, \
                 f"v4 起 {required} 必须在 active PRESETS 中"
-        assert EXPERIMENTAL_PRESETS == {}, \
-            "v4: EXPERIMENTAL_PRESETS 当前应为空"
 
     def test_active_presets_complete(self):
         """v4 大一统的 9 个 active preset 必须全部在。"""
@@ -97,19 +96,16 @@ class TestUnifiedAPI:
         assert required.issubset(set(PRESETS)), \
             f"缺失 active preset: {required - set(PRESETS)}"
 
-    def test_enable_experimental_is_noop_in_v4(self):
-        """v4 起 enable_experimental_search_presets 是 no-op shim;
-        旧脚本调用它仍然工作但不产生新效果。"""
-        from prover.unified import (
-            PRESETS, enable_experimental_search_presets, get_profile,
-        )
-        snapshot = set(PRESETS)
-        enable_experimental_search_presets()  # 应该是 no-op
-        assert set(PRESETS) == snapshot, \
-            "enable_experimental_search_presets 不应改变 PRESETS"
-        # mcts 已经在了, 直接拿
-        prof = get_profile("mcts")
-        assert prof.search.kind == "ucb"
+    def test_v11_experimental_shim_removed(self):
+        """v11: confirm the no-op shim and empty container are gone.
+
+        Anyone who needs the old name can either import from
+        ``prover.unified.profiles`` directly (it's also gone there) or
+        define their own local empty dict + identity function.
+        """
+        import prover.unified as pu
+        assert not hasattr(pu, "EXPERIMENTAL_PRESETS")
+        assert not hasattr(pu, "enable_experimental_search_presets")
 
     def test_profile_shapes(self):
         """5 个 active preset 的关键字段。"""
@@ -140,82 +136,6 @@ class TestUnifiedAPI:
 # 2. HeterogeneousEngine v3 — legacy ctor compat
 # ══════════════════════════════════════════════════════════════════════
 
-class TestHeteroEngineV3:
-    def test_legacy_ctor_kwargs(self):
-        """assembly.py 的旧 kwargs 仍能构造。"""
-        from prover.pipeline.heterogeneous_engine import HeterogeneousEngine
-
-        class FakePool:
-            llm = None
-
-        he = HeterogeneousEngine(
-            pool=FakePool(),
-            plugin_loader=None, hook_manager=None,
-            retriever=None, broadcast=None,
-            verification_scheduler=None,
-        )
-        assert he.directions is not None
-        assert len(he.directions) == 4
-        assert {d.name for d in he.directions} == \
-            {"automation", "repair", "creative", "retrieval"}
-
-    def test_directions_use_active_profiles(self):
-        """方向引用的 profile 必须在 active PRESETS 中。"""
-        from prover.pipeline.heterogeneous_engine import _DEFAULT_DIRECTIONS
-        from prover.unified import PRESETS
-        for d in _DEFAULT_DIRECTIONS:
-            assert d.profile_name in PRESETS, \
-                f"direction {d.name!r} → unknown profile {d.profile_name!r}"
-
-    def test_sync_to_async_adapter_wraps_sync_llm(self):
-        from prover.pipeline.heterogeneous_engine import _SyncToAsyncAdapter
-        from agent.brain.llm_provider import LLMResponse
-
-        class SyncLLM:
-            model_name = "sync-test"
-            def generate(self, **kw):
-                return LLMResponse(
-                    content="ok", model="sync-test",
-                    tokens_in=1, tokens_out=2, latency_ms=1,
-                )
-
-        adapter = _SyncToAsyncAdapter(SyncLLM())
-        assert adapter.model_name == "sync-test"
-
-        async def run():
-            return await adapter.generate(system="s", user="u")
-        resp = asyncio.run(run())
-        assert resp.content == "ok"
-        assert resp.tokens_in == 1
-
-
-# ══════════════════════════════════════════════════════════════════════
-# 3. ProofLoop shim
-# ══════════════════════════════════════════════════════════════════════
-
-class TestProofLoopShim:
-    def test_construction_compatible(self):
-        from prover.pipeline.proof_loop import ProofLoop
-        loop = ProofLoop(
-            lean_env=None, llm=None, retriever=None,
-            config={"max_repair_rounds": 3},
-        )
-        assert loop.max_repair_rounds == 3
-        assert loop._max_turns == 4   # repair_rounds + 1
-
-    def test_zero_repair_uses_whole_proof(self):
-        """max_repair_rounds=0 → whole_proof profile (max_turns=1)."""
-        from prover.pipeline.proof_loop import ProofLoop
-        loop = ProofLoop(
-            lean_env=None, llm=None, retriever=None,
-            config={"max_repair_rounds": 0},
-        )
-        assert loop._max_turns == 1
-
-
-# ══════════════════════════════════════════════════════════════════════
-# 4. Adapters
-# ══════════════════════════════════════════════════════════════════════
 
 class TestAdapters:
     def _make_unified_result(self, *, success=True, proof="by simp"):
@@ -264,43 +184,15 @@ class TestAdapters:
         assert att.lean_result == AttemptStatus.LEAN_ERROR
         assert att.generated_proof == ""
 
-    def test_unified_to_agent_result(self):
-        from prover.unified import unified_to_agent_result
-
-        ur = self._make_unified_result(success=True, proof="by ring")
-        ar = unified_to_agent_result(ur, agent_name="test_dir")
-
-        assert ar.success is True
-        assert ar.proof_code == "by ring"
-        assert ar.agent_name == "test_dir"
-        assert ar.confidence > 0.9
-        assert ar.metadata["profile_name"] == "whole_proof_repair"
+    # test_unified_to_agent_result removed in v9: depends on
+    # agent.runtime.sub_agent.AgentResult which was deleted alongside
+    # the rest of the SubAgent / AsyncAgentPool subsystem.
 
 
 # ══════════════════════════════════════════════════════════════════════
 # 5. ProofPipeline routes through unified when profile is set
 # ══════════════════════════════════════════════════════════════════════
 
-class TestProofPipelineUnifiedRoute:
-    def test_pipeline_recognizes_profile_config(self):
-        """ProofPipeline.config['profile'] = X 时应路由到 _generate_via_unified。"""
-        from prover.pipeline.proof_pipeline import ProofPipeline
-
-        # Inspect the source: _generate_via_unified should exist
-        assert hasattr(ProofPipeline, "_generate_via_unified")
-
-    def test_unified_route_unknown_profile_fallbacks_gracefully(self):
-        """未知 profile 名应降级到 hetero, 不抛异常。"""
-        # 仅验证代码路径存在; 完整集成测试需要真实 components
-        from prover.pipeline.proof_pipeline import ProofPipeline
-        import inspect
-        src = inspect.getsource(ProofPipeline._generate_via_unified)
-        assert "Unknown profile" in src or "fallback" in src.lower()
-
-
-# ══════════════════════════════════════════════════════════════════════
-# 6. dialog.json round-trip via UnifiedProofRunner
-# ══════════════════════════════════════════════════════════════════════
 
 class TestDialogRoundTrip:
     @pytest.mark.asyncio

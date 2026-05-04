@@ -2,52 +2,34 @@
 
 支持 rahul3613/ProofNet-lean4 仓库结构:
   ProofNetLean4/*.lean
+
+v11: 共享解析逻辑下沉到 ``_base.parse_lean_files``。
 """
 from __future__ import annotations
-import re, logging
+
+import logging
 from pathlib import Path
+
+from benchmarks.datasets._base import parse_lean_files
 from prover.models import BenchmarkProblem
 
 logger = logging.getLogger(__name__)
 
-_THEOREM_RE = re.compile(
-    r'^(theorem|lemma)\s+(\S+)\s*([\s\S]*?)(?=\n(?:theorem|lemma|end|--|/-|noncomputable|open|section|namespace)\s|\Z)',
-    re.MULTILINE)
 
 def load(repo_path: str, split: str = "test") -> list[BenchmarkProblem]:
-    path = Path(repo_path)
-    if not path.exists():
+    repo = Path(repo_path)
+    if not repo.exists():
         logger.warning(f"ProofNet 路径不存在: {repo_path}")
         return []
 
-    # rahul3613/ProofNet-lean4 结构: ProofNetLean4/*.lean
-    src_dir = path / "ProofNetLean4"
-    if not src_dir.exists():
-        src_dir = path
-
-    problems = []
-    for lean_file in sorted(src_dir.rglob("*.lean")):
-        if "lakefile" in lean_file.name.lower():
-            continue
-        content = lean_file.read_text(encoding="utf-8", errors="ignore")
-        for m in _THEOREM_RE.finditer(content):
-            name = m.group(2)
-            full_text = m.group(0).strip()
-            parts_by = re.split(r'\s*:=\s*by\b', full_text, maxsplit=1)
-            parts_eq = re.split(r'\s*:=\s*', full_text, maxsplit=1)
-            if len(parts_by) > 1:
-                stmt = parts_by[0].strip()
-            elif len(parts_eq) > 1:
-                stmt = parts_eq[0].strip()
-            else:
-                stmt = full_text.strip()
-            problems.append(BenchmarkProblem(
-                problem_id=f"proofnet_{name}",
-                name=name,
-                theorem_statement=stmt,
-                difficulty="undergraduate",
-                source="ProofNet",
-            ))
-
+    src = repo / "ProofNetLean4"
+    files = sorted((src if src.exists() else repo).rglob("*.lean"))
+    problems = parse_lean_files(
+        files,
+        problem_id_prefix="proofnet_",
+        source="ProofNet",
+        difficulty_fn=lambda _name: "undergraduate",
+        skip_sorry_in_statement=False,
+    )
     logger.info(f"ProofNet: 加载了 {len(problems)} 道题")
     return problems
