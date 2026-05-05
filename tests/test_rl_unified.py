@@ -1,4 +1,4 @@
-"""tests/test_rl_unified.py — End-to-end RL infra unification (v7).
+"""tests/test_rl_unified.py — End-to-end RL infra unification.
 
 Tests the three things v6's evaluation flagged as gaps:
 
@@ -31,7 +31,6 @@ from sampler import (
     VeRLProofAgentLoop, VeRLProofInteraction,
 )
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # Gap 1 — Backend selection through the sampler
 # ═══════════════════════════════════════════════════════════════════════
@@ -63,7 +62,6 @@ class TestBackendInProofEnvConfig:
         )
         assert cfg.backend == "lookeng"
         assert cfg.backend_inner_kind == "kimina"
-
 
 class TestProofEnvBackendFactory:
     """ProofEnv._make_transport_factory wiring."""
@@ -121,7 +119,6 @@ class TestProofEnvBackendFactory:
                 await env.close()
         asyncio.run(_test())
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # Gap 2 — Concurrent rollouts no longer race on env pool
 # ═══════════════════════════════════════════════════════════════════════
@@ -141,7 +138,6 @@ class _RaceProbeSampler(BaseSampler):
         # Sleep to widen any race window; record env identity.
         await asyncio.sleep(0.01)
         return ("sorry", [], [])  # ProofEnv terminates on sorry
-
 
 class TestConcurrencyNoRace:
     """Many concurrent rollouts must each get a unique env at any
@@ -261,7 +257,6 @@ class TestConcurrencyNoRace:
 
         asyncio.run(_test())
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # Gap 3 — Tree-search rollouts as RL primitives
 # ═══════════════════════════════════════════════════════════════════════
@@ -320,7 +315,6 @@ def _make_mock_env() -> ProofEnv:
     env.step = fake_step
     env.close = AsyncMock()
     return env
-
 
 class TestTreeRolloutSampler:
     """TreeRolloutSampler emits per-path trajectories for GRPO."""
@@ -441,7 +435,6 @@ class TestTreeRolloutSampler:
 
         asyncio.run(_test())
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # Real verl/slime detection (without breaking when they're absent)
 # ═══════════════════════════════════════════════════════════════════════
@@ -491,7 +484,6 @@ class TestRealFrameworkDetection:
     def test_slime_flag_present(self):
         # SLIME_AVAILABLE is just a bool — assert it's a bool (not raised).
         assert isinstance(SLIME_AVAILABLE, bool)
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # Backwards compat: V1–V6 sampler tests should still pass

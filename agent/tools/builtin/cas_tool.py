@@ -4,7 +4,6 @@ from __future__ import annotations
 import subprocess
 from agent.tools.base import Tool, ToolContext, ToolResult, ToolPermission
 
-
 class CASTool(Tool):
     name = "cas_evaluate"
     description = (

@@ -6,9 +6,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-
 # ═══════════════════════════════════════════════════════════════
-# Fix #6: Nested comment stripping
 # ═══════════════════════════════════════════════════════════════
 
 class TestNestedCommentStrip:
@@ -82,9 +80,7 @@ class TestNestedCommentStrip:
         assert "block" not in result
         assert "line" not in result
 
-
 # ═══════════════════════════════════════════════════════════════
-# Fix #7: AsyncCompileCache
 # ═══════════════════════════════════════════════════════════════
 
 class TestAsyncCompileCache:
@@ -131,9 +127,7 @@ class TestAsyncCompileCache:
         assert stats["misses"] == 1
         assert stats["hit_rate"] == 0.5
 
-
 # ═══════════════════════════════════════════════════════════════
-# Fix #8: WorldModelPredictor
 # ═══════════════════════════════════════════════════════════════
 
 class TestWorldModel:
@@ -182,21 +176,17 @@ class TestWorldModel:
         pred = tm.predict("⊢ True", "trivial")
         assert pred is not None
 
-
 # ═══════════════════════════════════════════════════════════════
-# Fix #4: pass@k early stop behavior
 # ═══════════════════════════════════════════════════════════════
 
 class TestPassKEarlyStop:
-    """Fix #4 (v9: removed). prove_single is profile-only and doesn't
+    """Fix #4 (
     expose early_stop / multi_role anymore — legacy non-profile path
     was deleted alongside the v3 multi-role chain.
     """
     pass
 
-
 # ═══════════════════════════════════════════════════════════════
-# Fix #5: Unverified marking — legacy path deleted in v9.
 # ═══════════════════════════════════════════════════════════════
 
 class TestUnverifiedMarking:
@@ -204,16 +194,12 @@ class TestUnverifiedMarking:
     test no longer applies after the v9 profile-only consolidation."""
     pass
 
-
 # ═══════════════════════════════════════════════════════════════
-# Fix #9 (build_prompt): 已在 v13 删除 — common.prompt_builder
 # 整模块只有 ``FEW_SHOT_EXAMPLES`` 常量在主路径用, 已挪到
 # common/few_shot.py。``build_prompt`` 只在测试里调过, 测试一并删除。
 # ═══════════════════════════════════════════════════════════════
 
-
 # ═══════════════════════════════════════════════════════════════
-# Fix #1: Knowledge system integration
 # ═══════════════════════════════════════════════════════════════
 
 class TestKnowledgeIntegration:

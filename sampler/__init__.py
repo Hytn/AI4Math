@@ -72,11 +72,11 @@ __all__ = [
     "VeRLProofInteraction", "VeRLProofAgentLoop", "VERL_AVAILABLE",
     "SlimeSampler", "SLIME_AVAILABLE",
     "SlimeProofEnvFactory", "SlimeProofEnv",
-    # Tree rollout (v7)
+    # Tree rollout
     "TreeRolloutSampler", "TreeRolloutConfig",
-    # Policy adapters (v7.1)
+    # Policy adapters
     "MockPolicy", "OpenAIPolicy", "CallablePolicy",
     "build_policy", "DEFAULT_SYSTEM_PROMPT",
-    # Batch export (v7.1)
+    # Batch export
     "to_grpo_batch", "to_sft_jsonl", "to_ppo_batch", "save_batch_jsonl",
 ]

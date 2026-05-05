@@ -1,6 +1,6 @@
-"""engine/world_model.py — 战术成功率先验预测器接口 (Fix #8 / v15 honesty pass)
+"""engine/world_model.py — 战术成功率先验预测器接口
 
-⚠️  **Naming caveat (v15)**: this is *not* a "world model" in the RL /
+⚠️  **Naming caveat**: this is *not* a "world model" in the RL /
     model-based-planning sense. It is a **per-tactic success-rate
     prior**:
 
@@ -51,7 +51,6 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class WorldModelPrediction:
     """世界模型对单步 tactic 的预测结果"""
@@ -67,7 +66,6 @@ class WorldModelPrediction:
     def worth_trying(self) -> bool:
         """是否值得提交给真正的 REPL 验证"""
         return self.likely_success or self.confidence < 0.5
-
 
 class WorldModelPredictor(ABC):
     """世界模型抽象接口
@@ -120,7 +118,6 @@ class WorldModelPredictor(ABC):
             p.tactic for p in predictions
             if p.likely_success or p.confidence < min_confidence
         ]
-
 
 class MockWorldModel(WorldModelPredictor):
     """基于规则的启发式世界模型 (Fix #8)
@@ -208,9 +205,8 @@ class MockWorldModel(WorldModelPredictor):
             tactic=tactic, likely_success=False, confidence=0.2,
             reasoning="no pattern match, uncertain")
 
-
 class TrainedWorldModel(WorldModelPredictor):
-    """基于训练数据的世界模型 — v4 起真正可加载.
+    """基于训练数据的世界模型 — 
 
     现在直接代理到 ``SklearnWorldModel`` (在 ``engine.world_model_trainer``
     中定义). 没传路径或加载失败时, 内部 fallback 到 ``MockWorldModel``,
@@ -281,7 +277,6 @@ class TrainedWorldModel(WorldModelPredictor):
         return self._fallback.predict(
             goal_state, tactic, hypotheses, context)
 
-
 def make_world_model(model_path: Optional[str] = None) -> WorldModelPredictor:
     """Return the right WorldModelPredictor for this environment.
 
@@ -299,8 +294,6 @@ def make_world_model(model_path: Optional[str] = None) -> WorldModelPredictor:
             return m
     return MockWorldModel()
 
-
-# v15: honest-name aliases (see module docstring). Old names preserved
 # for backward compatibility — ``UnifiedProofRunner(world_model=...)``,
 # ``--world-model`` CLI flag, and ``make_world_model`` factory all
 # continue to work unchanged.

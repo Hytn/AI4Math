@@ -25,7 +25,6 @@ from typing import Callable
 
 logger = logging.getLogger(__name__)
 
-
 class MessageType(str, Enum):
     """广播消息类型"""
     NEGATIVE_KNOWLEDGE = "negative_knowledge"
@@ -34,7 +33,6 @@ class MessageType(str, Enum):
     LEMMA_PROVEN = "lemma_proven"
     GOAL_CLOSED = "goal_closed"
     STRATEGY_INSIGHT = "strategy_insight"
-
 
 def _deep_freeze(obj):
     """Recursively freeze nested structures.
@@ -49,7 +47,6 @@ def _deep_freeze(obj):
     if isinstance(obj, list):
         return tuple(_deep_freeze(item) for item in obj)
     return obj
-
 
 @dataclass(frozen=True)
 class BroadcastMessage:
@@ -161,7 +158,6 @@ class BroadcastMessage:
             }),
         )
 
-
 class Subscription:
     """单个订阅者的消息队列"""
 
@@ -198,7 +194,6 @@ class Subscription:
     def pending_count(self) -> int:
         with self._lock:
             return len(self._queue)
-
 
 class BroadcastBus:
     """发布-订阅广播总线

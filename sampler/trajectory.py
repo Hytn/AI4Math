@@ -17,7 +17,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-
 class TerminationReason(Enum):
     """Why a trajectory ended."""
     SUCCESS = "success"              # Lean accepted the full proof
@@ -26,7 +25,6 @@ class TerminationReason(Enum):
     UNRECOVERABLE = "unrecoverable"  # Error classified as unrecoverable
     SORRY_DETECTED = "sorry"         # Model used `sorry` — integrity violation
     TIMEOUT = "timeout"              # Wall-clock timeout
-
 
 @dataclass
 class RewardInfo:
@@ -44,7 +42,6 @@ class RewardInfo:
     goals_closed: int = 0            # Goals closed by this tactic
     fix_hint: str = ""               # Suggested fix from ErrorIntelligence
     raw_feedback: str = ""           # Raw Lean output (truncated for context budget)
-
 
 @dataclass
 class Turn:
@@ -73,7 +70,6 @@ class Turn:
     @property
     def is_terminal(self) -> bool:
         return self.reward.is_terminal
-
 
 @dataclass
 class Trajectory:

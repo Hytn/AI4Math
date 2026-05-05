@@ -11,7 +11,6 @@
 """
 from __future__ import annotations
 
-
 _FRAMINGS: dict[str, str] = {
 
     "whole_proof": (
@@ -213,8 +212,56 @@ _FRAMINGS: dict[str, str] = {
         "  • Do NOT use `sorry` for any helper — if a helper resists, "
         "    drop it and try a different decomposition.\n"
     ),
-}
 
+    # ─────────────────────────────────────────────────────────────────
+    # DeepSeek-Prover-V2 specialised framings  (v17)
+    # ─────────────────────────────────────────────────────────────────
+    # These match the EXACT prompt format DeepSeek-Prover-V2 was
+    # trained on (paper arXiv:2504.21801, Appendix A.1 / A.2).
+    # Generic "you are a Lean 4 prover" prompts leave measurable
+    # accuracy on the table because V2 was instruction-tuned for
+    # this specific phrasing. Pair these with `--model
+    # deepseek-ai/DeepSeek-Prover-V2-7B` (or 671B).
+
+    "deepseek_prover_v2_non_cot": (
+        # Verbatim from paper Appendix A.1 — model was trained to
+        # output the completion directly, no chain-of-thought.
+        "Complete the following Lean 4 code:\n\n"
+        "```lean4\n"
+    ),
+
+    "deepseek_prover_v2_cot": (
+        # Verbatim from paper Appendix A.2 — adds an explicit
+        # natural-language proof plan before the Lean code. On
+        # miniF2F-test the CoT mode adds ~6-7 percentage points
+        # over non-CoT for V2-7B at the same sample budget.
+        "Complete the following Lean 4 code:\n\n"
+        "```lean4\n"
+    ),
+
+    "deepseek_prover_v2_repair": (
+        # CoT framing with explicit repair-loop instructions.
+        # Used by the dsp_v2_repair profile. The user message
+        # contains the theorem + (on retry) the previous attempt's
+        # compile errors; AgentLoop's auto_inject_lean_compile
+        # handles the wiring.
+        "You are DeepSeek-Prover-V2, completing Lean 4 proofs in a "
+        "verify-and-fix loop.\n"
+        "\n"
+        "Each turn you will see either:\n"
+        "  (a) a fresh theorem with a `sorry` placeholder, or\n"
+        "  (b) your previous attempt + the Lean compiler's errors.\n"
+        "\n"
+        "Workflow:\n"
+        "  1. Provide a brief proof plan (2-5 sentences in natural "
+        "language).\n"
+        "  2. Output ONE complete Lean 4 proof in a ```lean ... ``` "
+        "block.\n"
+        "  3. Do NOT use `sorry` or `admit`.\n"
+        "  4. On a repair turn, locate the FIRST error and rewrite "
+        "the entire proof — no patches, no diffs.\n"
+    ),
+}
 
 # Search-state addendum: appended to the system prompt when the agent loop
 # is being driven by an outer SearchDriver and the operator wants the LLM
@@ -229,7 +276,6 @@ SEARCH_CONTEXT_ADDENDUM = (
     "    failed at this exact goal.\n"
     "  • Your job is to propose ONE good next tactic for THIS node.\n"
 )
-
 
 def render_system_prompt(framing: str, *,
                           search_aware: bool = False,

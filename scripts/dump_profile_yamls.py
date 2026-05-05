@@ -24,7 +24,6 @@ from prover.unified.profiles import (
     PRESETS, Profile, ToolKit,
 )
 
-
 # Per-profile docstrings — short pointer prepended as a YAML comment.
 HEADERS: dict[str, str] = {
     "whole_proof": (
@@ -67,17 +66,16 @@ HEADERS: dict[str, str] = {
         "# natural language (NuminaMath-LEAN style).\n"),
     "best_first": (
         "# Best-first search — outer driver picks the highest-scoring leaf,\n"
-        "# agent does single-tactic expansion. v4: search tree lands in\n"
-        "# ``meta.search_tree`` of dialog.json.\n"),
+        "# agent does single-tactic expansion. The full search tree is\n"
+        "# written to ``meta.search_tree`` of dialog.json.\n"),
     "mcts": (
         "# MCTS-UCB1 — driver does selection + backprop, agent does\n"
-        "# expansion. v4: search DAG written to ``meta.search_tree``,\n"
+        "# expansion. Tree shape is in ``meta.search_tree`` while the\n"
         "# linear ``messages`` carries the solved/best path for SFT.\n"),
     "beam": (
         "# Beam search — keep top-W leaves per depth.\n"
         "# Search tree written to ``meta.search_tree``.\n"),
 }
-
 
 # Universal header reused for every file.
 COMMON_HEADER = (
@@ -95,14 +93,12 @@ COMMON_HEADER = (
     "#\n"
 )
 
-
 def profile_to_dict(p: Profile) -> dict:
     """Dataclass-aware serialization that converts ToolKit enums to
     their string values. ``asdict`` handles the rest."""
     d = asdict(p)
     d["tools"] = [t.value if isinstance(t, ToolKit) else t for t in p.tools]
     return d
-
 
 def render(p: Profile) -> str:
     body = profile_to_dict(p)
@@ -111,7 +107,6 @@ def render(p: Profile) -> str:
     yaml_text = yaml.safe_dump(
         body, sort_keys=False, default_flow_style=False, allow_unicode=True)
     return header + pointer + "\n" + yaml_text
-
 
 def main() -> int:
     out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -127,7 +122,6 @@ def main() -> int:
         written += 1
     print(f"Wrote {written} profile YAML(s) to {out_dir}")
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

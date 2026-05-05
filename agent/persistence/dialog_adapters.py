@@ -27,7 +27,7 @@ In all three cases the goal is the same: produce the wrapped Dialog
 that matches the schema in dialog_format.py — a single self-contained
 record of the run.
 
-v13: ``from_session_messages`` adapter (covering the v9-deleted
+
 ``agent/persistence/session_store.py``) was removed — 0 production
 callers remained after the lane subsystem was deleted.
 """
@@ -45,7 +45,6 @@ from agent.persistence.dialog_format import (
 )
 
 logger = logging.getLogger(__name__)
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # 1. AgentLoop  →  Dialog
@@ -158,7 +157,6 @@ def from_loop_messages(
         b.set_result(**result)
     return b.build()
 
-
 def _normalize_loop_entry(entry: Any) -> tuple[str, Any, Any, Any]:
     if hasattr(entry, "role"):
         return (
@@ -175,7 +173,6 @@ def _normalize_loop_entry(entry: Any) -> tuple[str, Any, Any, Any]:
             entry.get("tool_results"),
         )
     return ("", "", None, None)
-
 
 def _split_user_content(content: Any) -> tuple[list[str], list[dict]]:
     if isinstance(content, str):
@@ -197,7 +194,6 @@ def _split_user_content(content: Any) -> tuple[list[str], list[dict]]:
         return (texts, tool_results)
     return ([str(content) if content else ""], [])
 
-
 def _split_assistant_content(content: Any) -> tuple[list[str], list[dict]]:
     if isinstance(content, str):
         return ([content], [])
@@ -217,7 +213,6 @@ def _split_assistant_content(content: Any) -> tuple[list[str], list[dict]]:
                 texts.append(json.dumps(blk, ensure_ascii=False))
         return (texts, tool_uses)
     return ([str(content) if content else ""], [])
-
 
 def _coerce_tool_call(raw: Any) -> Optional[ToolCall]:
     if not isinstance(raw, dict):
@@ -239,7 +234,6 @@ def _coerce_tool_call(raw: Any) -> Optional[ToolCall]:
         )
     return None
 
-
 def _pop_pending(pending: list[ToolCall],
                  tool_use_id: str) -> Optional[ToolCall]:
     if tool_use_id:
@@ -247,7 +241,6 @@ def _pop_pending(pending: list[ToolCall],
             if tc.id == tool_use_id:
                 return pending.pop(i)
     return pending.pop(0) if pending else None
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # 2. sampler.Trajectory  →  Dialog
@@ -355,10 +348,8 @@ def from_trajectory(
     b.set_result(**auto_result)
     return b.build()
 
-
 def _format_initial_user_text(theorem: str) -> str:
     return "Prove the following theorem in Lean 4:\n\n" + theorem.strip()
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # 3. prover.ProofTrace  →  Dialog
@@ -472,12 +463,10 @@ def from_proof_trace(
     b.set_result(**auto_result)
     return b.build()
 
-
 def _premise_query_from_theorem(theorem: str) -> str:
     s = theorem.strip()
     head = s.split(":", 1)
     return head[-1].strip() if len(head) == 2 else s
-
 
 def _normalize_premise(p: Any) -> dict:
     if isinstance(p, str):
@@ -485,7 +474,6 @@ def _normalize_premise(p: Any) -> dict:
     if isinstance(p, dict):
         return p
     return {"name": str(p)}
-
 
 def _proof_attempt_payload(attempt: Any) -> str:
     status = getattr(attempt, "lean_result", None)
@@ -509,7 +497,6 @@ def _proof_attempt_payload(attempt: Any) -> str:
                 list(getattr(e, "suggestions", []) or []),
         })
     return json.dumps(payload, ensure_ascii=False)
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # 4. SessionData.messages  →  Dialog
@@ -540,7 +527,6 @@ def to_openai_messages(dialog: Any) -> list[dict]:
                 "content": content,
             })
     return out
-
 
 __all__ = [
     "from_loop_messages", "from_trajectory", "from_proof_trace",

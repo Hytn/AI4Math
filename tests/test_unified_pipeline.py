@@ -16,7 +16,6 @@ import asyncio
 import pytest
 from dataclasses import dataclass
 
-
 # ══════════════════════════════════════════════════════════════════════
 # Test helpers
 # ══════════════════════════════════════════════════════════════════════
@@ -28,7 +27,6 @@ class FakeProblem:
     theorem_statement: str = "theorem t (n : Nat) : n + 0 = n := by simp"
     natural_language: str = ""
     domain: str = "nat_arithmetic"
-
 
 class FakeMockLLM:
     """Mocks AsyncLLMProvider returning a fixed proof."""
@@ -52,7 +50,6 @@ class FakeMockLLM:
             stop_reason="end_turn",
         )
 
-
 # ══════════════════════════════════════════════════════════════════════
 # 1. unified module import + preset shape
 # ══════════════════════════════════════════════════════════════════════
@@ -68,36 +65,35 @@ class TestUnifiedAPI:
         assert isinstance(PRESETS, dict) and PRESETS
 
     def test_active_presets_include_tree_search(self):
-        """v4: MCTS / beam / best_first 已合流到 active PRESETS.
+        """
 
         合流契约: dialog.json schema 3.0 的 ``meta.search_tree`` 块
         让树搜索的元数据原生进主存储, 三个 profile 因此不再需要
         explicit opt-in。
 
-        v11: EXPERIMENTAL_PRESETS / enable_experimental_search_presets 已删除
-        (空字典 + no-op 函数, 自 v4 起就没有用途)。如果将来需要 gating, 可
-        重新引入。
+        
+        (空字典 + no-op 函数。如果将来需要 gating,可重新引入。)
         """
         from prover.unified import PRESETS
         for required in ("mcts", "beam", "best_first"):
             assert required in PRESETS, \
-                f"v4 起 {required} 必须在 active PRESETS 中"
+                f"missing search-based preset: {required}"
 
     def test_active_presets_complete(self):
         """v4 大一统的 9 个 active preset 必须全部在。"""
         from prover.unified import PRESETS
         required = {
-            # v3 family
+
             "whole_proof", "whole_proof_repair", "dsp",
             "reprover", "leandojo", "heterogeneous",
-            # v4: tree-search merged
+
             "mcts", "beam", "best_first",
         }
         assert required.issubset(set(PRESETS)), \
             f"缺失 active preset: {required - set(PRESETS)}"
 
     def test_v11_experimental_shim_removed(self):
-        """v11: confirm the no-op shim and empty container are gone.
+        """
 
         Anyone who needs the old name can either import from
         ``prover.unified.profiles`` directly (it's also gone there) or
@@ -131,11 +127,9 @@ class TestUnifiedAPI:
         assert het.search.kind == "parallel"
         assert len(het.search.parallel_profiles) >= 2
 
-
 # ══════════════════════════════════════════════════════════════════════
-# 2. HeterogeneousEngine v3 — legacy ctor compat
+# 2. HeterogeneousEngine 
 # ══════════════════════════════════════════════════════════════════════
-
 
 class TestAdapters:
     def _make_unified_result(self, *, success=True, proof="by simp"):
@@ -184,15 +178,13 @@ class TestAdapters:
         assert att.lean_result == AttemptStatus.LEAN_ERROR
         assert att.generated_proof == ""
 
-    # test_unified_to_agent_result removed in v9: depends on
+    # test_unified_to_agent_result removed in 
     # agent.runtime.sub_agent.AgentResult which was deleted alongside
     # the rest of the SubAgent / AsyncAgentPool subsystem.
-
 
 # ══════════════════════════════════════════════════════════════════════
 # 5. ProofPipeline routes through unified when profile is set
 # ══════════════════════════════════════════════════════════════════════
-
 
 class TestDialogRoundTrip:
     @pytest.mark.asyncio
@@ -215,7 +207,6 @@ class TestDialogRoundTrip:
         assert ur.loop_result is not None
         # mock LLM 返回了 lean 代码
         assert "by simp" in (ur.proof_code or ur.loop_result.proof_code)
-
 
 # ══════════════════════════════════════════════════════════════════════
 # Boilerplate for sync run when pytest-asyncio missing

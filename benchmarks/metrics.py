@@ -6,7 +6,6 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 
-
 def pass_at_k(n: int, c: int, k: int) -> float:
     """Compute pass@k metric (unbiased estimator).
 
@@ -27,7 +26,6 @@ def pass_at_k(n: int, c: int, k: int) -> float:
         result *= (n - c - i) / (n - i)
     return 1.0 - result
 
-
 def compute_metrics(traces: list[dict],
                     k_values: list[int] = None) -> dict:
     """Compute comprehensive evaluation metrics from proof traces.
@@ -40,7 +38,7 @@ def compute_metrics(traces: list[dict],
     Returns:
         Dict with all computed metrics.
 
-    Key fix (v2): pass@k now uses the actual number of correct samples
+    Key fix: pass@k now uses the actual number of correct samples
     per problem (correct_count), not just binary solved/unsolved. This
     gives an unbiased estimate: 1 - C(n-c, k) / C(n, k).
     """
@@ -58,7 +56,7 @@ def compute_metrics(traces: list[dict],
         scores = []
         for t in traces:
             total_samples = max(1, t.get("total_attempts", 1))
-            # v2 fix: use correct_count (number of successful samples)
+
             # instead of binary 1/0. Falls back to binary for backward compat.
             correct = t.get("correct_count", 1 if t.get("solved") else 0)
             scores.append(pass_at_k(total_samples, correct, min(k, total_samples)))
@@ -107,7 +105,6 @@ def compute_metrics(traces: list[dict],
         "difficulty_breakdown": difficulty_stats,
     }
 
-
 @dataclass
 class MetricsSummary:
     """Human-readable metrics summary."""
@@ -122,10 +119,11 @@ class MetricsSummary:
             f"{'='*50}",
             f"  Solved:     {m.get('solved', 0)}/{m.get('total', 0)} ({m.get('solve_rate', 0):.1%})",
         ]
-        for k in [1, 5, 10]:
+        # Show every pass@k present in metrics, sorted ascending
+        ks = sorted(int(k.split('@')[1]) for k in m if isinstance(k, str) and k.startswith('pass@'))
+        for k in ks:
             key = f"pass@{k}"
-            if key in m:
-                lines.append(f"  pass@{k}:    {m[key]:.3f}")
+            lines.append(f"  pass@{k:<6} {m[key]:.4f}")
         lines.extend([
             f"  Avg attempts: {m.get('avg_attempts', 0):.1f}",
             f"  Total tokens: {m.get('total_tokens', 0):,}",

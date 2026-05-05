@@ -34,7 +34,6 @@ from agent.persistence.dialog_format import (
 
 logger = logging.getLogger(__name__)
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # Save / load — single file
 # ─────────────────────────────────────────────────────────────────────────
@@ -68,7 +67,6 @@ def save_task(
             )
     return save_dialog(dialog, p / DIALOG_FILENAME)
 
-
 def load_task(task_dir: Union[str, Path]) -> Optional[dict]:
     """Read ``task_dir/dialog.json``, returning the wrapped Dialog
     dict (auto-upgrading any legacy plain-list files). Returns None
@@ -78,10 +76,7 @@ def load_task(task_dir: Union[str, Path]) -> Optional[dict]:
         return None
     return load_dialog(p)
 
-
-# v13: 删除 ``save_task_outputs`` / ``load_task_outputs`` back-compat
-# alias —— v9 删除了所有可能的旧调用方, 这两个 alias 之后 0 处使用。
-
+# alias ——  这两个 alias 之后 0 处使用。
 
 # ─────────────────────────────────────────────────────────────────────────
 # Bulk operations
@@ -113,7 +108,6 @@ def collect_dialogs(
         except (OSError, json.JSONDecodeError) as e:
             logger.warning("Skipping unreadable %s: %s", dialog_path, e)
     return found
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # Convenience builders (used by the trajectory classes' save_unified)
@@ -157,7 +151,6 @@ def build_meta(
         meta["extra"] = dict(extra)
     return meta
 
-
 def build_result(
     *,
     success: bool = False,
@@ -186,10 +179,8 @@ def build_result(
         res["extra"] = dict(extra)
     return res
 
-
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
 
 __all__ = [
     "DIALOG_FILENAME",

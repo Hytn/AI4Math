@@ -1,8 +1,8 @@
-"""prover/lemma_bank/lemma_verifier.py — 验证提取的引理 (v15 修正)
+"""prover/lemma_bank/lemma_verifier.py — 验证提取的引理
 
 通过 Lean 4 验证引理的正确性。
 
-v15 修正点 — 老版 ``verify`` 调用 ``self.lean_env.compile(code)``,
+正点 — 老版 ``verify`` 调用 ``self.lean_env.compile(code)``,
 但 ``AsyncLeanPool`` 从未暴露过 ``.compile()`` 方法。这是 v13
 ``ConjectureVerifier._type_check`` 被清理掉的同一类潜伏 bug —
 ``compile`` API 从来不存在,只是因为 ``LemmaVerifier`` 在生产代码里
@@ -25,7 +25,6 @@ import logging
 from prover.lemma_bank.bank import ProvedLemma
 
 logger = logging.getLogger(__name__)
-
 
 class LemmaVerifier:
     """Verify extracted lemmas via the project's standard ``AsyncLeanPool``.

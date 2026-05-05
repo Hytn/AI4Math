@@ -7,7 +7,6 @@ from prover.premise.embedding_retriever import EmbeddingRetriever
 from prover.premise.reranker import PremiseReranker
 from prover.premise.selector import PremiseSelector
 
-
 # ── BM25 Retriever ──
 
 class TestTokenize:
@@ -33,7 +32,6 @@ class TestTokenize:
         assert "a" in tokens
         assert "b" in tokens
         assert "c" in tokens
-
 
 class TestBM25Retriever:
     def setup_method(self):
@@ -77,7 +75,6 @@ class TestBM25Retriever:
         ])
         assert bm25.size == 2
 
-
 # ── Embedding Retriever ──
 
 class TestEmbeddingRetriever:
@@ -100,7 +97,6 @@ class TestEmbeddingRetriever:
     def test_empty_index(self):
         empty = EmbeddingRetriever()
         assert empty.retrieve("anything") == []
-
 
 # ── Reranker ──
 
@@ -128,7 +124,6 @@ class TestPremiseReranker:
         results = reranker.rerank(candidates, "query", tactic_hint="simp")
         assert len(results) == 2
 
-
 # ── Unified Selector ──
 
 class TestPremiseSelector:
@@ -155,7 +150,6 @@ class TestPremiseSelector:
         ])
         results = selector.retrieve("zzz_unique", top_k=3)
         assert any(r["name"] == "custom" for r in results)
-
 
 # ── Tactic Suggester ──
 

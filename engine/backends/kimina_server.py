@@ -72,9 +72,7 @@ from engine.transport import REPLTransport, TransportStats
 
 logger = logging.getLogger(__name__)
 
-
 # ─── Wire-format dataclasses ─────────────────────────────────
-
 
 @dataclass
 class BatchVerifyRequest:
@@ -120,7 +118,6 @@ class BatchVerifyRequest:
             d["last_used_id"] = self.last_used_id
         return d
 
-
 @dataclass
 class TacticTrace:
     """One element of the infotree-extracted tactic sequence.
@@ -136,7 +133,6 @@ class TacticTrace:
     is_proof_complete: bool = False
     line: int = -1
     column: int = -1
-
 
 @dataclass
 class BatchVerifyResult:
@@ -178,9 +174,7 @@ class BatchVerifyResult:
                           or d.get("snapshot_id", "")),
         )
 
-
 # ─── HTTP client ─────────────────────────────────────────────
-
 
 def _preamble_key(preamble: str) -> str:
     """Stable, short hash key for ``preamble`` strings.
@@ -191,7 +185,6 @@ def _preamble_key(preamble: str) -> str:
     two preambles with the same content will collide on purpose.
     """
     return hashlib.blake2b(preamble.encode(), digest_size=16).hexdigest()
-
 
 class KiminaServerClient:
     """Async HTTP client for the Kimina Lean Server.
@@ -358,7 +351,7 @@ class KiminaServerClient:
                                        error_messages=[f"client error: {e}"])
                     for r in requests]
 
-        # The server returns either {"results": [...]} (v2) or [...] (v1).
+        # The server returns either {"results": [...]} or [...].
         items = body.get("results", body) if isinstance(body, dict) else body
         if not isinstance(items, list):
             return [BatchVerifyResult(id=r.id, success=False,
@@ -424,9 +417,7 @@ class KiminaServerClient:
             ))
         return out
 
-
 # ─── Local LRU import cache (mirrors server-side cache) ─────
-
 
 class _ImportCache:
     """Small client-side memo of ``preamble → env_id`` mappings.
@@ -474,9 +465,7 @@ class _ImportCache:
             "hit_rate": round(self.hits / max(1, total), 4),
         }
 
-
 # ─── Backend = HTTPTransport implementation ─────────────────
-
 
 class KiminaServerBackend(REPLTransport):
     """Adapter that makes a Kimina Lean Server look like a ``REPLTransport``.
@@ -500,7 +489,7 @@ class KiminaServerBackend(REPLTransport):
         and the cached preamble. Errors are returned in the response.
 
     ``{"tactic": "...", "proofState": <id>}``
-        The Kimina server (as of v2.0) does not expose a true tactic-mode
+        The Kimina server does not expose a true tactic-mode
         endpoint — it verifies whole proofs. We accumulate tactics into a
         per-session sequence and re-verify the running script on each
         call. The new ``proofState`` is just an integer counter.

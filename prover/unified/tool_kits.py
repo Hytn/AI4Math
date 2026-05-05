@@ -22,7 +22,6 @@ from prover.unified.profiles import Profile, ToolKit
 
 logger = logging.getLogger(__name__)
 
-
 def build_tool_registry(profile: Profile, *,
                           lean_pool=None,
                           knowledge_store=None,
@@ -71,7 +70,6 @@ def build_tool_registry(profile: Profile, *,
 
     return registry
 
-
 def _build_tool(kit: ToolKit, *, lean_pool, knowledge_store,
                 retriever, broadcast_bus, search_state,
                 knowledge_writer=None,
@@ -83,11 +81,11 @@ def _build_tool(kit: ToolKit, *, lean_pool, knowledge_store,
                 integrity_strict: bool = False):
     """单个 ToolKit → 单个 Tool 实例.
 
-    v14: ``persistent_lemma_bank`` 接 LemmaBankTool 的跨问题路径 +
+    
     ConjectureProposeTool 的提议引理后置写入。"""
 
     if kit == ToolKit.LEAN_VERIFY:
-        # v10: thread an ErrorIntelligence into the tool so failed
+
         # whole-proof submissions get structured AgentFeedback (the
         # README-promised ~100 bits) instead of truncated stderr.
         # ErrorIntelligence works lazily; if its construction fails
@@ -105,7 +103,7 @@ def _build_tool(kit: ToolKit, *, lean_pool, knowledge_store,
     if kit == ToolKit.TACTIC_APPLY:
         # 现有项目里没有这个工具 —— 我们在 builtin 下新增了 tactic_apply.py
         from agent.tools.builtin.tactic_apply import TacticApplyTool
-        # v4: 连上 KnowledgeWriter, 让步级 profile (reprover/leandojo/mcts/
+
         # best_first/beam) 也参与知识飞轮 —— 每次 tactic 应用都自动落 Layer 1.
         # 取 writer 的两条来源: (a) 调用方显式传入 (RL/eval 路径常用)
         #                       (b) knowledge_store 自己暴露 .writer 属性
@@ -140,7 +138,7 @@ def _build_tool(kit: ToolKit, *, lean_pool, knowledge_store,
 
     if kit == ToolKit.DECOMPOSE:
         from prover.unified.tools_extra import DecomposeSubgoalTool
-        # v12: thread the runner's LLM through, same pattern as
+
         # ConjectureProposeTool. Without this, every call hit
         # ``GoalDecomposer(None).generate(...)``→AttributeError.
         return DecomposeSubgoalTool(llm=llm)
@@ -184,14 +182,14 @@ def _build_tool(kit: ToolKit, *, lean_pool, knowledge_store,
         from prover.unified.tools_infra import NLExistenceBridgeTool
         return NLExistenceBridgeTool()
 
-    # ─ v6: 猜想驱动 ──────────────────────────────────────────
+    # ─ 
     if kit == ToolKit.CONJECTURE_PROPOSE:
         from prover.unified.tools_extra import ConjectureProposeTool
         # If the runner threaded its LLM through, bind it directly to
         # the tool — that's the cleanest path. If it didn't (older
         # callers, tests), the tool's execute() will pull from ctx
         # metadata at call time.
-        # v14: 把 persistent_lemma_bank 接到提议工具, 让提议出来的引理
+
         # 写入跨问题 SQLite 库 (即使本次没证出来)。
         return ConjectureProposeTool(
             llm=llm, persistent_bank=persistent_lemma_bank)

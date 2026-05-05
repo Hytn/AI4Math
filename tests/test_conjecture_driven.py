@@ -1,4 +1,4 @@
-"""V6 — Conjecture-driven proving profile tests.
+"""
 
 The conjecture/ package shipped in v2 (ConjectureProposer +
 ConjectureVerifier) but had no first-class place in the agent loop —
@@ -29,11 +29,9 @@ from prover.unified.system_prompts import _FRAMINGS, render_system_prompt
 from prover.unified.tool_kits import build_tool_registry
 from prover.unified.tools_extra import ConjectureProposeTool
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Fixtures
 # ─────────────────────────────────────────────────────────────────────
-
 
 def _mock_llm_with_lemmas(lemmas: list[str]):
     """Build an LLM mock whose .generate returns the given lemma lines.
@@ -48,7 +46,6 @@ def _mock_llm_with_lemmas(lemmas: list[str]):
     llm.generate = MagicMock(return_value=response)
     return llm
 
-
 @pytest.fixture
 def llm_mock():
     """Default mock returning three plausible Lean 4 lemma stubs."""
@@ -58,11 +55,9 @@ def llm_mock():
         "lemma helper_three (n : ℕ) : 0 + n = n",
     ])
 
-
 # ─────────────────────────────────────────────────────────────────────
 # ToolKit enum surface
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestToolKitEnum:
 
@@ -77,11 +72,9 @@ class TestToolKitEnum:
         values = [k.value for k in ToolKit]
         assert len(values) == len(set(values))
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Profile in PRESETS
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestPresetRegistration:
 
@@ -118,11 +111,9 @@ class TestPresetRegistration:
         prof = get_profile("conjecture_driven")
         assert prof.search.kind == "none"
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Framing surface
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestFraming:
 
@@ -147,11 +138,9 @@ class TestFraming:
                    "no `sorry`" in rendered.lower() or \
                    "do NOT use" in rendered
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Tool registry build
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestToolRegistryBuild:
 
@@ -182,15 +171,12 @@ class TestToolRegistryBuild:
         tool = registry.get("conjecture_propose")
         assert tool._llm is llm_mock
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Tool execution — happy paths
 # ─────────────────────────────────────────────────────────────────────
 
-
 def _run(coro):
     return asyncio.run(coro)
-
 
 class TestToolExecuteHappyPath:
 
@@ -212,7 +198,7 @@ class TestToolExecuteHappyPath:
     def test_execute_extracts_only_lemma_lines(self):
         # The proposer's regex strips lines that don't start with
         # ``lemma`` or ``theorem``. Pin that behaviour through the tool.
-        # v13: 用非平凡 lemma — ConjectureVerifier 现在 (verify=True) 真过滤
+
         # 了平凡命题 (e.g. a = a 反身), 测试用例必须避开这条。
         llm = _mock_llm_with_lemmas([
             "Some preamble",
@@ -262,11 +248,9 @@ class TestToolExecuteHappyPath:
         }, ctx))
         assert not result.is_error
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Tool execution — error paths
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestToolExecuteErrors:
 
@@ -301,11 +285,9 @@ class TestToolExecuteErrors:
         assert "proposer failed" in result.content.lower() or \
                "boom" in result.content.lower()
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Tool execution — LLM lookup priority
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestLLMLookupPriority:
 
@@ -342,11 +324,9 @@ class TestLLMLookupPriority:
         assert not result.is_error
         ctx_llm.generate.assert_called()
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Tool schema surface
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestToolSchema:
 
@@ -368,12 +348,10 @@ class TestToolSchema:
         assert any(w in d for w in
                    ("auxiliary", "lemma", "conjecture"))
 
-
 # ─────────────────────────────────────────────────────────────────────
 # YAML round-trip — leverages V5's per-file parameterised tests
 # (test_yaml_profile_templates.py) but pin two more contracts here.
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestYAMLPresence:
 

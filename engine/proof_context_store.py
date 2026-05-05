@@ -43,9 +43,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-
 # ─── Lightweight session-state dataclasses ─────────────────
-# Migrated from engine/proof_session.py (deleted in v9 — its
+# Migrated from engine/proof_session.py (deleted in 
 # ProofSessionManager / ProofSession runtime classes had 0 callers).
 # These two dataclasses are still consumed by serialization paths.
 
@@ -65,7 +64,6 @@ class EnvNode:
     def is_leaf(self) -> bool:
         return len(self.children) == 0
 
-
 @dataclass
 class ProofSessionState:
     """单个证明的完整状态"""
@@ -79,9 +77,7 @@ class ProofSessionState:
     solved: bool = False
     proof_path: list = field(default_factory=list)       # list[int]
 
-
 logger = logging.getLogger(__name__)
-
 
 # ─── Serialization helpers ───────────────────────────────────
 
@@ -112,7 +108,6 @@ def _serialize_state(state: ProofSessionState) -> str:
     }
     return json.dumps(d, ensure_ascii=False)
 
-
 def _deserialize_state(json_str: str) -> ProofSessionState:
     """Deserialize JSON string to ProofSessionState."""
     d = json.loads(json_str)
@@ -140,10 +135,8 @@ def _deserialize_state(json_str: str) -> ProofSessionState:
         proof_path=d.get("proof_path", []),
     )
 
-
 def _theorem_hash(theorem: str) -> str:
     return hashlib.sha256(theorem.strip().encode()).hexdigest()[:16]
-
 
 # ─── Data classes for query results ─────────────────────────
 
@@ -160,7 +153,6 @@ class ProofContextInfo:
     created_at: float
     updated_at: float
 
-
 @dataclass
 class ProofTrajectory:
     """A proof trajectory for training."""
@@ -169,7 +161,6 @@ class ProofTrajectory:
     success: bool
     depth: int
     duration_ms: float
-
 
 @dataclass
 class StepDetail:
@@ -189,7 +180,6 @@ class StepDetail:
     elapsed_ms: float = 0.0
     is_proof_complete: bool = False
 
-
 @dataclass
 class RichProofTrajectory:
     """Full-detail proof trajectory for world model training.
@@ -207,7 +197,6 @@ class RichProofTrajectory:
     # Optional metadata
     theorem_hash: str = ""
     context_id: int = 0
-
 
 # ─── Store implementation ────────────────────────────────────
 
@@ -248,7 +237,6 @@ CREATE INDEX IF NOT EXISTS idx_pt_success ON proof_traces(success);
 _MIGRATION_V2 = """
 ALTER TABLE proof_traces ADD COLUMN step_details TEXT DEFAULT '[]';
 """
-
 
 class ProofContextStore:
     """SQLite-backed persistent proof context storage.
@@ -322,7 +310,7 @@ class ProofContextStore:
                 logger.info("ProofContextStore: migrated to v2 "
                             "(added step_details column)")
         except Exception as e:
-            logger.warning(f"ProofContextStore: v2 migration skipped: {e}")
+            logger.warning
 
     # ─── Core CRUD ──────────────────────────────────────────
 

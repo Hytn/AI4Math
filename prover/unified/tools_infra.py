@@ -21,11 +21,9 @@ from agent.tools.base import Tool, ToolContext, ToolResult, ToolPermission
 
 logger = logging.getLogger(__name__)
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # Kimina Lean Server: batch verify
 # ═══════════════════════════════════════════════════════════════════════
-
 
 class BatchVerifyTool(Tool):
     """Verify many proofs in one round-trip via Kimina Lean Server.
@@ -159,11 +157,9 @@ class BatchVerifyTool(Tool):
                 logger.debug(
                     f"BatchVerifyTool: deposit failed for {r.id}: {e}")
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # Pantograph: metavariable focus
 # ═══════════════════════════════════════════════════════════════════════
-
 
 class MVarFocusTool(Tool):
     """Rotate the goal list to focus on a specific metavariable.
@@ -228,7 +224,6 @@ class MVarFocusTool(Tool):
             "n_remaining_goals": len(r.remaining),
         }, ensure_ascii=False))
 
-
 class DraftHoleTool(Tool):
     """Insert a typed ``sorry``-hole and continue past it.
 
@@ -289,11 +284,9 @@ class DraftHoleTool(Tool):
             "hole_goal": (r.holes[0].goal if r.holes else ""),
         }, ensure_ascii=False))
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # LooKeng: lemma-by-lemma proving
 # ═══════════════════════════════════════════════════════════════════════
-
 
 class LemmaByLemmaTool(Tool):
     """Submit ONE lemma at a time to a stateless verification session.
@@ -402,11 +395,9 @@ class LemmaByLemmaTool(Tool):
 
         return ToolResult.success(json.dumps(r, ensure_ascii=False))
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # NFL-HR: NL-FL existence-theorem bridge
 # ═══════════════════════════════════════════════════════════════════════
-
 
 class NLExistenceBridgeTool(Tool):
     """Translate a natural-language QA-style problem into a Lean 4
@@ -622,14 +613,11 @@ class NLExistenceBridgeTool(Tool):
             f"theorem ai4math_q : ∃ (ans : {type_skel}),\n"
             f"    True /- TODO: replace with translated predicate -/")
 
-
 # ─── Module-level autoformalizer registry ────────────────────
-
 
 # Using a module-level holder rather than a class attribute so the
 # registration survives across tool instantiations.
 _autoformalizer: Optional[Callable[[str, str], str]] = None
-
 
 def register_autoformalizer(
         fn: Optional[Callable[[str, str], str]]) -> None:
@@ -644,7 +632,6 @@ def register_autoformalizer(
     """
     global _autoformalizer
     _autoformalizer = fn
-
 
 def _get_autoformalizer() -> Optional[Callable[[str, str], str]]:
     """Internal: read the currently registered autoformalizer."""

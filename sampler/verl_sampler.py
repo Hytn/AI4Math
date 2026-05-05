@@ -14,7 +14,7 @@ Two integration modes for veRL:
      turn management, and early termination
    - Best for: maximum performance and customization
 
-v7 — REAL INTEGRATION when verl is importable
+
 ---------------------------------------------
 
 V1–V6 shipped these as ducktype-compatible stubs ("interface follows
@@ -57,9 +57,8 @@ from sampler.proof_env import ProofEnv, ProofEnvConfig
 
 logger = logging.getLogger(__name__)
 
-
 # ═══════════════════════════════════════════════════════════════════════
-# v7: real verl detection — try multiple known import paths because verl's
+
 # experimental agent_loop module has moved between releases.
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -67,14 +66,12 @@ VERL_AVAILABLE = False
 _BaseInteraction: type = object
 _AgentLoopBase: type = object
 
-
 def _register_agent_loop(name: str):
     """No-op decorator stub when verl is absent."""
     def deco(cls):
         cls._verl_registered_name = name
         return cls
     return deco
-
 
 _register: callable = _register_agent_loop
 
@@ -113,7 +110,6 @@ else:
         "sampler.verl_sampler: verl not installed, running in stub mode "
         "(install with `pip install -r requirements-rl.txt`)")
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # Mode 1: BaseInteraction — minimal integration with veRL ToolAgentLoop
 # ═══════════════════════════════════════════════════════════════════════
@@ -129,7 +125,7 @@ class VeRLProofInteraction(_BaseInteraction):
       - Running Lean verification
       - Returning (should_terminate, feedback, score, info)
 
-    v7: when verl is installed, ``_BaseInteraction`` resolves to the real
+    
     ``verl.workers.interactions.BaseInteraction``; otherwise it's a stub
     ``object`` so the class can still be imported and unit-tested.
 
@@ -139,7 +135,7 @@ class VeRLProofInteraction(_BaseInteraction):
           - name: lean_prover
             class_path: sampler.verl_sampler.VeRLProofInteraction
             config:
-              backend: kimina           # v7: pass through to ProofEnvConfig
+              backend: kimina           # 
               backend_url: http://kimina:8000
               project_dir: /path/to/mathlib
               pool_size: 4
@@ -172,7 +168,7 @@ class VeRLProofInteraction(_BaseInteraction):
             reward_l1_pass=config.get("reward_l1_pass", 0.05),
             reward_l0_reject=config.get("reward_l0_reject", -0.02),
             reward_sorry=config.get("reward_sorry", -0.5),
-            # v7: surface backend selection through the interaction config
+
             backend=config.get("backend", "local"),
             backend_url=config.get("backend_url"),
             backend_api_key=config.get("backend_api_key"),
@@ -190,7 +186,7 @@ class VeRLProofInteraction(_BaseInteraction):
         """Lazy setup of shared Lean pool."""
         if self._setup_done:
             return
-        # Create a shared pool that environments reference. v7: honour
+        # Create a shared pool that environments reference. 
         # backend selection — if config.backend != "local", build a
         # transport factory the pool will use for each session.
         from engine.async_lean_pool import AsyncLeanPool
@@ -315,7 +311,6 @@ class VeRLProofInteraction(_BaseInteraction):
                 return content.strip()
         return ""
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # Mode 2: Custom AgentLoop — full control over the prove loop
 # ═══════════════════════════════════════════════════════════════════════
@@ -331,7 +326,7 @@ class VeRLProofAgentLoop(_AgentLoopBase):
       - Reward computation and token masking
       - Metrics collection
 
-    v7: this class is **really** registered with verl when verl is
+    
     importable. ``@register("ai4math_proof_agent")`` resolves to the
     actual ``verl.experimental.agent_loop.register`` decorator;
     ``_AgentLoopBase`` resolves to the actual
@@ -384,7 +379,7 @@ class VeRLProofAgentLoop(_AgentLoopBase):
             project_dir=proof_config.get("project_dir", "."),
             pool_size=proof_config.get("pool_size", 4),
             max_turns=proof_config.get("max_turns", 32),
-            # v7: backend selection passes through here too
+
             backend=proof_config.get("backend", "local"),
             backend_url=proof_config.get("backend_url"),
             backend_api_key=proof_config.get("backend_api_key"),
@@ -541,7 +536,6 @@ class VeRLProofAgentLoop(_AgentLoopBase):
             if msg.get("role") == "user":
                 return msg.get("content", "")
         return ""
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # Reward function for veRL's reward_function config

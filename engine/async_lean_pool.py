@@ -36,7 +36,6 @@ from engine.observability_stub import metrics
 
 logger = logging.getLogger(__name__)
 
-
 class AsyncLeanSession:
     """单个 Lean4 REPL 的异步会话
 
@@ -250,7 +249,6 @@ class AsyncLeanSession:
     def base_env_id(self) -> int:
         return self._base_env_id
 
-
 class AsyncLeanPool:
     """异步 Lean4 REPL 连接池
 
@@ -285,7 +283,7 @@ class AsyncLeanPool:
                 creating *already-configured but not-yet-started* transports;
                 ``AsyncLeanSession.start()`` will call ``.start()`` on them.
 
-                When ``None`` (the V1–V6 default), every session falls back
+                When ``None``, every session falls back
                 to ``LocalTransport`` exactly as before. **This kwarg is
                 strictly additive: callers that pass only positional args
                 or that pass no transport_factory are unaffected.**
@@ -444,7 +442,6 @@ class AsyncLeanPool:
             return result
         finally:
             await self._release_session(session)
-
 
     async def share_lemma(self, lemma_code: str, *,
                           name: str = "", statement: str = "",
@@ -613,10 +610,7 @@ class AsyncLeanPool:
             logger.warning("AsyncLeanPool: creating overflow session")
             sid = self._next_session_id
             self._next_session_id += 1
-            overflow = AsyncLeanSession(
-                session_id=sid,
-                project_dir=self.project_dir,
-                timeout_seconds=self.timeout)
+            overflow = self._make_session(sid)
             await overflow.start(self.preamble)
             overflow._busy = True
             overflow._is_overflow = True
@@ -650,13 +644,11 @@ class AsyncLeanPool:
         self._total_requests += 1
         self._total_latency_ms += ms
 
-
 # ═══════════════════════════════════════════════════════════════
 # SyncLeanPool: 同步包装器 — AsyncLeanPool 的唯一同步入口
 # ═══════════════════════════════════════════════════════════════
 
 import threading
-
 
 class SyncLeanPool:
     """AsyncLeanPool 的同步包装器

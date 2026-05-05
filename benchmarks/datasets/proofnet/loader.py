@@ -3,7 +3,7 @@
 支持 rahul3613/ProofNet-lean4 仓库结构:
   ProofNetLean4/*.lean
 
-v11: 共享解析逻辑下沉到 ``_base.parse_lean_files``。
+
 """
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ from benchmarks.datasets._base import parse_lean_files
 from prover.models import BenchmarkProblem
 
 logger = logging.getLogger(__name__)
-
 
 def load(repo_path: str, split: str = "test") -> list[BenchmarkProblem]:
     repo = Path(repo_path)

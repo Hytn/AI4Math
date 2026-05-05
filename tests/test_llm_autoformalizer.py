@@ -27,16 +27,13 @@ from prover.unified.llm_autoformalizer import (
     _strip_lean_fence,
 )
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Mock LLM helpers
 # ─────────────────────────────────────────────────────────────────────
 
-
 @dataclass
 class FakeResp:
     content: str
-
 
 class StubLLM:
     """Records every generate() call and returns a fixed response."""
@@ -52,16 +49,13 @@ class StubLLM:
         })
         return FakeResp(content=self.response)
 
-
 class CrashingLLM:
     def generate(self, *a, **kw):
         raise RuntimeError("network down")
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 1. make_llm_autoformalizer — input validation
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestInputValidation:
     def test_none_llm_rejected(self):
@@ -80,11 +74,9 @@ class TestInputValidation:
         with pytest.raises(RuntimeError):
             fn("   ", "integer")
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 2. Happy path — correct content extraction
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestHappyPath:
     def test_returns_lean_theorem(self):
@@ -138,11 +130,9 @@ class TestHappyPath:
         assert "Compute the value of 2 + 3" in user
         assert "integer" in user
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 3. Failure modes
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestFailureModes:
     def test_empty_response_raises(self):
@@ -170,11 +160,9 @@ class TestFailureModes:
             fn("nl", "integer")
         assert "network down" in str(ei.value)
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 4. _strip_lean_fence helper
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestStripLeanFence:
     def test_no_fence_passthrough(self):
@@ -195,11 +183,9 @@ class TestStripLeanFence:
         assert _strip_lean_fence("") == ""
         assert _strip_lean_fence(None or "") == ""
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 5. register_llm_autoformalizer integration
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestRegistration:
     def teardown_method(self):
@@ -228,11 +214,9 @@ class TestRegistration:
         register_autoformalizer(None)
         assert _get_autoformalizer() is None
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 6. End-to-end: NLExistenceBridgeTool prefers LLM over heuristic
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestNLExistenceBridgeIntegration:
     def teardown_method(self):
@@ -293,11 +277,9 @@ class TestNLExistenceBridgeIntegration:
         assert parsed.get("autoformalizer") == "heuristic"
         assert "theorem ai4math_q" in parsed["lean_statement"]
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 7. Async variant
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestAsyncFactory:
     def test_async_callable_works_with_sync_llm(self):

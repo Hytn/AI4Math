@@ -5,7 +5,6 @@ import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
-
 @dataclass
 class ProvedLemma:
     name: str
@@ -38,7 +37,6 @@ class ProvedLemma:
             source_rollout=d.get("source_rollout", 0),
             verified=d.get("verified", True),
         )
-
 
 class LemmaBank:
     """Thread-safe lemma bank with optional persistence."""

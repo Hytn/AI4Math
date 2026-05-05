@@ -3,7 +3,7 @@
 Tools are registered selectively per-profile by
 ``prover.unified.tool_kits.build_tool_registry``, which imports each
 tool class directly. There is no "register everything at once" entry
-point — that pattern was removed in v10 (zero callers, and the
+point — that pattern was removed  (zero callers, and the
 selective per-profile registration is the actual contract).
 
 To add a new built-in tool:

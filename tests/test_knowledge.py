@@ -1,10 +1,9 @@
 """Consolidated knowledge system tests (store, reader, writer, goal_normalizer)
 
-v10: KnowledgeBroadcaster / KnowledgeEvolver tests deleted along with their
+
 modules. GoalNormalizer is alive (used by store/reader/writer at runtime)
 so those tests are kept.
 """
-
 
 # ============================================================
 # Source: test_knowledge_system.py
@@ -27,7 +26,6 @@ from knowledge.types import (
     TacticEffectiveness, ErrorPattern, LemmaRecord,
     StrategyPattern, TacticSuggestion, DomainBriefing,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 # GoalNormalizer
@@ -63,7 +61,6 @@ class TestNormalizeLevel1:
         assert "≤" in result
         assert "+" in result
 
-
 class TestNormalizeGoalForKey:
     def test_truncation(self):
         long_goal = "⊢ " + " + ".join(f"x{i}" for i in range(100))
@@ -75,7 +72,6 @@ class TestNormalizeGoalForKey:
         result = normalize_goal_for_key(goal)
         # Should not have "_ : ℕ" but "ℕ"
         assert "_ :" not in result
-
 
 class TestClassifyDomain:
     def test_number_theory(self):
@@ -94,7 +90,6 @@ class TestClassifyDomain:
         d = classify_domain("⊢ x = y", theorem="theorem about Finset.card")
         assert d == "combinatorics"
 
-
 class TestExtractKeywords:
     def test_basic(self):
         kws = extract_keywords("lemma Nat.add_comm : ∀ n m, n + m = m + n")
@@ -110,7 +105,6 @@ class TestExtractKeywords:
         kws = extract_keywords(text)
         assert len(kws) <= 30
 
-
 class TestStatementHash:
     def test_deterministic(self):
         s = "lemma foo : True := trivial"
@@ -121,7 +115,6 @@ class TestStatementHash:
 
     def test_case_invariant(self):
         assert statement_hash("Lemma FOO") == statement_hash("lemma foo")
-
 
 # ═══════════════════════════════════════════════════════════════
 # UnifiedKnowledgeStore
@@ -251,7 +244,6 @@ class TestUnifiedKnowledgeStore:
         assert stats["tactic_patterns"] >= 1
         assert "total_contexts" in stats  # from Layer 0
 
-
 # ═══════════════════════════════════════════════════════════════
 # KnowledgeWriter
 # ═══════════════════════════════════════════════════════════════
@@ -264,7 +256,6 @@ def _step(tactic, goals_before, success=True, error="", error_cat=""):
         goals_after=[] if success else goals_before,
         error_message=error, error_category=error_cat,
         elapsed_ms=10.0, is_proof_complete=False)
-
 
 class TestKnowledgeWriter:
     @pytest.fixture
@@ -344,7 +335,6 @@ class TestKnowledgeWriter:
         assert len(errors) >= 1
         assert errors[0].typical_fix == "omega"
         assert errors[0].fix_success_rate > 0
-
 
 # ═══════════════════════════════════════════════════════════════
 # KnowledgeReader
@@ -427,16 +417,13 @@ class TestKnowledgeReader:
         assert len(text) > 0
         assert "omega" in text.lower() or "tactic" in text.lower()
 
-
 # ═══════════════════════════════════════════════════════════════
 # Migration
 # ═══════════════════════════════════════════════════════════════
 
-# (test_import_lemma_bank deleted in v11: import_from_lemma_bank was a
+# (test_import_lemma_bank deleted in 
 #  one-shot helper for the now-deleted prover/lemma_bank/ directory.)
-# (test_import_persistent_knowledge / test_import_episodic_memory deleted in v9:
-#  the corresponding writer methods were removed alongside agent/memory/.)
-
+# (test_import_persistent_knowledge / test_import_episodic_memory deleted in 
 
 # ═══════════════════════════════════════════════════════════════
 # End-to-end Integration
@@ -496,9 +483,8 @@ class TestEndToEnd:
         assert stats["tactic_patterns"] >= 2
         assert stats["error_patterns"] >= 1
 
-
 # ─────────────────────────────────────────────────────────────────
-# v10: KnowledgeEvolver / KnowledgeBroadcaster lifecycle tests removed
+
 # alongside their deleted modules. Lifecycle features they covered
 # (decay_tick / gc_stale / revive / changelog) had no main-path callers
 # in v9 and were unwired infrastructure.

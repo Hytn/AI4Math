@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/rl_demo.py — End-to-end RL pipeline smoke demo (v7.1)
+"""scripts/rl_demo.py — End-to-end RL pipeline smoke demo
 
 Proves that the V7+ unification is *runnable today* without verl,
 slime, vLLM, or even Lean installed. Uses ``MockPolicy`` over the
@@ -61,11 +61,9 @@ from sampler import (
     VERL_AVAILABLE, SLIME_AVAILABLE,
 )
 
-
 logging.basicConfig(level=logging.INFO,
                      format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("rl_demo")
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # Demo problems (no Lean needed — they pair with mock backend)
@@ -93,7 +91,6 @@ DEMO_PROBLEMS = [
         "header": "",
     },
 ]
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # Mock-friendly env override
@@ -157,7 +154,6 @@ def _make_mock_env_factory(env_config: ProofEnvConfig):
         return env
 
     return _build
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # Demo orchestration
@@ -319,7 +315,6 @@ async def run_demo(args) -> int:
 
     return 0
 
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -356,8 +351,7 @@ def main():
     # Policy
     ap.add_argument("--policy", choices=("mock", "openai"),
                       default="mock")
-    ap.add_argument("--policy-url", default=None,
-                      help="OpenAI-compatible endpoint root, e.g. http://localhost:8001/v1")
+    ap.add_argument
     ap.add_argument("--policy-model", default="gpt-4o-mini")
     ap.add_argument("--policy-api-key", default=None)
     ap.add_argument("--policy-temperature", type=float, default=0.9)
@@ -377,7 +371,6 @@ def main():
         ap.error("--policy openai requires --policy-url")
 
     sys.exit(asyncio.run(run_demo(args)))
-
 
 if __name__ == "__main__":
     main()

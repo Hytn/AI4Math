@@ -1,9 +1,7 @@
 """tests/test_backends/test_infra_v2_gaps.py — Coverage for the v2
 infra-merge gap patches.
 
-These tests pin behaviour that was added or changed in INFRA_MERGE_V2:
-
-  * LooKeng auto-bootstrap of session_id from ToolContext
+These tests pin behaviour that was added or changed in INFRA_MERGE_
   * LemmaByLemmaTool no longer requires session_id in its input schema
   * BatchVerifyTool auto-deposits successful traces into knowledge
   * KiminaServerClient memoizes last_used_id per preamble
@@ -23,9 +21,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-
 # ─── LooKeng auto-bootstrap ──────────────────────────────────────────
-
 
 @pytest.mark.asyncio
 async def test_lemma_by_lemma_input_schema_does_not_require_session_id():
@@ -35,7 +31,6 @@ async def test_lemma_by_lemma_input_schema_does_not_require_session_id():
     assert "session_id" not in schema["required"]
     assert "name" in schema["required"]
     assert "proof" in schema["required"]
-
 
 @pytest.mark.asyncio
 async def test_lemma_by_lemma_pulls_session_from_context():
@@ -61,7 +56,6 @@ async def test_lemma_by_lemma_pulls_session_from_context():
     backend.submit_lemma.assert_awaited_once()
     call_kwargs = backend.submit_lemma.call_args.kwargs
     assert call_kwargs["session_id"] == "prebooked-1"
-
 
 @pytest.mark.asyncio
 async def test_lemma_by_lemma_auto_creates_session_when_missing():
@@ -92,7 +86,6 @@ async def test_lemma_by_lemma_auto_creates_session_when_missing():
     assert backend.begin_session.await_count == 1
     assert backend.submit_lemma.await_count == 2
 
-
 @pytest.mark.asyncio
 async def test_lemma_by_lemma_explicit_session_overrides_shared_state():
     """An explicit session_id in input wins over shared_state."""
@@ -111,9 +104,7 @@ async def test_lemma_by_lemma_explicit_session_overrides_shared_state():
     assert (backend.submit_lemma.call_args.kwargs["session_id"]
             == "fork-7")
 
-
 # ─── BatchVerifyTool auto-deposit ────────────────────────────────────
-
 
 @pytest.mark.asyncio
 async def test_batch_verify_tool_auto_deposits_to_knowledge():
@@ -177,7 +168,6 @@ async def test_batch_verify_tool_auto_deposits_to_knowledge():
     assert len(store.deposited) == 1
     assert store.deposited[0][1] == ["rfl"]
 
-
 @pytest.mark.asyncio
 async def test_batch_verify_tool_no_store_skips_deposit_silently():
     """Without a knowledge store, the tool must still return a normal
@@ -196,9 +186,7 @@ async def test_batch_verify_tool_no_store_skips_deposit_silently():
     res = await tool.execute({"proofs": ["p"]}, ctx)
     assert not res.is_error
 
-
 # ─── Kimina last_used_id replay ──────────────────────────────────────
-
 
 def test_batch_verify_request_to_wire_omits_replay_handle_when_unset():
     from engine.backends.kimina_server import BatchVerifyRequest
@@ -206,14 +194,12 @@ def test_batch_verify_request_to_wire_omits_replay_handle_when_unset():
     wire = r.to_wire()
     assert "last_used_id" not in wire
 
-
 def test_batch_verify_request_to_wire_includes_replay_handle():
     from engine.backends.kimina_server import BatchVerifyRequest
     r = BatchVerifyRequest(id="r1",
                             proof="theorem t : True := trivial",
                             last_used_id="prev-1")
     assert r.to_wire()["last_used_id"] == "prev-1"
-
 
 def test_batch_verify_result_from_wire_extracts_server_id():
     from engine.backends.kimina_server import BatchVerifyResult
@@ -231,7 +217,6 @@ def test_batch_verify_result_from_wire_extracts_server_id():
     })
     assert r3.server_id == "snap-1"
 
-
 def test_preamble_key_is_deterministic_and_collision_resistant():
     from engine.backends.kimina_server import _preamble_key
     a = _preamble_key("import Mathlib")
@@ -241,9 +226,7 @@ def test_preamble_key_is_deterministic_and_collision_resistant():
     assert a != c
     assert len(a) == 32  # blake2b digest_size=16 → 32 hex chars
 
-
 # ─── NL existence bridge pattern bank ────────────────────────────────
-
 
 @pytest.mark.asyncio
 async def test_nl_existence_smallest_pattern():
@@ -262,7 +245,6 @@ async def test_nl_existence_smallest_pattern():
     assert "∃ (n : ℤ)" in stmt
     assert "n ≤ m" in stmt
 
-
 @pytest.mark.asyncio
 async def test_nl_existence_largest_pattern_uses_other_inequality():
     from agent.tools.base import ToolContext
@@ -274,7 +256,6 @@ async def test_nl_existence_largest_pattern_uses_other_inequality():
     payload = json.loads(res.content)
     stmt = payload["lean_statement"]
     assert "m ≤ n" in stmt   # largest → m ≤ n
-
 
 @pytest.mark.asyncio
 async def test_nl_existence_set_pattern():
@@ -290,7 +271,6 @@ async def test_nl_existence_set_pattern():
     assert "Finset" in stmt or "Set" in stmt
     assert "n ∈ S" in stmt
 
-
 @pytest.mark.asyncio
 async def test_nl_existence_count_pattern():
     from agent.tools.base import ToolContext
@@ -301,7 +281,6 @@ async def test_nl_existence_count_pattern():
     }, ToolContext())
     payload = json.loads(res.content)
     assert "Set.ncard" in payload["lean_statement"]
-
 
 @pytest.mark.asyncio
 async def test_nl_existence_value_pattern():
@@ -317,7 +296,6 @@ async def test_nl_existence_value_pattern():
     assert "ans = " in stmt
     assert "(0 : ℝ)" in stmt
 
-
 @pytest.mark.asyncio
 async def test_nl_existence_decidable_pattern():
     from agent.tools.base import ToolContext
@@ -330,17 +308,14 @@ async def test_nl_existence_decidable_pattern():
     stmt = payload["lean_statement"]
     assert "Bool" in stmt
 
-
 # ─── build_backend chaining ──────────────────────────────────────────
-# (test_build_backend_* removed in v9: engine/backend_factory.py deleted.
+# (test_build_backend_* removed in 
 #  Entry points now construct backend classes directly.)
 
-
 # ─── KiminaServerBackend.extract_tactics passthrough ─────────────────
-# v11: HTTPTransport (thin delegating wrapper) was deleted; these
+
 # tests now exercise KiminaServerBackend directly, which is what
 # HTTPTransport always delegated to anyway.
-
 
 @pytest.mark.asyncio
 async def test_kimina_extract_tactics_passes_through():
@@ -366,7 +341,6 @@ async def test_kimina_extract_tactics_passes_through():
         assert out == fake_trace
     fake_client.extract_tactics.assert_awaited_once()
 
-
 @pytest.mark.asyncio
 async def test_kimina_extract_tactics_returns_empty_on_no_client():
     from engine.backends.kimina_server import KiminaServerBackend
@@ -376,9 +350,7 @@ async def test_kimina_extract_tactics_returns_empty_on_no_client():
         out = await backend.extract_tactics("p")
         assert out == []
 
-
 # ─── NuminaMath-LEAN loader threads natural_language ─────────────────
-
 
 def test_numinamath_loader_sets_natural_language(tmp_path):
     """The NL problem must reach BenchmarkProblem.natural_language."""
@@ -402,11 +374,9 @@ def test_numinamath_loader_sets_natural_language(tmp_path):
     assert p.theorem_statement.startswith("theorem ai4math_q")
     assert p.source == "NuminaMath-LEAN"
 
-
 # ─── run_single.py comment hygiene ───────────────────────────────────
 
 # ─── Pantograph live-state cache exists ──────────────────────────────
-
 
 def test_pantograph_backend_initializes_proof_state_live():
     """The new ``_proof_state_live`` attribute must exist on every

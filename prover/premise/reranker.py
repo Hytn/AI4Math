@@ -8,7 +8,6 @@
 from __future__ import annotations
 from prover.premise.bm25_retriever import tokenize
 
-
 class PremiseReranker:
     """Rerank retrieved premises using multiple signals."""
 

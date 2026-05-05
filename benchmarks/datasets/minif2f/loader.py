@@ -5,7 +5,7 @@
     Test.lean       ← 244 道 test
     Valid.lean       ← 244 道 valid
 
-v11: 共享解析逻辑下沉到 ``benchmarks.datasets._base.parse_lean_files``,
+
 本文件只保留路径探测 + 难度启发式。
 """
 from __future__ import annotations
@@ -18,7 +18,6 @@ from prover.models import BenchmarkProblem
 
 logger = logging.getLogger(__name__)
 
-
 def _difficulty(name: str) -> str:
     nl = name.lower()
     if "imo" in nl: return "competition"
@@ -26,7 +25,6 @@ def _difficulty(name: str) -> str:
     if "amc" in nl: return "medium"
     if "mathd" in nl: return "easy"
     return "medium"
-
 
 def _candidate_files(repo: Path, split: str) -> list[Path]:
     """Resolve which Lean files to parse for the given split.
@@ -53,7 +51,6 @@ def _candidate_files(repo: Path, split: str) -> list[Path]:
             return sorted(p.rglob("*.lean"))
 
     return sorted(repo.rglob("*.lean"))
-
 
 def load(repo_path: str, split: str = "test") -> list[BenchmarkProblem]:
     """加载 miniF2F 数据集。

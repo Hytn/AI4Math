@@ -82,9 +82,7 @@ from engine.transport import REPLTransport, TransportStats, LocalTransport
 
 logger = logging.getLogger(__name__)
 
-
 # ─── Running context ─────────────────────────────────────────
-
 
 @dataclass
 class LemmaCacheEntry:
@@ -115,7 +113,6 @@ class LemmaCacheEntry:
         if body.startswith(":="):
             return f"{head} {body}"
         return f"{head} := by\n  {body}"
-
 
 @dataclass
 class RunningContext:
@@ -172,9 +169,7 @@ class RunningContext:
             lines.append(f"   {entry.render_for_llm()}")
         return "\n".join(lines)
 
-
 # ─── Backend ─────────────────────────────────────────────────
-
 
 class LooKengBackend(REPLTransport):
     """Stateless Lean wrapper that delegates to an inner ``REPLTransport``.
@@ -459,9 +454,7 @@ class LooKengBackend(REPLTransport):
     def get_running_context(self, session_id: str) -> Optional[RunningContext]:
         return self._sessions.get(session_id)
 
-
 # ─── Public helpers ──────────────────────────────────────────
-
 
 def build_running_context_prompt(ctx: RunningContext,
                                    include_preamble: bool = False) -> str:

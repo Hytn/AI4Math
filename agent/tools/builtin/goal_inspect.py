@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 from agent.tools.base import Tool, ToolContext, ToolResult, ToolPermission
 
-
 class GoalInspectTool(Tool):
     name = "goal_inspect"
     description = (
@@ -38,7 +37,6 @@ class GoalInspectTool(Tool):
         proof = input["proof_so_far"]
         header = input.get("theorem_header", ctx.theorem_statement)
 
-        # v10: pool exposes verify_complete(theorem, proof, preamble),
         # not check_proof. Feature-detect to be defensive against any
         # mock-style pools tests might inject.
         try:

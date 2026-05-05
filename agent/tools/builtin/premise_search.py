@@ -8,7 +8,6 @@ from agent.tools.base import Tool, ToolContext, ToolResult, ToolPermission
 
 logger = logging.getLogger(__name__)
 
-
 class PremiseSearchTool(Tool):
     name = "premise_search"
     description = (
@@ -50,7 +49,7 @@ class PremiseSearchTool(Tool):
     def _get_tfidf(self):
         """Lazily build a TF-IDF retriever over data/premises/*.jsonl.
 
-        v12 fix: prior versions imported a non-existent class
+       
         ``TFIDFRetriever`` from ``knowledge.tfidf_retriever`` and used
         an API (constructor taking a path, ``.retrieve()`` returning
         ``(name, score)`` tuples) that never existed. The actual class
@@ -158,7 +157,7 @@ class PremiseSearchTool(Tool):
         tfidf = self._get_tfidf()
         if tfidf and len(results) < max_results:
             try:
-                # v12 fix: real API is .search() returning ScoredLemma;
+
                 # prior code called .retrieve() returning (name, score)
                 # tuples — neither existed on the actual class.
                 tfidf_results = tfidf.search(

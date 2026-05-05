@@ -25,13 +25,11 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-
 def _tokenize_lean(text: str) -> list[str]:
     """Lean4 专用分词器：保留类型名/策略名/符号"""
     # 分词: 驼峰边界、点号、空格、运算符
     tokens = re.findall(r'[A-Z][a-z]+|[a-z_]\w*|[A-Z]+|[→∀∃∧∨¬⊢≤≥≠∣⟨⟩]|[+\-*/=<>]|\d+', text)
     return [t.lower() for t in tokens if len(t) > 1 or t in '→∀∃∧∨¬⊢≤≥']
-
 
 def _char_ngrams(text: str, ns: tuple[int, ...] = (3, 4, 5)) -> list[str]:
     """提取 char n-grams"""
@@ -42,7 +40,6 @@ def _char_ngrams(text: str, ns: tuple[int, ...] = (3, 4, 5)) -> list[str]:
             grams.append(text[i:i + n])
     return grams
 
-
 @dataclass
 class ScoredLemma:
     name: str
@@ -50,7 +47,6 @@ class ScoredLemma:
     proof: str
     score: float
     match_reason: str = ""
-
 
 class KnowledgeTFIDFRetriever:
     """TF-IDF + BM25 融合的知识检索引擎。
@@ -187,7 +183,6 @@ class KnowledgeTFIDFRetriever:
         if q_norm == 0 or d_norm == 0:
             return 0.0
         return dot / (math.sqrt(q_norm) * math.sqrt(d_norm))
-
 
 def enhance_knowledge_store_search(store, query_goal: str, query_theorem: str = "",
                                     domain: str = "", top_k: int = 10) -> list[ScoredLemma]:

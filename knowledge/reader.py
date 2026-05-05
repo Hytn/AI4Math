@@ -19,7 +19,6 @@ Usage::
     # 直接获取 prompt 注入文本
     text = await reader.render_for_prompt(goal="⊢ n + 0 = n", theorem="...")
 
-    # v5 cross-problem dialog retrieval (closes REFACTOR_REPORT §九.4)
     reader.attach_dialog_index(idx)              # auto-populates from store
     similar = await reader.find_similar_dialogs("theorem foo …")
     text   = await reader.render_similar_dialogs("theorem foo …", max_chars=2000)
@@ -40,14 +39,13 @@ from knowledge.types import (
 
 logger = logging.getLogger(__name__)
 
-
 class KnowledgeReader:
     """统一知识检索 — 从四层知识金字塔中检索相关知识"""
 
     def __init__(self, store: UnifiedKnowledgeStore,
                  dialog_index: Optional["DialogIndex"] = None):  # type: ignore[name-defined]
         self.store = store
-        # v5 cross-problem retrieval: optional DialogIndex. When attached,
+
         # ``find_similar_dialogs`` / ``render_similar_dialogs`` query it.
         # The index is otherwise inert — no method on this class
         # silently mutates it, so callers stay in control of ingest.
@@ -215,7 +213,7 @@ class KnowledgeReader:
         text = briefing.render(max_chars=max_chars)
         return text
 
-    # ── v5: cross-problem dialog retrieval ──────────────────────────────
+    # ── 
 
     def attach_dialog_index(
             self, dialog_index: "DialogIndex",  # type: ignore[name-defined]

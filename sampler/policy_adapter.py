@@ -1,4 +1,4 @@
-"""sampler/policy_adapter.py — Policy function adapters (v7.1)
+"""sampler/policy_adapter.py — Policy function adapters
 
 The sampler talks to "the policy" exclusively through the
 ``PolicyFn = Callable[[obs], Awaitable[(text, token_ids, logprobs)]]``
@@ -46,7 +46,6 @@ from typing import Any, Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # MockPolicy — deterministic, no LLM needed (for tests / demos)
 # ═══════════════════════════════════════════════════════════════════════
@@ -62,7 +61,7 @@ class MockPolicy:
 
     Args:
         tactics: list of tactic strings to cycle through. The default
-            pairs with the mock ProofEnv used in V7's unit tests
+            pairs with the mock ProofEnv used 's unit tests
             (which treats ``"exact h"`` as an instant win).
         seed: shuffle seed for ``shuffle=True``. Default 0 = deterministic.
         shuffle: if True, the cycle is shuffled per-call (so K
@@ -97,7 +96,6 @@ class MockPolicy:
         log_probs = [-1.0] * len(token_ids)
         return tactic, token_ids, log_probs
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # CallablePolicy — wrap any sync f(obs) -> str
 # ═══════════════════════════════════════════════════════════════════════
@@ -121,7 +119,6 @@ class CallablePolicy:
             text = result
         return text, [], []
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # OpenAIPolicy — REST adapter for OpenAI / vLLM / SGLang servers
 # ═══════════════════════════════════════════════════════════════════════
@@ -132,7 +129,6 @@ DEFAULT_SYSTEM_PROMPT = (
     "progress toward the proof. Output only the tactic, no explanation, "
     "no Markdown fences. Do not use `sorry`."
 )
-
 
 class OpenAIPolicy:
     """Policy adapter for OpenAI-compatible chat-completions endpoints.
@@ -315,7 +311,6 @@ class OpenAIPolicy:
                 pass
             self._session = None
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # Convenience: build a policy from a config dict
 # ═══════════════════════════════════════════════════════════════════════
@@ -333,7 +328,7 @@ def build_policy(config: dict) -> Callable[[str],
         tactics: [...]    seed: 0    shuffle: false
         # openai:
         base_url: "http://localhost:8001/v1"
-        model: "deepseek-ai/DeepSeek-Prover-V2-7B"
+        model: "deepseek-ai/DeepSeek-Prover-
         api_key: "..."
         # callable:
         fn: callable

@@ -4,7 +4,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 import pytest
 from benchmarks.metrics import pass_at_k, compute_metrics, MetricsSummary
 
-
 # ── pass@k ──
 
 class TestPassAtK:
@@ -32,7 +31,6 @@ class TestPassAtK:
 
     def test_n_less_than_k(self):
         assert pass_at_k(3, 1, 5) == 1.0  # can't sample 5 from 3
-
 
 # ── compute_metrics ──
 
@@ -87,8 +85,7 @@ class TestComputeMetrics:
         assert "test_bench" in table
         assert "1/1" in table
 
-
-# ── Knowledge Retriever tests removed in v10: knowledge.retriever was an
+# ── Knowledge Retriever tests removed in 
 # unwired module deleted as part of the v10 cleanup. Live knowledge
 # integration is covered by test_unified_storage.py + test_dialog_*.py
 

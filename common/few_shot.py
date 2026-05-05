@@ -1,6 +1,6 @@
 """common/few_shot.py — Lean 4 few-shot examples used at prompt-build time.
 
-v13: 之前在 ``common/prompt_builder.py`` (109 行), 但主路径只用这一个
+
 ``FEW_SHOT_EXAMPLES`` 字符串常量 —— ``build_prompt`` / ``FIRST_ATTEMPT``
 / ``RETRY`` 三个 helper 全部只在测试里调过。提取为单文件常量, 删除 builder。
 """

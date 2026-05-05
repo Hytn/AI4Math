@@ -25,7 +25,6 @@ import sys
 from pathlib import Path
 from collections import Counter
 
-
 def extract_from_lean_source(src_dir: str, output_file: str,
                               max_files: int = 0):
     """Parse .lean source files for theorem/lemma declarations.
@@ -121,7 +120,6 @@ def extract_from_lean_source(src_dir: str, output_file: str,
     for domain, count in domain_counter.most_common(20):
         print(f"  {domain:<20} {count:>5}")
 
-
 def extract_via_lean(project_dir: str, output_file: str):
     """Extract premises using Lean4's environment API.
 
@@ -192,7 +190,6 @@ def main : IO Unit := do
         print("Error: `lake` not found. Install Lean4 via elan first.")
         sys.exit(1)
 
-
 def _infer_domain(path_or_name: str) -> str:
     """Infer mathematical domain from file path or declaration name."""
     s = path_or_name.lower()
@@ -226,7 +223,6 @@ def _infer_domain(path_or_name: str) -> str:
         return "function"
     return "general"
 
-
 def _infer_tags(name: str, statement: str) -> list[str]:
     """Infer search tags from name and statement."""
     tags = []
@@ -248,7 +244,6 @@ def _infer_tags(name: str, statement: str) -> list[str]:
             tags.append(t)
     return tags[:8]  # Limit tag count
 
-
 def _clean_signature(sig: str) -> str:
     """Clean up a type signature extracted from source."""
     # Remove newlines and excess whitespace
@@ -258,7 +253,6 @@ def _clean_signature(sig: str) -> str:
     # Remove `by` and everything after
     sig = re.sub(r'\s+by\s+.*$', '', sig)
     return sig
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -298,7 +292,6 @@ def main():
         print("  python scripts/export_mathlib_premises.py "
               "--lake-project ~/.ai4math/lean-project "
               "-o data/premises/mathlib_full.jsonl")
-
 
 if __name__ == "__main__":
     main()

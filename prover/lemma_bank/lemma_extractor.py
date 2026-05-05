@@ -6,7 +6,6 @@ from __future__ import annotations
 import re
 from prover.lemma_bank.bank import ProvedLemma
 
-
 class LemmaExtractor:
     """Extract proved sub-lemmas from proof attempts."""
 

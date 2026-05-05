@@ -21,7 +21,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
-
 class TaskStatus(str, Enum):
     """Explicit proof task lifecycle states."""
     CREATED = "created"
@@ -37,7 +36,6 @@ class TaskStatus(str, Enum):
     @property
     def is_terminal(self) -> bool:
         return self in (TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.GIVEN_UP)
-
 
 # Valid state transitions
 _VALID_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
@@ -60,7 +58,6 @@ _VALID_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
     TaskStatus.GIVEN_UP: set(),
 }
 
-
 class ProofFailureClass(str, Enum):
     """Typed failure taxonomy — inspired by claw-code's LaneFailureClass."""
     SYNTAX_ERROR = "syntax_error"
@@ -77,7 +74,6 @@ class ProofFailureClass(str, Enum):
     KNOWLEDGE_ERROR = "knowledge_error"
     INTEGRITY_VIOLATION = "integrity_violation"  # sorry/cheat detected
 
-
 @dataclass
 class TaskFailure:
     """Structured failure record — analogous to claw's WorkerFailure."""
@@ -86,7 +82,6 @@ class TaskFailure:
     recoverable: bool = True
     detail: Optional[str] = None
     created_at: float = field(default_factory=time.time)
-
 
 @dataclass
 class TaskEvent:
@@ -102,7 +97,6 @@ class TaskEvent:
     failure: Optional[TaskFailure] = None
     timestamp: float = field(default_factory=time.time)
     metadata: dict = field(default_factory=dict)
-
 
 @dataclass
 class TaskContext:
@@ -128,7 +122,6 @@ class TaskContext:
     start_time: float = field(default_factory=time.time)
     timeout_multiplier: float = 1.0
     reduced_concurrency: bool = False
-
 
 class ProofTaskStateMachine:
     """Explicit state machine for a single proof task.

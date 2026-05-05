@@ -1,0 +1,60 @@
+{
+  "schema_version": "3.0",
+  "meta": {
+    "problem_id": "builtin_abs_nonneg",
+    "problem_name": "abs_nonneg",
+    "theorem_statement": "theorem abs_nonneg_example (a : Int) : 0 ≤ |a|",
+    "informal_statement": "",
+    "extra": {
+      "trace_id": "64509711-5eb",
+      "config_snapshot": {
+        "profile": "whole_proof_repair",
+        "via": "unified"
+      }
+    },
+    "model": "async-mock",
+    "started_at": "2026-05-05T01:32:06.746884Z",
+    "finished_at": "2026-05-05T01:32:06.746982Z"
+  },
+  "messages": [
+    {
+      "role": "user",
+      "content": "Prove the following theorem in Lean 4:\n\ntheorem abs_nonneg_example (a : Int) : 0 ≤ |a|"
+    },
+    {
+      "role": "assistant",
+      "content": "```lean\n:= by\n  simp\n```",
+      "tool_calls": [
+        {
+          "id": "call_f7471a4ff8bd",
+          "function": {
+            "name": "lean_verify",
+            "arguments": "{\"code\": \":= by\\n  simp\"}"
+          },
+          "server_id": "lean"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_f7471a4ff8bd",
+      "name": "lean_verify",
+      "content": "{\"verified\": true, \"status\": \"success\", \"errors\": [{\"category\": \"other\", \"message\": \"{\\n  \\\"verified\\\": true,\\n  \\\"goals_remaining\\\": [],\\n  \\\"errors\\\": [],\\n  \\\"sorry_free\\\": true,\\n  \\\"elapsed_ms\\\": 0,\\n  \\\"agent_feedback\\\": {\\n    \\\"is_proof_complete\\\": true,\\n    \\\"remaining_goals\\\": [],\\n    \\\"progress_score\\\": 1.0,\\n    \\\"elapsed_ms\\\": 0,\\n    \\\"repair_candidates\\\": [],\\n    \\\"summary\\\": \\\"Proof verified — all go\", \"line\": null, \"column\": null, \"suggestions\": []}], \"stderr\": \"{\\n  \\\"verified\\\": true,\\n  \\\"goals_remaining\\\": [],\\n  \\\"errors\\\": [],\\n  \\\"sorry_free\\\": true,\\n  \\\"elapsed_ms\\\": 0,\\n  \\\"agent_feedback\\\": {\\n    \\\"is_proof_complete\\\": true,\\n    \\\"remaining_goals\\\": [],\\n    \\\"progress_score\\\": 1.0,\\n    \\\"elapsed_ms\\\": 0,\\n    \\\"repair_candidates\\\": [],\\n    \\\"summary\\\": \\\"Proof verified — all goals closed, sorry-free.\\\"\\n  }\\n}\"}",
+      "server_id": "lean"
+    }
+  ],
+  "result": {
+    "success": true,
+    "total_attempts": 1,
+    "total_tokens": 240,
+    "total_duration_ms": 0,
+    "successful_proof": ":= by\n  simp",
+    "error_distribution": {
+      "other": 1
+    },
+    "extra": {
+      "correct_count": 2,
+      "strategy_path": []
+    }
+  }
+}

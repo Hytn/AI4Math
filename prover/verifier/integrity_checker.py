@@ -1,6 +1,6 @@
-"""prover/verifier/integrity_checker.py — 证明完整性 / 反作弊检查 (v2)
+"""prover/verifier/integrity_checker.py — 证明完整性 / 反作弊检查
 
-v2 新增检测项:
+
   - native_decide / Decidable.decide (内核计算绕过)
   - set_option maxHeartbeats 0 (关闭超时保护)
   - meta-programming via `import Lean` + `run_tac` (元编程绕过)
@@ -18,12 +18,10 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 
-
 class Severity(str, Enum):
     CRITICAL = "critical"
     WARNING = "warning"
     INFO = "info"
-
 
 @dataclass
 class IntegrityIssue:
@@ -31,7 +29,6 @@ class IntegrityIssue:
     message: str
     line: int = 0
     pattern: str = ""
-
 
 @dataclass
 class IntegrityReport:
@@ -58,7 +55,6 @@ class IntegrityReport:
             return "PASSED"
         n_crit = len(self.critical_issues)
         return f"FAILED: {n_crit} critical issue(s)"
-
 
 # ═══════════════════════════════════════════════════════════════
 # Check rules
@@ -120,7 +116,6 @@ _COMPILED_CHECKS = [
      sev, msg)
     for pattern, sev, msg in _CHECKS
 ]
-
 
 def check_integrity(code: str, original_statement: str = "") -> IntegrityReport:
     """Run all integrity checks on a proof code string.
@@ -188,7 +183,6 @@ def check_integrity(code: str, original_statement: str = "") -> IntegrityReport:
         ))
 
     return report
-
 
 def _strip_comments(code: str) -> str:
     """Remove single-line (--) and block (/- -/) comments.

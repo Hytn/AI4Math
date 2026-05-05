@@ -2,7 +2,7 @@
 
 基于目标定理和已知引理，提出可能有用的辅助猜想。
 
-v11: ``propose`` is now ``async`` and feature-detects the LLM. The original
+
 sync implementation called ``self.llm.generate(...)`` without ``await``,
 but every production ``AsyncLLMProvider`` has an ``async generate``, so
 the call returned a coroutine and ``resp.content`` immediately raised
@@ -23,7 +23,6 @@ import re
 
 from common.roles import AgentRole, ROLE_PROMPTS
 from prover.conjecture.conjecture_verifier import ConjectureVerifier
-
 
 class ConjectureProposer:
     """Propose auxiliary conjectures that might help prove a target theorem."""

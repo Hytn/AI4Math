@@ -34,7 +34,6 @@ from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
-
 # ── Permission levels (inspired by Claude Code's PermissionMode) ──
 
 class ToolPermission(str, Enum):
@@ -43,7 +42,6 @@ class ToolPermission(str, Enum):
     WRITE_LOCAL = "write_local"    # Modify proof state, local files
     EXTERNAL = "external"          # Call external services (REPL, CAS, API)
     DANGEROUS = "dangerous"        # Destructive operations (delete, overwrite)
-
 
 # ── Tool execution context ──
 
@@ -79,7 +77,6 @@ class ToolContext:
             except Exception as _exc:
                 logger.debug(f"Suppressed exception: {_exc}")
 
-
 # ── Tool result ──
 
 @dataclass
@@ -104,7 +101,6 @@ class ToolResult:
     def to_message_content(self) -> str:
         """Format for inclusion in LLM conversation."""
         return self.content
-
 
 # ── Tool base class ──
 
@@ -206,7 +202,6 @@ class Tool(ABC):
 
     def __repr__(self):
         return f"<Tool:{self.name} perm={self.permission.value}>"
-
 
 def _check_type(value: Any, expected: str) -> bool:
     """Check JSON Schema type."""

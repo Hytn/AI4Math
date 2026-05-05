@@ -1,6 +1,6 @@
-"""config/schema.py — 配置加载 + 校验 (v13 精简版)
+"""config/schema.py — 配置加载 + 校验 (
 
-v13: 之前 252 行, 校验 ~30 个字段, 但 80% 字段没有消费方。新版只校验
+
 实际生效的字段, 砍掉所有装饰用的 schema 条目。
 """
 from __future__ import annotations
@@ -18,7 +18,6 @@ _VALID_RANGES: dict[str, object] = {
     "prover.premise.mode": ["bm25", "embedding", "hybrid", "none"],
     "engine.lean_pool_size": (1, 64),
 }
-
 
 def load_config(path: str = "config/default.yaml",
                   overrides: dict = None) -> dict:
@@ -51,7 +50,6 @@ def load_config(path: str = "config/default.yaml",
 
     return config
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────
@@ -78,7 +76,6 @@ def _apply_env_overrides(config: dict) -> None:
             cur = cur.setdefault(seg, {})
         cur[path[-1]] = _coerce(env_val)
 
-
 def _coerce(s: str):
     """Best-effort string → int/float/bool/str."""
     if s.lower() in ("true", "false"):
@@ -93,14 +90,12 @@ def _coerce(s: str):
         pass
     return s
 
-
 def _deep_merge(dst: dict, src: dict) -> None:
     for k, v in src.items():
         if isinstance(v, dict) and isinstance(dst.get(k), dict):
             _deep_merge(dst[k], v)
         else:
             dst[k] = v
-
 
 def _validate(config: dict) -> None:
     """Validate every key in ``_VALID_RANGES`` against config; warn on bad value."""
@@ -117,7 +112,6 @@ def _validate(config: dict) -> None:
             if not (isinstance(v, (int, float)) and lo <= v <= hi):
                 logger.warning(
                     f"config: {dotted}={v!r} not in range [{lo}, {hi}]")
-
 
 def _get_dotted(d: dict, dotted: str):
     cur = d

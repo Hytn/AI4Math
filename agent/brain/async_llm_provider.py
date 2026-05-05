@@ -29,7 +29,6 @@ _MAX_RETRIES = 3
 _INITIAL_BACKOFF_S = 1.0
 _MAX_BACKOFF_S = 30.0
 
-
 @dataclass
 class LLMResponse:
     """LLM call result. Shared across sync/async paths.
@@ -45,7 +44,6 @@ class LLMResponse:
     raw_response: Optional[dict] = None
     cached: bool = False
     stop_reason: str = "end_turn"  # "end_turn" | "tool_use" | "max_tokens"
-
 
 class AsyncLLMProvider(ABC):
     """异步 LLM Provider 抽象基类"""
@@ -80,7 +78,6 @@ class AsyncLLMProvider(ABC):
     @property
     @abstractmethod
     def model_name(self) -> str: ...
-
 
 class AsyncClaudeProvider(AsyncLLMProvider):
     """Claude 异步 Provider — 使用 anthropic.AsyncAnthropic
@@ -174,9 +171,20 @@ class AsyncClaudeProvider(AsyncLLMProvider):
             await self._client.close()
             self._client = None
 
-
 class AsyncMockProvider(AsyncLLMProvider):
-    """测试用异步 Mock Provider"""
+    """Mock LLM provider — 用于无网络的单元测试和管线冒烟。
+
+    重要:这个 provider 的输出**不是真实证明**,只是一组常用 tactic 的脚本
+    回放(omega / simp / rfl / ring / decide)。它能让 ``MockTransport`` 跑
+    通端到端管线,但**不能用于评测**。任何 dialog.json 用 mock 跑出来的
+    ``meta.provider == "mock"`` 字样应被评测脚本视为非有效证明。
+
+    可以通过 ``MockResponseScript`` 注入定制响应(用于复现具体场景)。
+    """
+
+    def __init__(self, scripted_responses: Optional[list[str]] = None):
+        # 优先吐脚本里的响应;吐完了用启发式
+        self._scripted = list(scripted_responses or [])
 
     @property
     def model_name(self) -> str:
@@ -190,14 +198,163 @@ class AsyncMockProvider(AsyncLLMProvider):
     async def chat(self, system="", messages=None, temperature=0.7,
                    tools=None, max_tokens=4096) -> LLMResponse:
         await asyncio.sleep(0.01)
+        messages = messages or []
+
+        # 1. 脚本响应优先 (LLMResponse 形式 / 字符串都接受)
+        if self._scripted:
+            scr = self._scripted.pop(0)
+            if isinstance(scr, LLMResponse):
+                return scr
+            return LLMResponse(
+                content=str(scr),
+                model="async-mock", tokens_in=100, tokens_out=20,
+                latency_ms=10, stop_reason="end_turn")
+
+        user_text = self._last_user_text(messages)
+        proof = self._heuristic_proof(user_text)
+
+        # 2. tool-call 路径
+        # 优先级:lean_verify (whole-proof tool) > tactic_apply (step-level)
+        tool_names = {self._tool_name(t) for t in (tools or [])}
+        already_got_tool_result = any(
+            (m.get("role") == "tool")
+            or (m.get("role") == "user"
+                and isinstance(m.get("content"), list)
+                and any(
+                    isinstance(b, dict) and b.get("type") == "tool_result"
+                    for b in m["content"]))
+            for m in messages)
+
+        # 已经收到过 tool_result 时直接终止 — 无论之前调的是哪个工具,
+        # 第二轮都给 raw proof,fast-path 接住,success=True。
+        if already_got_tool_result:
+            return LLMResponse(
+                content=proof,
+                model="async-mock", tokens_in=100, tokens_out=20,
+                latency_ms=10, stop_reason="end_turn")
+
+        if "lean_verify" in tool_names:
+            theorem = self._extract_theorem(user_text) \
+                or "theorem mock_t : True"
+            proof_body = (proof.replace("```lean\n", "")
+                              .replace("\n```", "").strip())
+            full_code = f"{theorem} {proof_body}" if proof_body.startswith(":=") \
+                else f"{theorem} := by {proof_body}"
+            tool_call = {
+                "id": f"call_mock_{random.randint(0, 999999)}",
+                "name": "lean_verify",
+                "input": {"code": full_code},
+            }
+            return LLMResponse(
+                content="",
+                model="async-mock", tokens_in=100, tokens_out=20,
+                latency_ms=10, stop_reason="tool_use",
+                tool_calls=[tool_call])
+
+        if "tactic_apply" in tool_names:
+            # step-level:挑一个启发式 tactic 让 driver 至少跑一轮 expansion
+            tactic = self._heuristic_tactic(user_text)
+            tool_call = {
+                "id": f"call_mock_{random.randint(0, 999999)}",
+                "name": "tactic_apply",
+                "input": {"tactic": tactic},
+            }
+            return LLMResponse(
+                content="",
+                model="async-mock", tokens_in=100, tokens_out=20,
+                latency_ms=10, stop_reason="tool_use",
+                tool_calls=[tool_call])
+
+        if "lemma_by_lemma" in tool_names:
+            # LooKeng profile:发一次 is_final=True 的 final-lemma 调用,
+            # 直接把整道定理作为最终引理证明出来
+            theorem = self._extract_theorem(user_text) \
+                or "theorem mock_t : True"
+            tactic = self._heuristic_tactic(user_text)
+            tool_call = {
+                "id": f"call_mock_{random.randint(0, 999999)}",
+                "name": "lemma_by_lemma",
+                "input": {
+                    "name": "final_lemma",
+                    "statement": theorem,
+                    "proof": tactic,
+                    "is_final": True,
+                },
+            }
+            return LLMResponse(
+                content="",
+                model="async-mock", tokens_in=100, tokens_out=20,
+                latency_ms=10, stop_reason="tool_use",
+                tool_calls=[tool_call])
+
         return LLMResponse(
-            content="```lean\n:= by\n  sorry\n```",
+            content=proof,
             model="async-mock", tokens_in=100, tokens_out=20,
             latency_ms=10, stop_reason="end_turn")
 
+    @staticmethod
+    def _tool_name(t) -> str:
+        if isinstance(t, dict):
+            return t.get("name") or t.get("function", {}).get("name", "")
+        return getattr(t, "name", "") or getattr(
+            getattr(t, "function", None), "name", "")
+
+    @staticmethod
+    def _extract_theorem(text: str) -> str:
+        """从 user 文本里捞第一段 ```lean ... ``` 中的 theorem 头。"""
+        import re
+        m = re.search(r"```lean\s*\n(.+?)\n```", text, re.DOTALL)
+        if not m:
+            return ""
+        for line in m.group(1).splitlines():
+            stripped = line.strip()
+            if stripped.startswith(("theorem ", "lemma ", "example ")):
+                return stripped.rstrip(":=").rstrip(":").strip()
+        return ""
+
+    @staticmethod
+    def _last_user_text(messages: list) -> str:
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                c = msg.get("content", "")
+                if isinstance(c, str):
+                    return c
+                if isinstance(c, list):
+                    return " ".join(
+                        b.get("text", "") for b in c
+                        if isinstance(b, dict) and b.get("type") == "text")
+        return ""
+
+    @staticmethod
+    def _heuristic_proof(user_text: str) -> str:
+        """从题面挑一个看起来最可能的 tactic。无网络环境冒烟用。"""
+        t = user_text.lower()
+        if "comm" in t or "+" in t or "* " in t:
+            tactic = "omega"
+        elif "iff" in t or "↔" in t:
+            tactic = "tauto"
+        elif "=" in t and ("nat" in t or "int" in t or "ℕ" in t or "ℤ" in t):
+            tactic = "omega"
+        elif "le" in t or "≤" in t or "<" in t:
+            tactic = "linarith"
+        elif "true" in t or "trivial" in t:
+            tactic = "trivial"
+        else:
+            tactic = "simp"
+        return f"```lean\n:= by\n  {tactic}\n```"
+
+    @classmethod
+    def _heuristic_tactic(cls, user_text: str) -> str:
+        """tactic_apply 用的:从启发式 proof 里挑出 tactic 单词。"""
+        body = cls._heuristic_proof(user_text)
+        for line in body.splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith(("`", ":=")):
+                return stripped
+        return "simp"
 
 # ─────────────────────────────────────────────────────────────────────
-# v15: OpenAI-compatible provider — one class, many backends
+
 # ─────────────────────────────────────────────────────────────────────
 
 class AsyncOpenAIProvider(AsyncLLMProvider):
@@ -240,7 +397,7 @@ class AsyncOpenAIProvider(AsyncLLMProvider):
 
         # Local vLLM
         provider = AsyncOpenAIProvider(
-            model="DeepSeek-Prover-V2-7B",
+            model="DeepSeek-Prover-
             api_key="EMPTY",
             api_base="http://localhost:8000/v1",
         )
@@ -464,11 +621,10 @@ class AsyncOpenAIProvider(AsyncLLMProvider):
                 pass
             self._client = None
 
-
 class AsyncCachedProvider(AsyncLLMProvider):
     """异步缓存包装器 — 包装任意 AsyncLLMProvider.
 
-    v12: now also overrides ``chat()``. ``AgentLoop`` calls ``chat``
+    
     preferentially (see ``agent/runtime/agent_loop.py``), so prior to
     v12 only the rarer ``generate()`` path was cached and the headline
     multi-turn loop bypassed the cache entirely.
@@ -582,11 +738,10 @@ class AsyncCachedProvider(AsyncLLMProvider):
         raw = f"{system}|||{user}|||{temperature}|||{max_tokens}|||{tools_str}"
         return hashlib.sha256(raw.encode()).hexdigest()
 
-
 def create_async_provider(config: dict) -> AsyncLLMProvider:
     """工厂: 从配置创建异步 Provider.
 
-    v15: OpenAI-compatible aliases. Each alias just sets sensible
+    
     api_base / model / env-var defaults on AsyncOpenAIProvider; the
     explicit ``api_base`` / ``model`` / ``api_key`` in ``config``
     always wins.

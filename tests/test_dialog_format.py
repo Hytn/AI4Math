@@ -48,7 +48,6 @@ from agent.persistence.sft_export import (
     dialog_to_sft_sample,
 )
 
-
 # ────────────────────────────────────────────────────────────────────────
 # 1. Builder + I/O
 # ────────────────────────────────────────────────────────────────────────
@@ -153,7 +152,6 @@ class TestBuilderAndIO:
         # Tool response matched by id
         assert d["messages"][2]["tool_call_id"] == tcs[0]["id"]
 
-
 # ────────────────────────────────────────────────────────────────────────
 # 2. Accessors work on both forms
 # ────────────────────────────────────────────────────────────────────────
@@ -174,7 +172,6 @@ class TestAccessors:
     def test_result_of_wrapped(self):
         d = {"meta": {}, "messages": [], "result": {"success": True}}
         assert result_of(d)["success"] is True
-
 
 # ────────────────────────────────────────────────────────────────────────
 # 3. Validation
@@ -209,7 +206,6 @@ class TestValidation:
         ]}
         codes = [i.code for i in validate_dialog(bad)]
         assert "tool_args_not_string" in codes
-
 
 # ────────────────────────────────────────────────────────────────────────
 # 4. Adapters return wrapped dialogs when wrapped=True
@@ -265,7 +261,6 @@ class TestLoopAdapter:
                == "premise_search"
         assert msgs[2]["role"] == "tool"
 
-
 class TestTrajectoryAdapter:
     def _make_traj(self):
         class _R:
@@ -316,7 +311,6 @@ class TestTrajectoryAdapter:
         assert d["result"]["total_tokens"] == 50
         assert validate_dialog(d) == []
 
-
 class TestProofTraceAdapter:
     def _make_trace(self):
         class _Status:
@@ -358,7 +352,6 @@ class TestProofTraceAdapter:
         assert d["meta"]["extra"]["trace_id"] == "abc"
         assert d["result"]["success"] is True
         assert d["result"]["successful_proof"] == ":= trivial"
-
 
 # ────────────────────────────────────────────────────────────────────────
 # 5. SFT export uses meta.system_prompt automatically
@@ -422,7 +415,6 @@ class TestSFTExportAutoSystemPrompt:
         assert "<think>" not in sample["text"]
         assert "</think>" not in sample["text"]
 
-
 # ────────────────────────────────────────────────────────────────────────
 # 6. Helpers (unchanged from prior version)
 # ────────────────────────────────────────────────────────────────────────
@@ -460,7 +452,6 @@ class TestHelpers:
         msgs = to_openai_messages(b.build())
         assert msgs[1]["role"] == "assistant"
         assert "thought" not in msgs[1]
-
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

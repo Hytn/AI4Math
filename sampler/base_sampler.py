@@ -23,14 +23,12 @@ from sampler.trajectory import Trajectory
 
 logger = logging.getLogger(__name__)
 
-
 # Type alias for the policy function provided by the RL framework.
 # Given an observation string, returns (action_text, token_ids, log_probs).
 PolicyFn = Callable[
     [str],  # observation
     Awaitable[tuple[str, list[int], list[float]]]
 ]
-
 
 @dataclass
 class SamplerConfig:
@@ -49,7 +47,6 @@ class SamplerConfig:
     tokenizer_name: str = ""        # For token id/logprob capture
     max_prompt_len: int = 2048
     max_response_len: int = 4096
-
 
 class BaseSampler(ABC):
     """Framework-agnostic sampler for multi-turn proof rollouts.
@@ -73,7 +70,7 @@ class BaseSampler(ABC):
     def __init__(self, config: SamplerConfig = None):
         self.config = config or SamplerConfig()
         self._env_pool: list[ProofEnv] = []
-        self._env_queue: Optional[asyncio.Queue] = None  # v7: atomic acquire
+        self._env_queue: Optional[asyncio.Queue] = None  # 
         self._env_semaphore: Optional[asyncio.Semaphore] = None  # legacy
         self._setup_done = False
 
@@ -87,7 +84,6 @@ class BaseSampler(ABC):
         ]
         await asyncio.gather(*(env.setup() for env in self._env_pool))
 
-        # v7: replace the per-env _in_use boolean (which had a TOCTOU
         # race between the semaphore acquire and the flag check —
         # two coroutines could both observe _in_use=False on env[0]
         # and both grab it) with an asyncio.Queue. Each env enters
@@ -180,7 +176,7 @@ class BaseSampler(ABC):
     ) -> Trajectory:
         """Run a single multi-turn episode.
 
-        v7: atomic env acquisition via asyncio.Queue. The earlier
+        
         implementation had a TOCTOU race — two coroutines could both
         observe ``_in_use=False`` on the same env between the
         semaphore acquire and the flag set. Now ``get()`` returns
@@ -257,7 +253,6 @@ class BaseSampler(ABC):
             "avg_wall_time_s": round(avg_time, 2),
             "termination_dist": _count_terminations(trajectories),
         }
-
 
 def _count_terminations(trajs: list[Trajectory]) -> dict[str, int]:
     counts: dict[str, int] = {}

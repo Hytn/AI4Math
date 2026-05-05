@@ -25,13 +25,11 @@ WORKDIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if WORKDIR not in sys.path:
     sys.path.insert(0, WORKDIR)
 
-
 from agent.persistence import (
     DIALOG_FILENAME, SCHEMA_VERSION,
     load_task, validate_dialog, collect_dialogs,
     messages_of, meta_of, result_of,
 )
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # 1. ProofTrace.save_unified — single dialog.json with everything
@@ -100,7 +98,6 @@ class TestProofTraceUnified:
         assert res["total_attempts"] == 2
         assert res["successful_proof"] == ":= by simp"
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # 2. Trajectory.save_unified
 # ─────────────────────────────────────────────────────────────────────────
@@ -144,7 +141,6 @@ class TestTrajectoryUnified:
         assert meta_of(d)["system_prompt"] == "prove tactics"
         assert result_of(d)["success"] is True
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # 3. LoopResult.save_unified
 # ─────────────────────────────────────────────────────────────────────────
@@ -184,16 +180,13 @@ class TestLoopResultUnified:
         assert result_of(d)["success"] is True
         assert result_of(d)["termination"] == "proof_found"
 
-
 # ─────────────────────────────────────────────────────────────────────────
-# 4. (TestSessionStoreSidecar deleted in v11: agent/persistence/session_store.py removed.)
-# ─────────────────────────────────────────────────────────────────────────
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# 5. (TestSnapshotUnified deleted in v9: engine/lane/ removed.)
+# 4. (TestSessionStoreSidecar deleted in 
 # ─────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────
+# 5. (TestSnapshotUnified deleted in 
+# ─────────────────────────────────────────────────────────────────────────
 
 # ─────────────────────────────────────────────────────────────────────────
 # 6. End-to-end: collect & SFT export uses meta.system_prompt
@@ -253,7 +246,6 @@ class TestEndToEndSFT:
                 if p in sample["text"]:
                     prompts_seen.add(p)
         assert prompts_seen == {"prove A", "prove B"}
-
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

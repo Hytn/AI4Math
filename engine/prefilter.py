@@ -14,7 +14,6 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class FilterResult:
     """预过滤结果"""
@@ -35,7 +34,6 @@ class FilterResult:
             passed=False, rule_name=rule,
             reason=reason, fix_hint=hint, severity=severity)
 
-
 class FilterRule:
     """过滤规则基类"""
     name: str = "base_rule"
@@ -43,7 +41,6 @@ class FilterRule:
 
     def check(self, proof: str, theorem: str = "") -> FilterResult:
         return FilterResult.ok()
-
 
 class SorryDetector(FilterRule):
     """检测 sorry/admit — 这些不构成有效证明"""
@@ -70,7 +67,6 @@ class SorryDetector(FilterRule):
                 "by a real tactic (simp, ring, omega, exact, apply, etc.)")
         return FilterResult.ok()
 
-
 class EmptyProofDetector(FilterRule):
     """检测空证明"""
     name = "empty_proof"
@@ -83,7 +79,6 @@ class EmptyProofDetector(FilterRule):
                 "Proof is empty",
                 "Generate a proof starting with `:= by` followed by tactics")
         return FilterResult.ok()
-
 
 class BracketMatcher(FilterRule):
     """检测括号不匹配"""
@@ -121,7 +116,6 @@ class BracketMatcher(FilterRule):
                 f"Add closing `{self._PAIRS[open_ch]}`")
         return FilterResult.ok()
 
-
 class Lean3Detector(FilterRule):
     """检测 Lean3 语法 (常见 LLM 错误)"""
     name = "lean3_syntax"
@@ -153,7 +147,6 @@ class Lean3Detector(FilterRule):
                     severity="warning")
         return FilterResult.ok()
 
-
 class NatSubtractGuard(FilterRule):
     """检测 ℕ 减法陷阱 — Lean4 中 ℕ 减法截断到 0"""
     name = "nat_subtract_guard"
@@ -181,7 +174,6 @@ class NatSubtractGuard(FilterRule):
                 severity="warning")
         return FilterResult.ok()
 
-
 class RingOnNatGuard(FilterRule):
     """检测 ring 在 ℕ 减法上的误用"""
     name = "ring_on_nat_sub"
@@ -198,7 +190,6 @@ class RingOnNatGuard(FilterRule):
                 "Use `omega` for linear ℕ arithmetic, or cast to ℤ first",
                 severity="warning")
         return FilterResult.ok()
-
 
 class TacticExistence(FilterRule):
     """检测不存在的 tactic 名称"""
@@ -236,7 +227,6 @@ class TacticExistence(FilterRule):
                     # 模糊匹配: 可能是拼写错误
                     pass  # 不报错, 可能是用户自定义 tactic
         return FilterResult.ok()
-
 
 class PreFilter:
     """L0 预过滤器: 可扩展的规则引擎

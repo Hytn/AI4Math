@@ -20,7 +20,6 @@ from knowledge.dialog_index import (
     extract_final_proof, extract_used_tactics,
 )
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Sample dialog factories
 # ─────────────────────────────────────────────────────────────────────
@@ -60,11 +59,9 @@ def make_dialog(theorem: str, *, solved: bool = True,
         },
     }
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 1. extract_* helpers
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestExtractHelpers:
     def test_extract_final_proof_from_result(self):
@@ -124,11 +121,9 @@ class TestExtractHelpers:
         assert extract_final_proof("not a dict") == ""  # type: ignore[arg-type]
         assert extract_used_tactics(None) == []  # type: ignore[arg-type]
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 2. add_dialog + size + clear
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestAddDialog:
     def test_add_one_dialog(self):
@@ -153,11 +148,9 @@ class TestAddDialog:
         idx.clear()
         assert idx.size == 0
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 3. find_similar
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestFindSimilar:
     def _populate(self, idx: DialogIndex):
@@ -240,11 +233,9 @@ class TestFindSimilar:
             "theorem t (m : ℕ) : m + 0 = m", top_k=3)
         assert len(matches) == 3
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 4. render_for_prompt
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestRenderForPrompt:
     def test_render_includes_theorem_and_proof(self):
@@ -289,11 +280,9 @@ class TestRenderForPrompt:
         text = idx.render_for_prompt("theorem t : True", top_k=3)
         assert isinstance(text, str)
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 5. index_from_directory
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestIndexFromDirectory:
     def test_ingest_one_dialog_file(self, tmp_path):
@@ -354,11 +343,9 @@ class TestIndexFromDirectory:
         n = idx.index_from_directory(tmp_path, limit=4)
         assert n == 4
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 6. index_from_proof_context_store
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestIndexFromProofContextStore:
     """Hits a fake store with the expected ``_connect()`` shape."""
@@ -454,11 +441,9 @@ class TestIndexFromProofContextStore:
         n = idx.index_from_proof_context_store(store)
         assert n == 1  # second row dropped
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 7. End-to-end: mix of ingest + retrieve
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestEndToEnd:
     def test_disk_plus_db_combined(self, tmp_path):

@@ -16,7 +16,6 @@ from dataclasses import dataclass
 
 from sampler.trajectory import Trajectory
 
-
 @dataclass
 class RewardConfig:
     strategy: str = "dense"          # sparse | goal_progress | curriculum | dense
@@ -30,7 +29,6 @@ class RewardConfig:
     turn_discount: float = 0.99
     # Curriculum: scale reward by difficulty
     difficulty_scale: bool = False
-
 
 def reshape_trajectory(
     trajectory: Trajectory, config: RewardConfig = None
@@ -59,7 +57,6 @@ def reshape_trajectory(
     trajectory.total_reward = sum(t.reward.scalar for t in trajectory.turns)
     return trajectory
 
-
 def _apply_sparse(traj: Trajectory, cfg: RewardConfig):
     """Only the final turn gets reward."""
     for turn in traj.turns:
@@ -70,7 +67,6 @@ def _apply_sparse(traj: Trajectory, cfg: RewardConfig):
         elif traj.turns[-1].reward.error_class == "sorry":
             traj.turns[-1].reward.scalar = cfg.sorry_penalty
 
-
 def _apply_goal_progress(traj: Trajectory, cfg: RewardConfig):
     """Reward based on cumulative goal progress."""
     for turn in traj.turns:
@@ -80,7 +76,6 @@ def _apply_goal_progress(traj: Trajectory, cfg: RewardConfig):
         if turn.reward.is_terminal and turn.reward.scalar > 0:
             r += cfg.success_bonus
         turn.reward.scalar = r
-
 
 def _apply_curriculum(traj: Trajectory, cfg: RewardConfig):
     """Scale rewards by problem difficulty metadata."""

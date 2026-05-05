@@ -43,7 +43,6 @@ WORKDIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if WORKDIR not in sys.path:
     sys.path.insert(0, WORKDIR)
 
-
 # Probe sklearn for the train_wm round-trip
 try:
     import sklearn  # noqa: F401
@@ -51,7 +50,6 @@ try:
     SKLEARN_OK = True
 except ImportError:
     SKLEARN_OK = False
-
 
 # Import the orchestrator module by file path (it lives under scripts/
 # which isn't a Python package). Must register in sys.modules BEFORE
@@ -62,7 +60,6 @@ _RL_SPEC = importlib.util.spec_from_file_location(
 rl = importlib.util.module_from_spec(_RL_SPEC)
 sys.modules["rl_pipeline"] = rl
 _RL_SPEC.loader.exec_module(rl)
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # Shared: helpers that build realistic on-disk artifacts
@@ -93,7 +90,6 @@ def _write_linear_dialog(dir_: Path, problem_id: str,
                     "termination": "proof_found" if success
                                    else "search_exhausted"},
     }), encoding="utf-8")
-
 
 def _write_search_tree_dialog(dir_: Path, problem_id: str,
                                 *, success: bool, n_failed_branches: int = 1):
@@ -151,7 +147,6 @@ def _write_search_tree_dialog(dir_: Path, problem_id: str,
                     "total_duration_ms": 200},
     }), encoding="utf-8")
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # 1-2. stage_collect
 # ─────────────────────────────────────────────────────────────────────────
@@ -203,7 +198,6 @@ class TestStageCollect:
                               output=tmp_path / "sft.jsonl")
         assert not r.ok
         assert "does not exist" in r.metrics["error"]
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # 3-4. _steps_from_dialog / _trajectories_from_dialogs
@@ -275,7 +269,6 @@ class TestDialogToTrajectoryExtraction:
         assert "theorem p1 : True" in names
         assert "theorem p2 : True" in names
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # 5-7. stage_train_wm
 # ─────────────────────────────────────────────────────────────────────────
@@ -325,7 +318,6 @@ class TestStageTrainWM:
         if r.ok and not r.skipped_reason:
             assert out.exists()
             assert "accuracy" in r.metrics
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # 8-10. stage_train_llm
@@ -378,7 +370,6 @@ class TestStageTrainLLM:
             train_cmd="true")
         assert not r.ok
         assert "missing" in r.metrics["error"]
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # 11-12. End-to-end iteration (without stage_eval)
@@ -455,7 +446,6 @@ class TestRunIteration:
         # ok=False with "missing" error). What we're pinning here is
         # that the iteration didn't bail after the first failure.
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # Bonus: shell wrapper exists & is executable
 # ─────────────────────────────────────────────────────────────────────────
@@ -473,7 +463,6 @@ class TestShellWrapper:
         # And the help references the four-stage flow
         assert "eval" in proc.stdout.lower()
         assert "collect" in proc.stdout.lower()
-
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

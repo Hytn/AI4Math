@@ -32,7 +32,6 @@ from engine.world_model import WorldModelPredictor, WorldModelPrediction, MockWo
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class TrainingSample:
     goal_text: str
@@ -42,7 +41,6 @@ class TrainingSample:
     error_category: str = ""
     goal_shape: str = ""
     domain: str = ""
-
 
 def _tactic_base(tactic: str) -> str:
     tokens = tactic.strip().split()
@@ -60,7 +58,6 @@ def _goal_domain(goal: str) -> str:
                      (['∀','∃','→','∧','∨'],'logic')]:
         if any(k in g for k in kw): return dom
     return 'other'
-
 
 class WorldModelTrainer:
     def __init__(self, db_path: str = "proofs.db"):
@@ -190,7 +187,6 @@ class WorldModelTrainer:
     @property
     def stats(self) -> dict: return dict(self._stats)
 
-
 class SklearnWorldModel(WorldModelPredictor):
     """训练后的世界模型。加载失败时降级到 MockWorldModel。"""
     def __init__(self, model_path: str = "world_model.pkl"):
@@ -234,7 +230,6 @@ class SklearnWorldModel(WorldModelPredictor):
 
     @property
     def is_trained(self) -> bool: return self._loaded
-
 
 def train_world_model(db_path="proofs.db", output_path="world_model.pkl", **kw) -> dict:
     t = WorldModelTrainer(db_path)

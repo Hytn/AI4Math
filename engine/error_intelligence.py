@@ -26,7 +26,6 @@ from engine._core import TacticFeedback
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class RepairCandidate:
     """一个具体的修复候选"""
@@ -38,7 +37,6 @@ class RepairCandidate:
     def to_prompt_line(self) -> str:
         return f"  - Try `{self.tactic}` ({self.reason}) [{self.source}]"
 
-
 @dataclass
 class GoalState:
     """单个 goal 的结构化表示"""
@@ -49,7 +47,6 @@ class GoalState:
     def to_prompt(self) -> str:
         hyps = "\n".join(f"    {h}" for h in self.hypotheses) if self.hypotheses else "    (none)"
         return f"  Goal {self.index}:\n{hyps}\n    ⊢ {self.target_type}"
-
 
 @dataclass
 class AgentFeedback:
@@ -171,7 +168,6 @@ class AgentFeedback:
             raw_error=error_msg,
             elapsed_ms=elapsed_ms,
         )
-
 
 class ErrorIntelligence:
     """错误智能分析引擎

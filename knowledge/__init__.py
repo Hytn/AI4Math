@@ -6,7 +6,7 @@
   Layer 2: 策略模式 (归纳出的证明策略模板)
   Layer 3: 直觉图谱 (跨领域概念关联)
 
-v10 删除了无主路径调用的 4 个子模块:
+
   knowledge.evolver       (decay/gc 子系统)
   knowledge.broadcaster   (BroadcastBus 桥接)
   knowledge.retriever     (旧 Mathlib 检索器)

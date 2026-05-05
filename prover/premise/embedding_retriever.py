@@ -1,6 +1,6 @@
 """prover/premise/embedding_retriever.py — Sparse TF-IDF + char-n-gram retriever
 
-⚠️  **Naming caveat (v15)**: this module is *not* a neural / dense
+⚠️  **Naming caveat**: this module is *not* a neural / dense
     embedding retriever despite the legacy filename. It is **pure
     sparse TF-IDF** over two parallel feature spaces:
 
@@ -41,7 +41,6 @@ from collections import Counter
 from dataclasses import dataclass, field
 from prover.premise.bm25_retriever import tokenize
 
-
 def _char_ngrams(text: str, ns: tuple[int, ...] = (3, 4)) -> list[str]:
     """Extract character n-grams from text.
 
@@ -65,7 +64,6 @@ def _char_ngrams(text: str, ns: tuple[int, ...] = (3, 4)) -> list[str]:
                 ngrams.append(padded[i:i + n])
     return ngrams
 
-
 @dataclass
 class IndexedDoc:
     name: str
@@ -75,7 +73,6 @@ class IndexedDoc:
     word_norm: float = 0.0
     ngram_vec: dict[str, float] = field(default_factory=dict)
     ngram_norm: float = 0.0
-
 
 class EmbeddingRetriever:
     """Hybrid word + character n-gram retriever.
@@ -210,8 +207,6 @@ class EmbeddingRetriever:
     def size(self) -> int:
         return len(self.documents)
 
-
-# v15: honest-name alias. New code should prefer ``TfidfNgramRetriever``
 # so the call site reads as "I'm using sparse TF-IDF, not a neural
 # embedding retriever". The old name is kept indefinitely for
 # backward compatibility — multiple callers in ``prover/premise/selector.py``

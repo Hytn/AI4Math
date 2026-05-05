@@ -30,7 +30,6 @@ from sampler.trajectory import Trajectory
 
 logger = logging.getLogger(__name__)
 
-# v7: detect slime availability. SLIME (https://github.com/THUDM/slime)
 # typically exposes a CustomGenerator / Env protocol. We probe a few
 # known import paths and expose SLIME_AVAILABLE so callers can branch
 # on it. When slime is missing, the wrappers in this module remain
@@ -45,7 +44,6 @@ except ImportError:
     logger.debug(
         "sampler.slime_sampler: slime not installed, running in stub mode "
         "(install with `pip install -r requirements-rl.txt`)")
-
 
 class SlimeSampler(BaseSampler):
     """Sampler adapted for slime's multi-turn RL protocol.
@@ -83,7 +81,6 @@ class SlimeSampler(BaseSampler):
         trajectories = await self.collect_rollouts(problems, policy_fn)
         return [t.to_slime_episodes() for t in trajectories]
 
-
 class SlimeProofEnvFactory:
     """Factory for creating slime-compatible proof environments.
 
@@ -108,7 +105,7 @@ class SlimeProofEnvFactory:
     async def setup_shared_pool(self):
         """Initialize a shared Lean pool for all environments.
 
-        v7: honour ``ProofEnvConfig.backend``. Previously this method
+        
         ignored the backend selector and always built a LocalTransport
         pool — meaning slime users couldn't reach Kimina/Pantograph/
         LooKeng even after they set ``backend="kimina"`` on the config.
@@ -150,7 +147,6 @@ class SlimeProofEnvFactory:
         if self._shared_pool:
             await self._shared_pool.shutdown()
             self._shared_pool = None
-
 
 class SlimeProofEnv:
     """slime-compatible proof environment.

@@ -8,10 +8,9 @@ from sampler.proof_env import ProofEnv, ProofEnvConfig
 from sampler.base_sampler import BaseSampler, SamplerConfig
 from sampler.verl_sampler import VeRLProofInteraction, compute_proof_reward
 from sampler.slime_sampler import SlimeSampler
-# v13: 之前 TestRewardShaping 用 reshape_trajectory / RewardConfig 但忘了
+
 # import (是 v12 即存在的预存 bug)。补上。
 from sampler.reward_shaping import reshape_trajectory, RewardConfig
-
 
 # ── Trajectory tests ──────────────────────────────────────────────────
 
@@ -105,7 +104,6 @@ class TestTrajectory:
         assert verl["response_ids"] == [10, 11, 20, 21, 30, 31]
         assert verl["response_mask"] == [1, 1, 0, 0, 1, 1]
 
-
 # ── ProofEnv tests ────────────────────────────────────────────────────
 
 class TestProofEnv:
@@ -169,7 +167,6 @@ class TestProofEnv:
 
         asyncio.run(_test())
 
-
 # ── Reward shaping tests ──────────────────────────────────────────────
 
 class TestRewardShaping:
@@ -196,7 +193,6 @@ class TestRewardShaping:
         t = reshape_trajectory(t, RewardConfig(strategy="dense", turn_discount=0.5))
         assert t.turns[0].reward.scalar == 1.0
         assert t.turns[1].reward.scalar == 0.5
-
 
 # ── veRL integration tests ───────────────────────────────────────────
 
@@ -227,7 +223,6 @@ class TestVeRLIntegration:
             {"role": "assistant", "content": "simp [Nat.add_comm]"},
         ]
         assert interaction._extract_tactic(messages) == "simp [Nat.add_comm]"
-
 
 # ── SlimeSampler tests ────────────────────────────────────────────────
 

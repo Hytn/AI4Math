@@ -24,7 +24,6 @@ from typing import Optional
 
 from engine.policy.task_state import ProofFailureClass
 
-
 class RecoveryAction(str, Enum):
     """Concrete recovery action to take."""
     RESTART_REPL = "restart_repl_session"
@@ -38,7 +37,6 @@ class RecoveryAction(str, Enum):
     SKIP_AND_CONTINUE = "skip_and_continue"
     NO_RECOVERY = "no_recovery"
 
-
 @dataclass
 class RecoveryRecipe:
     """A single recovery recipe for a failure class."""
@@ -50,7 +48,6 @@ class RecoveryRecipe:
 
     def attempts_remaining(self, current_recovery_count: int) -> bool:
         return current_recovery_count < self.max_attempts
-
 
 # ─── Default recipes ────────────────────────────────────────────────────────
 
@@ -124,7 +121,6 @@ _DEFAULT_RECIPES: dict[ProofFailureClass, RecoveryRecipe] = {
         description="Skip knowledge injection, proceed with base prompt",
     ),
 }
-
 
 class RecoveryRegistry:
     """Registry of recovery recipes, extensible at runtime.

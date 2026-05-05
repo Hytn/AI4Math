@@ -1,6 +1,5 @@
 """agent/tools/builtin/tactic_suggest.py — Suggest tactics for current goal
 
-v11: fixed two latent bugs (same class as v10's ``pool.check_proof`` fix):
 
   1. The pool method was called as ``pool.try_tactic(tactic, context=...,
      timeout=...)`` but ``AsyncLeanPool.try_tactic`` is ``async`` and its
@@ -23,7 +22,6 @@ import logging
 from agent.tools.base import Tool, ToolContext, ToolResult, ToolPermission
 
 logger = logging.getLogger(__name__)
-
 
 class TacticSuggestTool(Tool):
     name = "tactic_suggest"
@@ -71,7 +69,6 @@ class TacticSuggestTool(Tool):
             suggestions = self._heuristic_suggest(goal)
             return ToolResult.success(json.dumps(suggestions, indent=2))
 
-        # v11: real-pool path. Use the same env_id resolution as
         # tactic_apply: prefer pool.base_env_id (set by pool.start()),
         # fall back to 0 if the pool doesn't expose it.
         env_id = getattr(self._pool, "base_env_id", 0)

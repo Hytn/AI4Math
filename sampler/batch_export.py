@@ -1,4 +1,4 @@
-"""sampler/batch_export.py — Trajectory batch export helpers (v7.1)
+"""sampler/batch_export.py — Trajectory batch export helpers
 
 The sampler returns ``list[Trajectory]``; trainers want batched dicts
 in their native shape. Per-traj methods (``to_verl_format()``,
@@ -12,8 +12,7 @@ Three shapes:
     advantages (mean-centred / std-normalised), packs into a
     verl-DataProto-compatible dict-of-lists.
   * ``to_sft_jsonl(trajs, path, *, successful_only=True)`` — the
-    SFT-only export (matches the V6 ``rl_pipeline.py stage 2`` output
-    shape but accepts in-memory trajectories).
+    SFT-only export.
   * ``to_ppo_batch(trajs)`` — flat per-step batch with token-level
     rewards and the optional value-baseline columns when present.
 
@@ -33,7 +32,6 @@ from typing import Iterable
 from sampler.trajectory import Trajectory
 
 logger = logging.getLogger(__name__)
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # GRPO batch — group by problem_id, compute advantages
@@ -139,14 +137,12 @@ def to_grpo_batch(
 
     return out
 
-
 def _empty_grpo_batch() -> dict[str, list]:
     return {k: [] for k in (
         "problem_ids", "prompt_ids", "response_ids", "response_mask",
         "response_logprobs", "rewards", "advantages",
         "num_turns", "success", "group_id", "group_size", "metadata",
     )}
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # SFT JSONL — successful-only by default
@@ -198,7 +194,6 @@ def to_sft_jsonl(
                     "to_sft_jsonl: skipping traj %s: %r",
                     t.problem_id, e)
     return written
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # PPO flat-step batch — for token-level credit assignment
@@ -259,7 +254,6 @@ def to_ppo_batch(
 
     return out
 
-
 def _compute_gae(
     rewards: list[float],
     *,
@@ -283,7 +277,6 @@ def _compute_gae(
         gae = delta + discount * gae_lambda * gae
         advantages[t] = gae
     return advantages
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # Save / load batch dumps for offline pipelines

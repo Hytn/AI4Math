@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock
 from engine.backends.kimina_server import TacticTrace
 from knowledge.writer import KnowledgeWriter
 
-
 class _FakeStore:
     """Minimal store stub that records every upsert it gets."""
 
@@ -19,13 +18,11 @@ class _FakeStore:
     async def upsert_error_pattern(self, **kwargs):
         self.error_calls.append(kwargs)
 
-
 @pytest.mark.asyncio
 async def test_deposit_kimina_trace_empty_returns_zero():
     w = KnowledgeWriter(store=_FakeStore())
     n = await w.deposit_kimina_trace([])
     assert n == 0
-
 
 @pytest.mark.asyncio
 async def test_deposit_kimina_trace_with_dataclass_entries():
@@ -51,7 +48,6 @@ async def test_deposit_kimina_trace_with_dataclass_entries():
     tactics = [c["tactic"] for c in store.tactic_calls]
     assert tactics == ["intro h", "exact h.elim"]
 
-
 @pytest.mark.asyncio
 async def test_deposit_kimina_trace_with_dict_entries():
     """Pass plain dicts (the wire form)."""
@@ -64,7 +60,6 @@ async def test_deposit_kimina_trace_with_dict_entries():
     n = await w.deposit_kimina_trace(trace)
     assert n == 1
     assert store.tactic_calls[0]["tactic"] == "rfl"
-
 
 @pytest.mark.asyncio
 async def test_deposit_kimina_trace_skips_empty_tactic():
@@ -79,7 +74,6 @@ async def test_deposit_kimina_trace_skips_empty_tactic():
     assert n == 1
     assert len(store.tactic_calls) == 1
 
-
 @pytest.mark.asyncio
 async def test_deposit_kimina_trace_never_raises():
     """A misbehaving store must not crash deposit — it logs and skips."""
@@ -93,7 +87,6 @@ async def test_deposit_kimina_trace_never_raises():
     n = await w.deposit_kimina_trace(trace)
     # Each entry's exception is swallowed; method returns 0
     assert n == 0
-
 
 @pytest.mark.asyncio
 async def test_deposit_kimina_trace_passes_domain_and_trace_id():

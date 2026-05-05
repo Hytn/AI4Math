@@ -11,7 +11,6 @@ from agent.tools.base import Tool, ToolContext, ToolResult, ToolPermission
 
 logger = logging.getLogger(__name__)
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # DSP 用: 把当前目标拆成子目标
 # ═══════════════════════════════════════════════════════════════════════
@@ -39,7 +38,7 @@ class DecomposeSubgoalTool(Tool):
     }
 
     def __init__(self, llm=None):
-        # v12 fix: previously this tool hard-coded ``GoalDecomposer(None)``
+
         # so every invocation hit ``NoneType has no attribute 'generate'``
         # and returned a "decompose failed" error. The runner now binds
         # its LLM here via ``build_tool_registry`` (mirroring
@@ -62,10 +61,10 @@ class DecomposeSubgoalTool(Tool):
         try:
             from prover.decompose.goal_decomposer import GoalDecomposer
             decomposer = GoalDecomposer(llm)
-            # v13: GoalDecomposer.decompose 已改为 async (修复 v12 漏掉的
+
             # sync-call-async latent bug, 参见 goal_decomposer.py docstring)。
             subgoals = await decomposer.decompose(input["goal"]) or []
-            # v12 fix: SubGoal dataclass has fields name/statement/
+
             # difficulty/proved/proof — NOT 'kind'. Stop pretending it
             # does. Surface the real fields the LLM can use.
             payload = []
@@ -78,7 +77,6 @@ class DecomposeSubgoalTool(Tool):
             return ToolResult.success(json.dumps(payload, ensure_ascii=False))
         except Exception as e:
             return ToolResult.error(f"decompose failed: {e}")
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # 项目内已证引理库 (跨问题复用)
@@ -106,7 +104,7 @@ class LemmaBankTool(Tool):
 
     def __init__(self, knowledge_store=None, persistent_bank=None):
         """
-        v14: ``persistent_bank`` 是可选 ``PersistentLemmaBank`` 实例
+        
         (跨问题/跨会话, SQLite + BM25)。当 ``knowledge_store`` 没结果
         或 None 时, 走 persistent_bank 兜底; 两者都没结果时返回 []。
         这是预留接口 A 知识库的"lemma 维度"主路径。
@@ -153,7 +151,6 @@ class LemmaBankTool(Tool):
         return ToolResult.success(
             json.dumps(results, ensure_ascii=False), count=len(results))
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # 异构方向: 跨 agent 共享发现
 # ═══════════════════════════════════════════════════════════════════════
@@ -198,7 +195,7 @@ class BroadcastTool(Tool):
                  "content": getattr(m, "content", str(m))}
                 for m in msgs
             ]
-            # v14: 4 路 sub-profile 累积广播容易塞爆 reader 的 context window。
+
             # compress_broadcast 走 dedup + 类别保留, 硬上限 1500 字符。
             try:
                 from engine.summary_compressor import compress_broadcast
@@ -214,7 +211,7 @@ class BroadcastTool(Tool):
                 from engine.broadcast import BroadcastMessage
                 kind = input.get("kind", "positive")
                 content = input.get("content", "")
-                # v14: 单条 publish content 也限长, 防止某个 sub-profile 把
+
                 # 整段 stderr 直接 share 出去。
                 if len(content) > 800:
                     try:
@@ -236,7 +233,6 @@ class BroadcastTool(Tool):
                 return ToolResult.success(json.dumps({"posted": True}))
             except Exception as e:
                 return ToolResult.error(f"broadcast share failed: {e}")
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # 让 LLM 看到搜索树 (MCTS / best-first 的 LLM-driven 变种)
@@ -276,7 +272,6 @@ class TreeViewTool(Tool):
         return ToolResult.success(
             json.dumps(snapshot, ensure_ascii=False))
 
-
 class TreeSelectTool(Tool):
     name = "tree_select"
     description = (
@@ -306,13 +301,11 @@ class TreeSelectTool(Tool):
         except Exception as e:
             return ToolResult.error(f"select failed: {e}")
 
+# ═══════════════════════════════════════════════════════════════════════
 
 # ═══════════════════════════════════════════════════════════════════════
-# v6: Conjecture-driven proving — propose auxiliary lemmas
-# ═══════════════════════════════════════════════════════════════════════
 #
-# The ``prover/conjecture/`` package has been in the codebase since v2:
-# ``ConjectureProposer`` asks an LLM for plausible auxiliary lemmas and
+# The ``prover/conjecture/`` package has been in the codebase since 
 # ``ConjectureVerifier`` filters them by parse-ability and relevance.
 # Until v6 it had no first-class place in the agent loop — no Profile
 # advertised it as an action the LLM could take. This tool plugs the
@@ -375,7 +368,7 @@ class ConjectureProposeTool(Tool):
 
     def __init__(self, llm=None, lean_env=None, persistent_bank=None):
         """
-        v14: ``persistent_bank`` 是可选 ``PersistentLemmaBank``。如果传入,
+        
         提议出的 conjecture 在通过文本级 verifier 过滤后, 会作为"待证引理"
         写入 bank (proof 字段为空, 标 status='proposed')。下一题查到这条
         statement 但没 proof 时会跳过; 如果未来真证出来了, 由主路径
@@ -423,7 +416,7 @@ class ConjectureProposeTool(Tool):
 
         try:
             proposer = ConjectureProposer(llm=llm, lean_env=self._lean_env)
-            # v13: ConjectureVerifier 已精简为纯文本级过滤 (parse 不通过 /
+
             # 平凡 / 与目标无关), 不再依赖 Lean env。开 verify=True 让它筛
             # 掉显然无用的猜想; 真 Lean 验证仍由主路径 lean_verify 负责。
             statements = await proposer.propose(
@@ -436,7 +429,6 @@ class ConjectureProposeTool(Tool):
             return ToolResult.error(
                 f"conjecture_propose: proposer failed: {e}")
 
-        # v14: 后置写入到 PersistentLemmaBank。提议引理本身没有 proof, 但
         # 写入后下次同样 problem 出现时, BM25 检索会命中, 让 LLM 知道
         # "这个 conjecture 已经被提议过", 减少重复提议的浪费。
         if self._persistent_bank is not None and statements:

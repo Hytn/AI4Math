@@ -9,7 +9,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-
 @dataclass
 class SorryReport:
     has_sorry: bool = False
@@ -19,7 +18,6 @@ class SorryReport:
     @property
     def is_clean(self) -> bool:
         return not self.has_sorry and not self.warnings
-
 
 def detect_sorry(lean_code: str) -> SorryReport:
     """Scan Lean4 code for sorry, admit, and suspicious axiom patterns.
@@ -75,11 +73,9 @@ def detect_sorry(lean_code: str) -> SorryReport:
 
     return report
 
-
 def count_sorries(lean_code: str) -> int:
     """Quick count of sorry occurrences."""
     return len(re.findall(r'\bsorry\b', lean_code))
-
 
 def extract_sorry_locations(lean_code: str) -> list[dict]:
     """Extract line numbers and context of each sorry."""

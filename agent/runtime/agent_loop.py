@@ -56,7 +56,6 @@ from prover.verifier.sorry_detector import detect_sorry
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class LoopConfig:
     """Configuration for the agent loop."""
@@ -70,13 +69,12 @@ class LoopConfig:
     stop_on_text_only: bool = True     # Stop when LLM returns no tool calls
     # Budget
     max_total_tokens: int = 200_000
-    # v14: Lean 错误压缩 (engine.summary_compressor)
+
     # 多轮 repair / 长 reprover/leandojo profile 下, tool_result 累积塞爆
     # context。打开后, 每轮 verify-类 tool 失败的 content 用 compress_feedback
     # 压到 ``compress_budget`` 字符内再 inject。
     compress_tool_results: bool = True
     compress_budget: int = 1200
-
 
 @dataclass
 class LoopMessage:
@@ -86,7 +84,6 @@ class LoopMessage:
     tool_calls: list = field(default_factory=list)
     tool_results: list = field(default_factory=list)
     tokens: int = 0
-
 
 @dataclass
 class LoopResult:
@@ -157,7 +154,6 @@ class LoopResult:
             ),
         )
 
-
 class AgentLoop:
     """Multi-turn agent loop with tool use.
 
@@ -175,7 +171,7 @@ class AgentLoop:
         policy_engine=None,
     ):
         """
-        v14: ``policy_engine`` 可选 ``engine.policy.PolicyEngine`` 实例。
+        
         如果传入, 每轮 verify 失败后引擎评估是否应该提前升级 / 切换 / 终止,
         而不是死等 ``max_turns``。不传则保持 v13 行为 (硬 max_turns 终止)。
         """
@@ -183,7 +179,7 @@ class AgentLoop:
         self.tools = tools
         self.config = config or LoopConfig()
         self.on_turn = on_turn  # callback(turn_number, message)
-        self.policy_engine = policy_engine  # v14: optional PolicyEngine
+        self.policy_engine = policy_engine  # 
 
     async def run(
         self,
@@ -312,7 +308,7 @@ class AgentLoop:
             tool_result_blocks = []
             for tc, tr in zip(tool_calls, tool_results):
                 content = tr["content"]
-                # v14: 失败的 verify-类 tool 输出 (Lean 错误堆栈) 在多轮场景下
+
                 # 容易塞爆 context。compress_feedback 走启发式去重 + 类别保留
                 # + 硬上限。详见 engine/summary_compressor.py 的 docstring。
                 if (config.compress_tool_results
@@ -344,7 +340,6 @@ class AgentLoop:
                 role="tool_result",
                 tool_results=[tr["content"] for tr in tool_results]))
 
-            # v14: PolicyEngine 评估 — declarative early termination/escalation
             # 而不是死等 max_turns。
             if self.policy_engine is not None:
                 try:
@@ -366,7 +361,7 @@ class AgentLoop:
             total_tokens, start_time, tools_called, "max_turns")
 
     def _evaluate_policy(self, tool_calls, tool_results, turn: int):
-        """v14: 把 (tool_calls, tool_results) 喂给 PolicyEngine, 拿决策。
+        """
 
         返回 ``PolicyDecision`` 或 None (无可用规则触发)。
         """

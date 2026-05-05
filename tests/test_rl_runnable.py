@@ -35,9 +35,7 @@ from sampler import (
     build_policy,
 )
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # Policy adapter tests
@@ -87,7 +85,6 @@ class TestMockPolicy:
             assert all(s in {"a", "b", "c", "d"} for s in seq)
         asyncio.run(_t())
 
-
 class TestCallablePolicy:
     def test_sync_callable(self):
         async def _t():
@@ -106,7 +103,6 @@ class TestCallablePolicy:
             text, _, _ = await p("o")
             assert text == "async-result"
         asyncio.run(_t())
-
 
 class TestOpenAIPolicyOffline:
     """Without aiohttp / a real server, OpenAIPolicy must still
@@ -134,7 +130,6 @@ class TestOpenAIPolicyOffline:
             assert lps == []
             await p.close()
         asyncio.run(_t())
-
 
 class TestBuildPolicy:
     def test_mock_from_config(self):
@@ -164,7 +159,6 @@ class TestBuildPolicy:
         with pytest.raises(ValueError):
             build_policy({"kind": "alien"})
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # Batch export tests
 # ═══════════════════════════════════════════════════════════════════════
@@ -188,7 +182,6 @@ def _mk_traj(problem_id: str, total_reward: float,
         ))
     t.success = success
     return t
-
 
 class TestGrpoBatch:
     def test_empty_input(self):
@@ -251,7 +244,6 @@ class TestGrpoBatch:
         # Centered: rewards 1.0, 0.0 → mean 0.5 → adv 0.5, -0.5
         assert b["advantages"] == [0.5, -0.5]
 
-
 class TestSftJsonl:
     def test_writes_only_successful(self):
         with tempfile.TemporaryDirectory() as td:
@@ -277,7 +269,6 @@ class TestSftJsonl:
             # Both should attempt to write; failed ones may still
             # render via the chat template (no hard requirement to drop).
             assert n >= 1
-
 
 class TestPpoBatch:
     def test_token_level_layout(self):
@@ -313,7 +304,6 @@ class TestPpoBatch:
         # Reverse cumulative: last=1.0, mid=1.5, first=1.5
         assert advs == [1.5, 1.5, 1.0]
 
-
 class TestSaveBatchJsonl:
     def test_round_trip(self):
         with tempfile.TemporaryDirectory() as td:
@@ -331,7 +321,6 @@ class TestSaveBatchJsonl:
             n = save_batch_jsonl({}, path)
             assert n == 0
             assert path.read_text() == ""
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # End-to-end demo script tests
@@ -389,7 +378,6 @@ class TestRlDemoScript:
             proc = subprocess.run(cmd, capture_output=True,
                                      text=True, timeout=60, env=env)
             assert proc.returncode == 0
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # rl_pipeline rollout subcommand

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""run_eval.py — 基准评测入口 (v9, profile-only)
+"""run_eval.py — 基准评测入口
 
 每次 sample = 一次 ``UnifiedProofRunner.run(profile)``。
 profile 选择算法 (whole_proof_repair / repair / conjecture_driven / ...)。
@@ -11,7 +11,7 @@ Usage::
     python run_eval.py --benchmark minif2f --profile repair --provider anthropic --resume
     python run_eval.py --benchmark all --profile heterogeneous --limit 10
 
-历史路径 (v8 之前的 multi-role 老链路) 已在 v9 删除——所有路径统一通过
+历史路径 已在 
 ``prover.unified.UnifiedProofRunner``。
 """
 import argparse
@@ -40,8 +40,6 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
-
-
 def prove_single(problem: BenchmarkProblem, llm, premise_selector,
                  *,
                  profile: str,
@@ -60,9 +58,9 @@ def prove_single(problem: BenchmarkProblem, llm, premise_selector,
                  persistent_lemma_bank=None) -> ProofTrace:
     """对单道题运行 ``UnifiedProofRunner.run(profile)``, 累积 pass@k。
 
-    v9: profile-only。每次 sample = 一次独立 UnifiedProofRunner.run。
-    v10: 新增 world_model / dialog_index 透传, 把基础设施真正接通到 CLI。
-    v15: 新增 policy_engine / plugin_loader / persistent_lemma_bank 透传 ——
+    
+    
+    
          v14 reservoir 之前只能从代码注入, 现在三处都从 CLI 走通。
 
     Args:
@@ -97,7 +95,6 @@ def prove_single(problem: BenchmarkProblem, llm, premise_selector,
         persistent_lemma_bank=persistent_lemma_bank,
     )
 
-
 def load_existing_traces(trace_dir: Path) -> dict[str, dict]:
     """Load all existing trace files from a directory.
 
@@ -116,7 +113,6 @@ def load_existing_traces(trace_dir: Path) -> dict[str, dict]:
         except (json.JSONDecodeError, OSError) as e:
             logger.warning(f"  跳过损坏的 trace: {trace_file}: {e}")
     return existing
-
 
 def _prove_single_unified(
     problem: BenchmarkProblem,
@@ -166,10 +162,8 @@ def _prove_single_unified(
         logger.error(f"  unknown profile {profile_name!r}: {e}")
         return trace
 
-    # v9: llm is always async (from create_async_provider).
     async_llm = llm
 
-    # v11: extract a real AsyncLeanPool. Previously the code did
     # ``getattr(lean_env, "pool", None) or lean_env`` and ended up handing
     # ``LeanEnvironment`` (a bare subprocess wrapper, no ``verify_complete``)
     # to the runner, so ``--lean-mode real`` silently failed every verify.
@@ -209,7 +203,7 @@ def _prove_single_unified(
         lookeng_backend=lookeng_backend,
         world_model=world_model,
         dialog_index=dialog_index,
-        # v15 reservoirs
+
         policy_engine=policy_engine,
         plugin_loader=plugin_loader,
         persistent_lemma_bank=persistent_lemma_bank,
@@ -232,12 +226,20 @@ def _prove_single_unified(
             continue
 
         attempt = unified_to_attempt(ur, attempt_number=sample_idx + 1)
+        # NOTE: ProofTrace.add_attempt() already updates solved /
+        # successful_proof / correct_count when the attempt's lean_result
+        # is SUCCESS. Re-incrementing here used to double-count. We now
+        # only fall back to ur.success for cases where add_attempt did
+        # not see a SUCCESS status (e.g. when lean_mode=skip and the
+        # attempt is recorded with a softer status by unified_to_attempt).
         trace.add_attempt(attempt)
 
-        if ur.success:
+        if ur.success and not trace.solved:
             trace.solved = True
             trace.successful_proof = ur.proof_code
             trace.correct_count += 1
+
+        if ur.success:
             # 写知识库
             if knowledge_writer is not None:
                 try:
@@ -251,9 +253,8 @@ def _prove_single_unified(
 
     return trace
 
-
 def main():
-    parser = argparse.ArgumentParser(description="AI4Math 真实基准评测 (v3)")
+    parser = argparse.ArgumentParser(description="AI4Math 真实基准评测")
     parser.add_argument("--benchmark", default="builtin",
                         help="数据集名: builtin/minif2f/putnambench/proofnet/all")
     parser.add_argument("--split", default="test")
@@ -289,7 +290,6 @@ def main():
     parser.add_argument("--backend-api-key", default=None,
                           help="HTTP/Kimina backend API key.")
 
-    # v10: previously-locked features now reachable from the CLI.
     parser.add_argument(
         "--world-model", default=None, metavar="PATH",
         help=("Path to a trained sklearn world-model pickle. When set, "
@@ -300,8 +300,14 @@ def main():
         help=("SQLite DialogIndex of past solved dialogs. When set and "
               "the active profile has inject_similar_dialogs=True, "
               "similar past dialogs are injected as in-context demos."))
+    parser.add_argument(
+        "--knowledge-db", default=None, metavar="DB_PATH",
+        help=("Persistent KnowledgeStore SQLite path. Default scopes "
+              "the KB inside --output-dir. Pass an explicit path to "
+              "share a KB across multiple eval runs (typical for "
+              "A/B sweeps where you want lemmas/dialogs accumulated "
+              "in run #1 to be visible in run #2)."))
 
-    # v12: opt-in LLM response caching.
     parser.add_argument(
         "--cache", action="store_true",
         help="Wrap LLM in AsyncCachedProvider (in-process LRU). "
@@ -310,7 +316,7 @@ def main():
     parser.add_argument("--cache-all", action="store_true",
                           help="With --cache, cache responses at any temperature.")
 
-    # ── v15: factory-loaded v14 reservoirs (parity with run_unified.py) ──
+    # ── 
     parser.add_argument(
         "--policy-engine", action="store_true",
         help=("Enable engine.policy.PolicyEngine with the 5 default rules. "
@@ -332,15 +338,67 @@ def main():
         "--mathlib-rev", default=None, metavar="HASH",
         help="Mathlib commit stamped on lemmas written to --lemma-bank-db.")
 
-    # ── v15: OpenAI-compatible providers ──
+    # ── 
     parser.add_argument(
         "--api-base", default=None, metavar="URL",
         help=("OpenAI-compatible API base URL. Used by --provider="
               "openai/deepseek/vllm/sglang/ollama/openai_compat."))
 
+    # ── Lean 项目目录 (v17): 决定 REPL 在哪里寻找 lakefile + Mathlib ──
+    parser.add_argument(
+        "--project-dir", default=None, metavar="DIR",
+        help=("Directory containing the Lean project (lakefile.lean / "
+              "lakefile.toml / lean-toolchain). When unset, defaults to "
+              "data/<benchmark>/ for the chosen benchmark (or '.' if no "
+              "match). This is critical for --lean-mode=real: if the REPL "
+              "doesn't run inside the project, `import Mathlib` will fail "
+              "and EVERY verify call will silently 'fail closed', "
+              "producing meaningless pass@k numbers."))
+    parser.add_argument(
+        "--pool-size", type=int, default=4, metavar="N",
+        help=("AsyncLeanPool size (parallel REPL sessions). Higher = "
+              "more concurrent verifies. Recommend N == #physical cores "
+              "for local Lean."))
+
+    # ── Sampling overrides (v17) ─────────────────────────────────────
+    # Override profile defaults from CLI without editing profiles.py.
+    # Critical for prover-style models (DeepSeek-Prover-V2, Kimina) that
+    # were trained with temperature=1.0 for pass@k diversity.
+    parser.add_argument(
+        "--temperature", type=float, default=None, metavar="T",
+        help=("Override profile temperature. Recommended T=1.0 for "
+              "specialised prover models, T=0.6-0.8 for general LLMs. "
+              "None = use profile default."))
+    parser.add_argument(
+        "--max-turns", type=int, default=None, metavar="N",
+        help=("Override profile max_turns. None = use profile default."))
+
     args = parser.parse_args()
 
-    # 初始化 LLM (async, v15: 支持 anthropic / mock / openai-compatible)
+    # ── Apply profile CLI overrides (v17) ──────────────────────────────
+    # Mutate the named profile in-place via dataclasses.replace +
+    # register_profile so all downstream code that does
+    # ``get_profile(args.profile)`` sees the overridden values.
+    cli_overrides = {}
+    if getattr(args, "temperature", None) is not None:
+        cli_overrides["temperature"] = args.temperature
+    if getattr(args, "max_turns", None) is not None:
+        cli_overrides["max_turns"] = args.max_turns
+    if cli_overrides:
+        from dataclasses import replace as _dc_replace
+        from prover.unified import get_profile, register_profile
+        try:
+            base = get_profile(args.profile)
+            register_profile(_dc_replace(base, **cli_overrides))
+            logger.info(
+                f"  profile {args.profile!r} overrides applied: "
+                f"{cli_overrides}")
+        except ValueError:
+            logger.warning(
+                f"  --temperature/--max-turns ignored: profile "
+                f"{args.profile!r} not registered yet")
+
+    # 初始化 LLM (async, 
     llm_cfg = {
         "provider": args.provider,
         "model": args.model,
@@ -367,14 +425,22 @@ def main():
             f"  LLM cache enabled (cache_all={args.cache_all})")
     premise_selector = PremiseSelector({"mode": "hybrid"})
 
-    # Fix #1: 初始化知识系统
     knowledge_reader = None
     knowledge_writer = None
     if not args.no_knowledge:
         try:
-            knowledge_dir = Path(args.output_dir) / "knowledge"
-            knowledge_dir.mkdir(parents=True, exist_ok=True)
-            db_path = str(knowledge_dir / "knowledge.db")
+            # ``--knowledge-db`` lets multiple eval runs (e.g. an A/B
+            # sweep across profiles) share a SINGLE persistent KB by
+            # pointing this flag at the same file. Default behaviour
+            # (KB scoped to args.output_dir) is unchanged.
+            cli_kb = getattr(args, "knowledge_db", None)
+            if cli_kb:
+                db_path = cli_kb
+                Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+            else:
+                knowledge_dir = Path(args.output_dir) / "knowledge"
+                knowledge_dir.mkdir(parents=True, exist_ok=True)
+                db_path = str(knowledge_dir / "knowledge.db")
             knowledge_store = UnifiedKnowledgeStore(db_path)
             knowledge_reader = KnowledgeReader(knowledge_store)
             knowledge_writer = KnowledgeWriter(knowledge_store)
@@ -382,17 +448,63 @@ def main():
         except Exception as e:
             logger.warning(f"  知识系统初始化失败: {e}, 继续不带知识系统")
 
-    # 初始化 Lean 环境 (v11: 用真正的 AsyncLeanPool, 不再用
+    # 初始化 Lean 环境 (
     # agent.executor.LeanEnvironment —— 后者不暴露 verify_complete,
     # 等于让 UnifiedProofRunner 在 real 模式下静默退化到 prefilter.)
     lean_env = None
     if args.lean_mode == "real":
         try:
             from engine.async_lean_pool import AsyncLeanPool
-            pool_size = 4
-            lean_env = AsyncLeanPool(pool_size=pool_size)
+            pool_size = int(getattr(args, "pool_size", 4) or 4)
+
+            # ── Resolve Lean project_dir ─────────────────────────────
+            # The REPL must run inside the project that has lakefile +
+            # mathlib for `import Mathlib` to resolve. Auto-detect from
+            # benchmark when --project-dir not given. We pick the first
+            # benchmark in --benchmark (or builtin if 'all').
+            project_dir = getattr(args, "project_dir", None)
+            if not project_dir:
+                _auto = {
+                    "minif2f":    "data/miniF2F",
+                    "putnambench":"data/PutnamBench/lean4",
+                    "proofnet":   "data/ProofNet",
+                    "fate-m":     "data/FATE-M",
+                    "fate-h":     "data/FATE-H",
+                    "fate-x":     "data/FATE-X",
+                    "formalmath": "data/FormalMATH",
+                    "builtin":    ".",
+                    "all":        ".",
+                }
+                project_dir = _auto.get(args.benchmark, ".")
+                if not Path(project_dir).is_dir():
+                    logger.warning(
+                        f"  自动选定 project_dir={project_dir} 不存在, 退回 '.'。 "
+                        f"对于 {args.benchmark}, 这通常意味着数据集还没下载。 "
+                        f"`bash setup_and_eval.sh --download` 或显式 --project-dir.")
+                    project_dir = "."
+            logger.info(
+                f"  Lean project_dir: {project_dir} "
+                f"(REPL 会在此目录内启动; lakefile/Mathlib 必须在这里)")
+
+            # ``--backend mock`` 给池注入 MockTransport,所有 verify 走"成功"
+            # 响应,管线在没装 Lean 也没 LLM 时也能产出 success: true 的
+            # dialog.json (用于冒烟评测;真实评测请换 --backend kimina/auto +
+            # 真实 LLM provider)。
+            if getattr(args, "backend", None) == "mock":
+                from engine.transport import MockTransport
+                lean_env = AsyncLeanPool(
+                    pool_size=pool_size,
+                    project_dir=project_dir,
+                    transport_factory=lambda _sid: MockTransport())
+                logger.info(
+                    "  Lean 4 池启动中 (pool_size=%d, transport=mock 冒烟)",
+                    pool_size)
+            else:
+                lean_env = AsyncLeanPool(
+                    pool_size=pool_size,
+                    project_dir=project_dir)
+                logger.info(f"  Lean 4 池已启动 (pool_size={pool_size})")
             asyncio.run(lean_env.start())
-            logger.info(f"  Lean 4 池已启动 (pool_size={pool_size})")
         except Exception as e:
             logger.warning(f"无法启动 AsyncLeanPool: {e}, 回退到 skip 模式")
             args.lean_mode = "skip"
@@ -412,8 +524,8 @@ def main():
         logger.info("  ⚠ Lean 验证已跳过 (--lean-mode=skip): "
                      "所有 pass@k 指标标记为 [unverified]")
 
-    # v10/v11: optional features (shared factory loaders)
-    # v15: same treatment for v14 reservoirs (policy / plugins / lemma bank).
+    # v10/optional features (shared factory loaders)
+
     from prover.unified.factory import (
         load_policy_engine, load_plugin_loader, load_persistent_lemma_bank,
     )
@@ -485,7 +597,7 @@ def main():
                 lookeng_backend=lookeng_backend,
                 world_model=world_model,
                 dialog_index=dialog_index,
-                # v15 reservoirs
+
                 policy_engine=policy_engine,
                 plugin_loader=plugin_loader,
                 persistent_lemma_bank=persistent_lemma_bank,
@@ -497,7 +609,7 @@ def main():
                 status += f" [correct={trace.correct_count}/{trace.total_attempts}]"
             logger.info(f"           {status}")
 
-            # 增量保存: 单文件 dialog.json (v3.0 schema, agent.persistence.unified_storage).
+            # 增量保存: 单文件 dialog.json.
             # 没有 result.json / meta_config.json / trace.json 这些副产物 ——
             # 所有 meta + result 全部内联进 dialog.json 的 wrapped object.
             trace.save_unified(
@@ -508,13 +620,13 @@ def main():
 
         elapsed = time.time() - t_start
 
-        # 计算指标
-        k_values = [1, 5, 10]
-        if args.max_samples >= 32:
-            k_values.append(32)
+        # 计算指标 — k 值随 max_samples 自适应
+        k_values = [1]
+        for k in [5, 10, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]:
+            if k <= args.max_samples:
+                k_values.append(k)
         metrics = compute_metrics(trace_dicts, k_values=k_values)
 
-        # Fix #5: 标注验证状态
         if args.lean_mode == "skip":
             metrics["verification"] = "unverified"
         else:
@@ -522,7 +634,6 @@ def main():
 
         summary = MetricsSummary(bench_name, metrics)
 
-        # Fix #5: 在报告中标注验证模式
         unverified_tag = " [unverified]" if args.lean_mode == "skip" else ""
         logger.info(f"\n{summary.to_table()}")
         if unverified_tag:
@@ -571,14 +682,12 @@ def main():
                 line += f" {m.get(f'pass@{k}', 0):>7.3f}"
             logger.info(line)
 
-    # v12: cache hit-rate at end of run.
     cache_stats = getattr(llm, "cache_stats", None)
     if callable(cache_stats):
         st = cache_stats()
         logger.info(
             f"\nLLM cache: hits={st['hits']} misses={st['misses']} "
             f"hit_rate={st['hit_rate']:.1%} size={st['size']}")
-
 
 if __name__ == "__main__":
     main()

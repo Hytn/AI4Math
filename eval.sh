@@ -38,6 +38,12 @@ MODE="mock"; BENCHMARK="all"; LIMIT=0; SPLIT="test"; LEAN_MODE="skip"
 MAX_SAMPLES="${MAX_SAMPLES:-8}"; MODEL="${MODEL:-claude-sonnet-4-20250514}"
 PROFILE="whole_proof_repair"
 NO_KNOWLEDGE=""
+PROJECT_DIR=""
+POOL_SIZE=""
+API_BASE=""
+PROVIDER_OVERRIDE=""
+TEMPERATURE=""
+MAX_TURNS=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -53,6 +59,12 @@ while [[ $# -gt 0 ]]; do
         --lean)         LEAN_MODE="real"; shift ;;
         --profile)      PROFILE="$2"; shift 2 ;;
         --no-knowledge) NO_KNOWLEDGE="--no-knowledge"; shift ;;
+        --provider)     PROVIDER_OVERRIDE="$2"; shift 2 ;;
+        --project-dir)  PROJECT_DIR="$2"; shift 2 ;;
+        --pool-size)    POOL_SIZE="$2"; shift 2 ;;
+        --api-base)     API_BASE="$2"; shift 2 ;;
+        --temperature)  TEMPERATURE="$2"; shift 2 ;;
+        --max-turns)    MAX_TURNS="$2"; shift 2 ;;
         --early-stop)
             warn "--early-stop was removed from run_eval.py in v9; ignoring."
             shift ;;
@@ -60,6 +72,8 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: bash eval.sh [OPTIONS]"
             echo "  --real               使用真实 Claude API (需 ANTHROPIC_API_KEY)"
             echo "  --mock               使用 mock 模式 (默认)"
+            echo "  --provider NAME      显式 LLM provider (anthropic/openai/deepseek/vllm/mock)"
+            echo "  --api-base URL       OpenAI-compatible 端点 (vLLM/sglang/...)"
             echo "  --quick              快速测试 (每基准 10 题)"
             echo "  --benchmark NAME     跑指定 benchmark (默认 all)"
             echo "  --limit N            每基准最多跑 N 题"
@@ -67,12 +81,21 @@ while [[ $# -gt 0 ]]; do
             echo "  --samples N          pass@k 的 k (默认 8)"
             echo "  --split test|valid   数据切分 (默认 test)"
             echo "  --lean               启用真实 Lean 4 验证"
+            echo "  --project-dir DIR    Lean 项目目录 (默认按 benchmark 自动选)"
+            echo "  --pool-size N        Lean REPL 并行池大小 (默认 4)"
+            echo "  --temperature T      override profile 默认 temperature (T=1.0 给 prover 模型)"
+            echo "  --max-turns N        override profile 默认 max_turns"
             echo "  --profile NAME       prover.unified profile (默认 whole_proof_repair)"
             echo "  --no-knowledge       禁用知识系统"
             exit 0 ;;
         *) fail "未知参数: $1" ;;
     esac
 done
+
+# --provider 显式覆盖 --real/--mock
+if [ -n "$PROVIDER_OVERRIDE" ]; then
+    MODE="$PROVIDER_OVERRIDE"
+fi
 
 # ── Step 1: 依赖 ──
 header "Step 1/3 — 依赖检查"
@@ -159,9 +182,15 @@ LIMIT_ARG=""; [ "${LIMIT:-0}" -gt 0 ] 2>/dev/null && LIMIT_ARG="--limit $LIMIT"
 for bench in $BL; do
     echo -e "\n${C}──── 评测: $bench ────${N}"
     preflight_lean "$bench"
+    EXTRA_ARGS=""
+    [ -n "$PROJECT_DIR" ] && EXTRA_ARGS+=" --project-dir $PROJECT_DIR"
+    [ -n "$POOL_SIZE"   ] && EXTRA_ARGS+=" --pool-size $POOL_SIZE"
+    [ -n "$API_BASE"    ] && EXTRA_ARGS+=" --api-base $API_BASE"
+    [ -n "$TEMPERATURE" ] && EXTRA_ARGS+=" --temperature $TEMPERATURE"
+    [ -n "$MAX_TURNS"   ] && EXTRA_ARGS+=" --max-turns $MAX_TURNS"
     python3 run_eval.py --benchmark "$bench" --provider "$MODE" --model "$MODEL" \
         --max-samples "$MAX_SAMPLES" --lean-mode "$LEAN_MODE" --split "$SPLIT" \
-        --profile "$PROFILE" $LIMIT_ARG $NO_KNOWLEDGE 2>&1 \
+        --profile "$PROFILE" $LIMIT_ARG $NO_KNOWLEDGE $EXTRA_ARGS 2>&1 \
         || warn "$bench 出现错误"
 done
 

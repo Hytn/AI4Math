@@ -9,8 +9,7 @@ Transport Implementations:
   MockTransport:      Testing mock with realistic REPL state simulation
   FallbackTransport:  Always-fail placeholder when no Lean4 is available
 
-Key improvements over v1:
-  - Health check heartbeat: periodic #check Nat to verify REPL is alive
+Key improvements over 
   - Auto-restart: transparent restart on process death (up to max_restarts)
   - Request timeout with cancellation
   - Structured protocol: JSON over stdin/stdout per Lean 4 REPL conventions
@@ -29,7 +28,6 @@ from typing import Optional
 from engine._core import which as _which
 
 logger = logging.getLogger(__name__)
-
 
 # ─── Transport Stats ──────────────────────────────────────────
 
@@ -71,7 +69,6 @@ class TransportStats:
             "consecutive_failures": self.consecutive_failures,
         }
 
-
 # ─── Abstract Base ────────────────────────────────────────────
 
 class REPLTransport(ABC):
@@ -103,7 +100,6 @@ class REPLTransport(ABC):
 
     def get_stats(self) -> dict:
         return {}
-
 
 # ─── LocalTransport ───────────────────────────────────────────
 
@@ -367,7 +363,6 @@ class LocalTransport(REPLTransport):
                 return found
         return None
 
-
 # ─── SocketTransport ──────────────────────────────────────────
 
 class SocketTransport(REPLTransport):
@@ -481,11 +476,15 @@ class SocketTransport(REPLTransport):
         d["socket_path"] = self._socket_path
         return d
 
-
 # ─── FallbackTransport ────────────────────────────────────────
 
 class FallbackTransport(REPLTransport):
-    """Always returns None. Used when no Lean4 is available."""
+    """显式失败的 transport:没有 Lean 4 时使用,但**不静默**。
+
+    ``send`` 主动 raise ``LeanUnavailableError``,把"没装 Lean"这件事
+    推到调用栈最近的捕获点,而不是让验证静默返回 None 后被当成"失败"。
+    需要"无 Lean 也跑通"的场景请用 ``MockTransport`` 并显式配置响应。
+    """
 
     def __init__(self):
         self._alive = True
@@ -494,7 +493,10 @@ class FallbackTransport(REPLTransport):
         return True
 
     async def send(self, cmd: dict) -> Optional[dict]:
-        return None
+        raise LeanUnavailableError(
+            "Lean 4 REPL is not available in this environment. "
+            "Either install Lean (see TUTORIAL_CN.md) or, for tests, "
+            "use MockTransport with explicit responses.")
 
     async def close(self):
         self._alive = False
@@ -507,6 +509,9 @@ class FallbackTransport(REPLTransport):
     def is_fallback(self) -> bool:
         return True
 
+class LeanUnavailableError(RuntimeError):
+    """显式异常:Lean REPL 不可用且没有配置 mock 替代。"""
+    pass
 
 # ─── MockTransport ────────────────────────────────────────────
 
@@ -621,5 +626,4 @@ class MockTransport(REPLTransport):
     def reset(self):
         self._sent_commands.clear()
         self._call_count = 0
-
 

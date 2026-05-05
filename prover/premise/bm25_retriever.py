@@ -9,7 +9,6 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
-
 @dataclass
 class Document:
     """A retrievable premise document."""
@@ -18,7 +17,6 @@ class Document:
     doc_type: str = "lemma"
     tokens: list[str] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
-
 
 def tokenize(text: str) -> list[str]:
     """Lean4-aware tokenizer: splits on whitespace, punctuation, and camelCase.
@@ -29,7 +27,6 @@ def tokenize(text: str) -> list[str]:
     text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
     tokens = re.findall(r'[A-Za-z][a-z]*|[A-Z]|[0-9]+', text)
     return [t.lower() for t in tokens if t]
-
 
 class BM25Retriever:
     """Okapi BM25 retriever for Lean4 premises.

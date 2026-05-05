@@ -1,9 +1,9 @@
 """prover/decompose/goal_decomposer.py — 复杂定理分解为子目标
 
-v13: 修了 v12 漏掉的同模式 latent bug。``decompose`` 在 v12 之前是 sync,
+
 但内部 ``self.llm.generate(...)`` 在 ``AsyncLLMProvider`` 下是 async,
 返回 coroutine —— 下一行 ``resp.content`` 必 ``AttributeError``. 这是
-v11 修过的 ``ConjectureProposer`` 一模一样的 bug。
+过的 ``ConjectureProposer`` 一模一样的 bug。
 
 改造:
   - ``decompose`` 改为 async
@@ -11,15 +11,13 @@ v11 修过的 ``ConjectureProposer`` 一模一样的 bug。
   - 调用方 ``DecomposeSubgoalTool`` 改为 ``await decomposer.decompose(...)``
 
 主路径影响: ``dsp`` / ``pantograph_dsp`` / ``conjecture_driven`` 三个
-profile 用了 ``decompose_subgoal`` tool, 在 anthropic provider 下从 v3
-引入到 v12 一直跑不通; v13 起真正可用。
+profile 用了 ``decompose_subgoal`` tool, 在 anthropic provider 下从  
 """
 from __future__ import annotations
 import inspect
 import re
 from dataclasses import dataclass
 from common.roles import AgentRole, ROLE_PROMPTS
-
 
 @dataclass
 class SubGoal:
@@ -28,7 +26,6 @@ class SubGoal:
     difficulty: str = "unknown"
     proved: bool = False
     proof: str = ""
-
 
 class GoalDecomposer:
     def __init__(self, llm):

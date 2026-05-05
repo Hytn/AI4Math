@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-
 # ═══════════════════════════════════════════════════════════════
 # Layer 1: Tactical Knowledge 类型
 # ═══════════════════════════════════════════════════════════════
@@ -38,7 +37,6 @@ class TacticEffectiveness:
     def effective_confidence(self) -> float:
         return self.confidence * self.decay_factor
 
-
 @dataclass
 class ErrorPattern:
     """错误模式：特定 tactic+goal 组合的失败规律"""
@@ -51,7 +49,6 @@ class ErrorPattern:
     fix_success_rate: float = 0.0
     last_seen: float = 0.0
     description: str = ""
-
 
 @dataclass
 class LemmaRecord:
@@ -80,7 +77,6 @@ class LemmaRecord:
     def to_lean(self) -> str:
         return f"{self.statement} {self.proof}"
 
-
 # ═══════════════════════════════════════════════════════════════
 # Layer 2: Strategy Patterns 类型
 # ═══════════════════════════════════════════════════════════════
@@ -107,7 +103,6 @@ class StrategyPattern:
     def success_rate(self) -> float:
         return self.times_succeeded / max(1, self.times_applied)
 
-
 # ═══════════════════════════════════════════════════════════════
 # Layer 3: Intuition Graph 类型
 # ═══════════════════════════════════════════════════════════════
@@ -123,7 +118,6 @@ class ConceptNode:
     encounter_count: int = 0
     created_at: float = 0.0
 
-
 @dataclass
 class ConceptEdge:
     """概念图谱边"""
@@ -134,7 +128,6 @@ class ConceptEdge:
     weight: float = 1.0
     evidence_count: int = 1
     created_at: float = 0.0
-
 
 # ═══════════════════════════════════════════════════════════════
 # 检索结果类型
@@ -153,7 +146,6 @@ class TacticSuggestion:
         prefix = "AVOID" if self.avoid else "Try"
         return f"  - {prefix} `{self.tactic}` ({self.reason}) [{self.confidence:.0%}]"
 
-
 @dataclass
 class StrategySuggestion:
     """检索返回的策略建议"""
@@ -162,7 +154,6 @@ class StrategySuggestion:
     confidence: float
     reason: str = ""
     domain: str = ""
-
 
 @dataclass
 class LemmaMatch:
@@ -178,7 +169,6 @@ class LemmaMatch:
 
     def to_prompt_line(self) -> str:
         return f"  - {self.name}: `{self.statement}` (cited {self.times_cited}x)"
-
 
 @dataclass
 class DomainBriefing:

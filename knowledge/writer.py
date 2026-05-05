@@ -41,7 +41,6 @@ from knowledge.types import LemmaRecord
 
 logger = logging.getLogger(__name__)
 
-
 class KnowledgeWriter:
     """知识写入管道 — 从验证结果到四层知识金字塔"""
 
@@ -299,11 +298,10 @@ class KnowledgeWriter:
                     fix_succeeded=True)
 
     # NOTE: ``import_from_lemma_bank`` was a one-shot migration helper from
-    # the legacy ``prover.lemma_bank.bank.LemmaBank`` (deleted in v11). The
+    # the legacy ``prover.lemma_bank.bank.LemmaBank``. The
     # canonical ``proved_lemmas`` SQLite table is now the only home; if you
     # still have an old LemmaBank JSONL file, write a 5-line ad-hoc loader
     # rather than reviving this method.
-
 
 # ═══════════════════════════════════════════════════════════════
 # Helpers
@@ -311,7 +309,6 @@ class KnowledgeWriter:
 
 _HAVE_PATTERN = re.compile(
     r'^have\s+(\w+)\s*:\s*(.+?)(?:\s*:=|\s*$)')
-
 
 def _parse_have_tactic(tactic: str) -> Optional[tuple[str, str]]:
     """解析 have 声明，提取名称和类型

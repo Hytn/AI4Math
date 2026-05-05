@@ -28,12 +28,10 @@ from sampler import (
     TreeRolloutSampler, TreeRolloutConfig,
 )
 
-# v11: sampler/backend_adapters.py was deleted (only this test imported
 # it; production code uses ProofEnv._make_transport_factory directly).
 # The TestPreStartedTransport / TestBuildPoolWithBackend /
 # TestCollectBackendStatus classes that exercised it have been removed
 # along with the module.
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # 1. Backend wiring — ProofEnvConfig + _make_transport_factory
@@ -82,7 +80,7 @@ class TestProofEnvBackendWiring:
         assert isinstance(t, MockTransport)
 
     def test_factory_kimina_returns_kimina_backend(self):
-        # v11: HTTPTransport thin wrapper deleted; backend="kimina" now
+
         # returns KiminaServerBackend directly.
         from engine.backends.kimina_server import KiminaServerBackend
         env = ProofEnv(ProofEnvConfig(
@@ -148,7 +146,6 @@ class TestProofEnvBackendWiring:
         # Either way: no exception.
         assert t is None or hasattr(t, "start")
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # 2. Concurrency: BaseSampler env queue
 # ═══════════════════════════════════════════════════════════════════════
@@ -158,7 +155,6 @@ class _MockSampler(BaseSampler):
 
     async def generate_action(self, observation, problem_id, turn_idx):
         return ("simp", [1, 2], [-0.1, -0.2])
-
 
 class TestEnvPoolConcurrency:
     """Verify the v7 queue-based env pool has no TOCTOU race."""
@@ -250,7 +246,6 @@ class TestEnvPoolConcurrency:
 
         asyncio.run(_go())
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # 4. VeRL/SLIME framework detection harness
 # ═══════════════════════════════════════════════════════════════════════
@@ -279,9 +274,9 @@ class TestFrameworkDetection:
                 VeRLProofAgentLoop, "_verl_registered_name", None
             ) == "ai4math_proof_agent"
 
-
 class TestVeRLBackendPassthrough:
-    """v7: VeRL wrappers must pass backend config through to ProofEnvConfig."""
+    """VeRLProofInteraction / VeRLProofAgentLoop 必须把 backend 字段透传到
+    内部 ProofEnvConfig,不丢字段也不给错值。"""
 
     def test_interaction_picks_up_backend_field(self):
         i = VeRLProofInteraction({
@@ -306,7 +301,6 @@ class TestVeRLBackendPassthrough:
         assert al._env_config.backend == "pantograph"
         assert al._env_config.project_dir == "/tmp/proj"
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # 5. Tree rollout sampler
 # ═══════════════════════════════════════════════════════════════════════
@@ -314,7 +308,6 @@ class TestVeRLBackendPassthrough:
 async def _stub_policy(observation: str):
     """Trivial deterministic policy for tree-rollout tests."""
     return ("simp", [1, 2, 3], [-0.1, -0.2, -0.3])
-
 
 class TestTreeRolloutConfig:
     def test_inherits_from_sampler_config(self):
@@ -330,7 +323,6 @@ class TestTreeRolloutConfig:
         for kind in ("best_first", "ucb", "beam"):
             cfg = TreeRolloutConfig(search_kind=kind)
             assert cfg.search_kind == kind
-
 
 class TestTreeRolloutSamplerShape:
     """Trajectory shape and trees from the tree sampler."""

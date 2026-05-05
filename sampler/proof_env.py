@@ -34,7 +34,6 @@ from sampler.trajectory import (
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class ProofEnvConfig:
     """Configuration for the proof environment."""
@@ -51,10 +50,10 @@ class ProofEnvConfig:
     preamble: str = "import Mathlib"
     lean_timeout_s: int = 30
 
-    # ── v7: Verification backend selection ───────────────────────────
+    # ── 
     # Picks which Lean transport backs every session in the pool.
-    # ``"local"`` (default) preserves V1–V6 behaviour; the others reach
-    # the community backends merged in V1–V6 but previously unreachable
+    # ``"local"`` (default) preserves V1–; the others reach
+    # the community backends merged –V6 but previously unreachable
     # from the RL sampler. Each pool session gets an independent
     # transport built by ``_make_transport_factory`` below.
     #
@@ -89,7 +88,6 @@ class ProofEnvConfig:
     max_feedback_chars: int = 1024
     include_goal_state: bool = True
 
-
 class ProofEnv:
     """Async multi-turn environment for formal theorem proving.
 
@@ -123,7 +121,7 @@ class ProofEnv:
 
         Call once before any reset/step. Safe to call multiple times.
 
-        v7: honours ``ProofEnvConfig.backend`` — when set to anything
+        
         other than ``"local"``, every pool session gets a transport
         built by ``_make_transport_factory`` below. This is the wire
         that finally connects the V1–V6 community backends
@@ -142,7 +140,6 @@ class ProofEnv:
         self._error_intel = ErrorIntelligence()
         self._broadcast = BroadcastBus()
 
-        # v7: build a transport factory if a non-default backend is requested.
         # The factory is invoked once per session by AsyncLeanPool, so each
         # session ends up with its own transport — safe for stateful backends
         # like LocalTransport that must not be shared across sessions, and
@@ -196,7 +193,7 @@ class ProofEnv:
                     from engine.transport import FallbackTransport
                     return FallbackTransport()
                 if cfg.backend in ("kimina", "http"):
-                    # v11: HTTPTransport (thin delegating wrapper) was
+
                     # deleted; use KiminaServerBackend directly. Same
                     # interface, one less indirection.
                     from engine.backends.kimina_server import (

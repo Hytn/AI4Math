@@ -24,7 +24,6 @@ from engine._core import (
 from engine.async_lean_pool import AsyncLeanSession, AsyncLeanPool
 from engine.prefilter import PreFilter
 
-
 # ═══════════════════════════════════════════════════════════════
 # Layer 2: Transport
 # ═══════════════════════════════════════════════════════════════
@@ -104,11 +103,13 @@ class TestMockTransport:
 
     @pytest.mark.asyncio
     async def test_fallback_transport(self):
+        from engine.transport import LeanUnavailableError
         fb = FallbackTransport()
         await fb.start()
         assert fb.is_fallback
-        assert await fb.send({"cmd": "anything"}) is None
-
+        # FallbackTransport 现在大声失败而非静默返回 None
+        with pytest.raises(LeanUnavailableError):
+            await fb.send({"cmd": "anything"})
 
 # ═══════════════════════════════════════════════════════════════
 # Layer 3: AsyncLeanSession
@@ -198,7 +199,6 @@ class TestAsyncLeanSession:
         assert result.success
         await session.close()
 
-
 # ═══════════════════════════════════════════════════════════════
 # Layer 4: AsyncLeanPool
 # ═══════════════════════════════════════════════════════════════
@@ -282,17 +282,15 @@ class TestAsyncLeanPool:
             stats = pool.stats()
             assert stats["active_sessions"] >= 0
 
-
 # ═══════════════════════════════════════════════════════════════
 # Layer 5: ProofSession State Tree
 # ═══════════════════════════════════════════════════════════════
 
 # ═══════════════════════════════════════════════════════════════
-# (TestProofSession deleted in v9: ProofSessionManager / ProofSession
+# (TestProofSession deleted in 
 #  runtime classes had 0 main-path callers and were removed.
 #  EnvNode / ProofSessionState dataclasses moved to proof_context_store.)
 # ═══════════════════════════════════════════════════════════════
-
 
 # ═══════════════════════════════════════════════════════════════
 # Layer 6: PreFilter
@@ -339,7 +337,6 @@ class TestPreFilter:
         # Should pass (warning only in non-strict) but with hint
         assert result.passed
         # May have fix_hint about nat subtraction
-
 
 # ═══════════════════════════════════════════════════════════════
 # Layer 7: Core Utilities
@@ -398,7 +395,6 @@ class TestCoreUtilities:
         k3 = make_cache_key("thm", "proof", "preamble", "v2")
         assert k1 == k2
         assert k1 != k3
-
 
 # ═══════════════════════════════════════════════════════════════
 # Layer 8: Concurrency Stress

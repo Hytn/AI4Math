@@ -59,7 +59,6 @@ from typing import Any, Union
 
 logger = logging.getLogger(__name__)
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # Chat-template configuration
 # ─────────────────────────────────────────────────────────────────────────
@@ -124,7 +123,6 @@ class ChatTemplate:
     # the trainer learns to terminate. Empty = use ``turn_close``.
     final_stop: str = ""
 
-
 # Built-in presets ───────────────────────────────────────────────────────
 
 QWEN3_PRESET = ChatTemplate(
@@ -180,7 +178,6 @@ PRESETS: dict[str, ChatTemplate] = {
     "openai": OPENAI_PRESET,
 }
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # Sample builder
 # ─────────────────────────────────────────────────────────────────────────
@@ -195,7 +192,6 @@ class Segment:
     def to_dict(self) -> dict:
         return {"text": self.text, "role": self.role,
                 "trainable": self.trainable}
-
 
 def dialog_to_sft_sample(
     dialog: Any,
@@ -271,7 +267,6 @@ def dialog_to_sft_sample(
         "segments": [s.to_dict() for s in segments],
     }
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # Per-role rendering
 # ─────────────────────────────────────────────────────────────────────────
@@ -287,7 +282,6 @@ def _render_turn(
         # here for symmetry / future use.
         return [Segment(head + body + tail, role, True)]
     return [Segment(head + body + tail, role, False)]
-
 
 def _render_assistant_turn(
     t: ChatTemplate, msg: dict, *,
@@ -358,7 +352,6 @@ def _render_assistant_turn(
 
     return [head_seg, *body_segs, close_seg]
 
-
 def _render_tool_turn(t: ChatTemplate, msg: dict) -> list[Segment]:
     """Tool responses can either get their own ``role: "tool"`` turn or
     be folded into a user-role turn wrapped in
@@ -377,14 +370,12 @@ def _render_tool_turn(t: ChatTemplate, msg: dict) -> list[Segment]:
     tail = t.turn_close
     return [Segment(head + content + tail, "tool", False)]
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────
 
 _LEAN_BLOCK = "```lean"
 _FENCE_END = "```"
-
 
 def _rewrap_lean_blocks(text: str, open_tag: str, close_tag: str) -> str:
     """Replace ```` ```lean ... ``` ```` fenced blocks with
@@ -422,7 +413,6 @@ def _rewrap_lean_blocks(text: str, open_tag: str, close_tag: str) -> str:
         out.append(open_tag + body + close_tag)
         i = end + len(_FENCE_END)
     return "".join(out)
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # OpenAI / API-style preset
@@ -462,7 +452,6 @@ def _to_openai_sft(dialog: list[dict], system_prompt: str = "") -> dict:
             })
     return {"preset": "openai", "messages": msgs}
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # Bulk helpers
 # ─────────────────────────────────────────────────────────────────────────
@@ -478,7 +467,6 @@ def write_sft_jsonl(
             f.write(json.dumps(s, ensure_ascii=False) + "\n")
             n += 1
     return n
-
 
 def dialogs_to_sft_jsonl(
     dialogs: list,                    # list of wrapped Dialog dicts OR list[list[dict]]
@@ -524,7 +512,6 @@ def dialogs_to_sft_jsonl(
             drop_thoughts=drop_thoughts,
         ))
     return write_sft_jsonl(samples, output_path)
-
 
 __all__ = [
     "ChatTemplate",

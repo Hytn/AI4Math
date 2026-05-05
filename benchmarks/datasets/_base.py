@@ -22,7 +22,6 @@ from prover.models import BenchmarkProblem
 
 logger = logging.getLogger(__name__)
 
-
 # Boundary keywords that delimit a single theorem block. Anything in
 # this set, when seen at the start of a line, ends the previous block.
 # Matches the most permissive form across all six original loaders.
@@ -38,7 +37,6 @@ _THEOREM_RE = re.compile(
     re.MULTILINE,
 )
 
-
 def _split_statement(full_text: str) -> str:
     """Strip ``:= by ...`` (or bare ``:= ...``) to keep just the statement."""
     parts_by = re.split(r'\s*:=\s*by\b', full_text, maxsplit=1)
@@ -48,7 +46,6 @@ def _split_statement(full_text: str) -> str:
     if len(parts_eq) > 1:
         return parts_eq[0].strip()
     return full_text.strip()
-
 
 def parse_lean_files(
     files: Iterable[Path],
@@ -105,7 +102,6 @@ def parse_lean_files(
     logger.debug(
         f"{source}: walked {seen_files} files, extracted {len(problems)} problems")
     return problems
-
 
 def walk_lean_files(root: Path,
                     candidate_paths: list[str] = None) -> list[Path]:

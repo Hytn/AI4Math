@@ -11,9 +11,7 @@ from engine.backends.pantograph import (
     extract_proof_term,
 )
 
-
 # ─── GoalFragment ─────────────────────────────────────────────
-
 
 def test_goal_fragment_from_wire_full():
     d = {
@@ -33,19 +31,16 @@ def test_goal_fragment_from_wire_full():
     assert f.hypotheses == [("h", "P"), ("g", "Q → R")]
     assert f.is_meta is True
 
-
 def test_goal_fragment_accepts_tuple_hypotheses():
     """Some pypantograph versions emit hypotheses as tuples."""
     d = {"goal": "G", "hypotheses": [("h", "P"), ("g", "Q")]}
     f = GoalFragment.from_wire(d)
     assert f.hypotheses == [("h", "P"), ("g", "Q")]
 
-
 def test_goal_fragment_target_aliases():
     """Some servers emit `type` instead of `goal`."""
     f = GoalFragment.from_wire({"type": "x = x"})
     assert f.goal == "x = x"
-
 
 def test_goal_fragment_defaults():
     f = GoalFragment(goal="anything")
@@ -54,9 +49,7 @@ def test_goal_fragment_defaults():
     assert f.hypotheses == []
     assert f.is_meta is False
 
-
 # ─── PantographBackend ────────────────────────────────────────
-
 
 @pytest.mark.asyncio
 async def test_backend_falls_back_when_neither_lib_nor_binary_available(
@@ -73,7 +66,6 @@ async def test_backend_falls_back_when_neither_lib_nor_binary_available(
     assert pb.mode == PantographBackend.MODE_FALLBACK
     assert pb.is_fallback is True
 
-
 @pytest.mark.asyncio
 async def test_backend_send_in_fallback_returns_none(monkeypatch):
     pb = PantographBackend()
@@ -83,7 +75,6 @@ async def test_backend_send_in_fallback_returns_none(monkeypatch):
     await pb.start()
     resp = await pb.send({"cmd": "theorem t : True := trivial"})
     assert resp is None
-
 
 @pytest.mark.asyncio
 async def test_focus_mvar_unavailable_returns_error(monkeypatch):
@@ -96,7 +87,6 @@ async def test_focus_mvar_unavailable_returns_error(monkeypatch):
     assert r.success is False
     assert "unavailable" in r.error.lower() or "not" in r.error.lower()
 
-
 @pytest.mark.asyncio
 async def test_insert_draft_unavailable_returns_error(monkeypatch):
     pb = PantographBackend()
@@ -107,7 +97,6 @@ async def test_insert_draft_unavailable_returns_error(monkeypatch):
     r = await pb.insert_draft(proof_state=0, statement="∀ n, P n")
     assert r.success is False
 
-
 def test_get_stats_includes_mode():
     pb = PantographBackend()
     s = pb.get_stats()
@@ -115,9 +104,7 @@ def test_get_stats_includes_mode():
     assert "mvar_coupling" in s
     assert "drafting" in s
 
-
 # ─── extract_proof_term helper ────────────────────────────────
-
 
 def test_extract_proof_term_returns_none_in_fallback():
     pb = PantographBackend()
@@ -125,7 +112,6 @@ def test_extract_proof_term_returns_none_in_fallback():
     pb.mode = PantographBackend.MODE_FALLBACK
     out = extract_proof_term(pb, proof_state=42)
     assert out is None
-
 
 def test_extract_proof_term_open_proof_returns_none(monkeypatch):
     """If goals remain in the state, the proof isn't closed."""

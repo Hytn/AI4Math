@@ -30,7 +30,6 @@ WORKDIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if WORKDIR not in sys.path:
     sys.path.insert(0, WORKDIR)
 
-
 from agent.persistence.dialog_format import (
     SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS,
     DialogBuilder, save_dialog, load_dialog, validate_dialog,
@@ -38,13 +37,13 @@ from agent.persistence.dialog_format import (
 )
 from agent.persistence import DIALOG_FILENAME
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # 1. Schema bump
 # ─────────────────────────────────────────────────────────────────────────
 
-class TestSchemaBumpV4:
-    def test_schema_version_is_3_0(self):
+class TestSchemaBump:
+    def test_schema_version_is_v3(self):
+        from agent.persistence.dialog_format import SCHEMA_VERSION
         assert SCHEMA_VERSION == "3.0"
 
     def test_supported_schema_versions(self):
@@ -81,7 +80,6 @@ class TestSchemaBumpV4:
         loaded = load_dialog(p)
         assert loaded["schema_version"] == "1.0"
         assert loaded["messages"] == legacy
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # 2-3. Builder round-trip + validation of search_tree
@@ -181,7 +179,6 @@ class TestSearchTreeRoundtrip:
         codes = {i.code for i in validate_dialog(b.build())}
         assert "search_tree_kind_unknown" in codes
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # 4. Accessors
 # ─────────────────────────────────────────────────────────────────────────
@@ -209,7 +206,6 @@ class TestAccessors:
     def test_search_tree_of_handles_legacy_list(self):
         # Plain message list (1.0) — no meta, no tree.
         assert search_tree_of([{"role": "user", "content": "x"}]) is None
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # 5-6. SharedSearchState tree dict + solved_path_messages
@@ -270,7 +266,6 @@ class TestSharedSearchStateSerialization:
         assert len(msgs) == 1
         assert msgs[0]["content"] == "bad"
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # 7. PRESETS contains all three tree-search profiles
 # ─────────────────────────────────────────────────────────────────────────
@@ -295,7 +290,7 @@ class TestProfilesUpgrade:
         assert p.search.beam_width == 8
 
     def test_experimental_presets_removed_in_v11(self):
-        """v11: EXPERIMENTAL_PRESETS (empty since v4) and the no-op shim
+        """
         ``enable_experimental_search_presets`` were both removed. This test
         replaces the earlier ``test_experimental_presets_now_empty``.
         """
@@ -311,7 +306,6 @@ class TestProfilesUpgrade:
         """The CLI script's docstring must list mcts as an example."""
         import run_unified
         assert "mcts" in (run_unified.__doc__ or "").lower()
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # 8. UnifiedResult.search_tree → meta.search_tree on save
@@ -409,7 +403,6 @@ class TestUnifiedResultSearchTreeSave:
         assert "search_tree" not in d["meta"], \
             "linear profile must not emit meta.search_tree"
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # 9. dialog.json-only contract still holds for tree-search runs
 # ─────────────────────────────────────────────────────────────────────────
@@ -442,7 +435,6 @@ class TestDialogJsonOnlyContract:
         d = tmp_path / "trace"
         ur.save_unified(str(d), problem_id="trace")
         assert sorted(p.name for p in d.iterdir()) == [DIALOG_FILENAME]
-
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

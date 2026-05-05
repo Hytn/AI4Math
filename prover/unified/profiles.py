@@ -19,7 +19,6 @@ from enum import Enum
 
 from common.constants import DEFAULT_CLAUDE_MODEL
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # Tool Kit ID — 每个 ID 对应 tool_kits.py 里一个 register_* 函数
 # ═══════════════════════════════════════════════════════════════════════
@@ -50,9 +49,8 @@ class ToolKit(str, Enum):
     LEMMA_BY_LEMMA  = "lemma_by_lemma"    # LooKeng: 一次提交一个 lemma 而非整证
     NL_EXISTENCE    = "nl_existence"      # NFL-HR: NL→FL existence-theorem 桥接
 
-    # ─ v6: 猜想驱动证明 (主动提出辅助引理) ─
+    # ─ 
     CONJECTURE_PROPOSE = "conjecture_propose"  # propose auxiliary lemmas via LLM
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # Search Driver Config — 外部搜索算法 (可选)
@@ -81,7 +79,6 @@ class SearchConfig:
     # parallel 模式专用: 多个子 profile (异构方向)
     parallel_profiles: list[str] = field(default_factory=list)
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # Observation Policy — 观测如何返回给 LLM
 # ═══════════════════════════════════════════════════════════════════════
@@ -97,12 +94,12 @@ class ObservationPolicy:
     inject_premises_in_prompt —— 初始 user message 是否预先粘上检索到的引理 (top-N).
     n_premises —— 初始注入的引理条数上限.
     inject_few_shot —— 初始 user message 是否附上 few-shot 示例.
-    inject_similar_dialogs —— v5: 初始 user message 是否预先粘上相似的过往对话 demo
+    inject_similar_dialogs —— 
                               (来自 KnowledgeReader/DialogIndex). 默认 False —
                               opt-in 以避免对未配置 DialogIndex 的 caller 产生
                               意外上下文长度增长.
-    n_similar_dialogs —— v5: 注入相似对话的条数上限.
-    similar_dialogs_max_chars —— v5: 注入相似对话块的字符上限.
+    n_similar_dialogs —— 
+    similar_dialogs_max_chars —— 
 
     v12 移除: ``compress_errors_budget`` 与 ``visible_history_turns`` —
     这两个字段从来没有被 runner 或 agent_loop 读取过, 是已删 ``agent.context``
@@ -112,14 +109,13 @@ class ObservationPolicy:
     auto_inject_goal_state: bool = False
     include_search_state_in_prompt: bool = False  # 把当前搜索树注入 prompt
     include_knowledge_briefing: bool = True       # KnowledgeReader 简报
-    inject_premises_in_prompt: bool = True        # v3 新增: 检索引理预注入
-    n_premises: int = 10                           # v3 新增
-    inject_few_shot: bool = True                   # v3 新增: few-shot 注入
-    # v5 — 跨问题对话检索
+    inject_premises_in_prompt: bool = True        # 
+    n_premises: int = 10                           # 
+    inject_few_shot: bool = True                   # 
+
     inject_similar_dialogs: bool = False           # opt-in: 默认关
     n_similar_dialogs: int = 3
     similar_dialogs_max_chars: int = 2000
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # Stop Condition
@@ -132,7 +128,6 @@ class StopCondition:
     on_all_goals_closed: bool = True  # step-level: 所有 goal 闭合即停
     max_total_tokens: int = 200_000
     timeout_seconds: float = 300.0
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # 顶层 Profile —— 一个算法的完整定义
@@ -165,7 +160,7 @@ class Profile:
     # 6. 终止条件
     stop: StopCondition = field(default_factory=StopCondition)
 
-    # 7. v12: integrity-checker strictness toggle.
+    # 7. 
     #    True  → CRITICAL integrity issues mark `verified=False` even
     #            when Lean accepts the proof. Use for competition-
     #            style benchmarks (PutnamBench, FormalMATH) where
@@ -177,10 +172,8 @@ class Profile:
     #            tactics are perfectly legitimate Mathlib usage.
     integrity_strict: bool = False
 
-    # v12: removed the ``plugins`` field. It was wired through YAML and
     # Profile but never read by anyone — ``agent.plugins`` was deleted
-    # in v9 and nothing replaced the consumer side.
-
+    #  and nothing replaced the consumer side.
 
 # ═══════════════════════════════════════════════════════════════════════
 # 8 个 Built-in Preset —— 覆盖现存所有主流方法
@@ -353,7 +346,7 @@ PRESETS: dict[str, Profile] = {
         ),
     ),
 
-    # ─ Family 8 (v6): Conjecture-driven proving ──────────────────────
+    # ─ Family 8: Conjecture-driven proving ──────────────────────
     #
     # 主动提出辅助引理 → 验证 → 用作 main proof 的 stepping stone.
     # 与 dsp 的区别: dsp 是把目标"切下去"(decomposition); conjecture_driven
@@ -361,7 +354,7 @@ PRESETS: dict[str, Profile] = {
     # 也可以同时启用 (在 tools 里加 DECOMPOSE).
     #
     # 这条 profile 终于把 ``prover/conjecture/`` 包接上了主管线 ——
-    # V6 之前 ConjectureProposer/ConjectureVerifier 只能由测试代码/示例
+
     # 脚本直接 import, 没有 Profile 把它当作可调用的 tool 暴露给 LLM.
     "conjecture_driven": Profile(
         name="conjecture_driven",
@@ -387,12 +380,11 @@ PRESETS: dict[str, Profile] = {
     ),
 }
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # Family 7: Tree-search profiles (mcts / best_first / beam) — v4 合流
 # ═══════════════════════════════════════════════════════════════════════
 #
-# v3 把这三个 preset 隔离在 EXPERIMENTAL_PRESETS 中, 因为搜索结构与
+
 # dialog-linear 主管线不兼容. v4 在 dialog.json schema 3.0 中加了
 # meta.search_tree 块, 把树状探索元数据原生写入主存储格式 ——
 # 既保持线性 messages 兼容下游 SFT, 又保留完整的搜索 DAG 供分析/replay。
@@ -405,7 +397,7 @@ PRESETS["best_first"] = Profile(
     name="best_first",
     description=(
         "Best-first search: 外部 driver 选启发式分最高的开放叶子, "
-        "每个节点用 max_turns=1 的 agent expansion. v4 起进入 PRESETS, "
+        "每个节点用 max_turns=1 的 agent expansion.  "
         "search_tree 写入 meta.search_tree."
     ),
     tools=[ToolKit.TACTIC_APPLY],
@@ -423,8 +415,7 @@ PRESETS["mcts"] = Profile(
     name="mcts",
     description=(
         "MCTS-UCB1 search: selection + backprop 由 driver 完成, "
-        "agent 只做 expansion. 树结构进 dialog.json 的 meta.search_tree. "
-        "(v4 起从 EXPERIMENTAL_PRESETS 升正)"
+        "agent 只做 expansion. 树结构进 dialog.json 的 meta.search_tree."
     ),
     tools=[ToolKit.TACTIC_APPLY],
     max_turns=1,
@@ -453,12 +444,152 @@ PRESETS["beam"] = Profile(
     observation=ObservationPolicy(auto_inject_goal_state=True),
 )
 
+# ═══════════════════════════════════════════════════════════════════════
+# Family 9: DeepSeek-Prover-V2 specialised presets  (v17)
+# ═══════════════════════════════════════════════════════════════════════
+#
+# These presets are tuned for the open-source DeepSeek-Prover-V2 family
+# (7B / 671B). The goal is a head-to-head comparison with the paper's
+# own evaluation harness on miniF2F-test, holding the model fixed. The
+# paper reports for the 7B model:
+#     non-CoT  pass@8192 = 75.0%
+#     CoT      pass@8192 = 82.0%
+# Our 5 profiles below let an evaluator A/B test what THIS framework
+# adds on top of the paper's bare whole-proof pipeline (which is the
+# `dsp_v2_cot` baseline below — held-fixed for fair comparison).
+#
+# IMPORTANT — these profiles assume `--model deepseek-ai/DeepSeek-
+# Prover-V2-7B` (or 671B) and `--temperature 1.0`. The framing prompts
+# are the verbatim ones from paper Appendix A and won't make sense
+# with Claude / GPT-4 (those have their own preferred phrasings).
 
-# v11: EXPERIMENTAL_PRESETS dict and enable_experimental_search_presets()
-# shim were removed. They had been empty / no-op since v4 when MCTS / 
+# 9a. Faithful paper baseline (non-CoT). Use this to verify the
+#     framework reproduces the paper's number before you start adding
+#     "tricks". If your pass@k here is far below 75%, something is
+#     wrong with your vLLM deployment or your sampling temperature.
+PRESETS["dsp_v2_non_cot"] = Profile(
+    name="dsp_v2_non_cot",
+    description=(
+        "DeepSeek-Prover-V2 7B/671B 非 CoT 模式 (论文 Appendix A.1 "
+        "原 prompt). 单次输出整证. 无 repair 循环."
+    ),
+    tools=[],
+    max_turns=1,
+    temperature=1.0,             # paper default for pass@k
+    framing="deepseek_prover_v2_non_cot",
+    observation=ObservationPolicy(
+        auto_inject_lean_compile=False,
+        include_knowledge_briefing=False,
+        inject_premises_in_prompt=False,
+        inject_few_shot=False,
+    ),
+    stop=StopCondition(on_text_only=True),
+)
+
+# 9b. Faithful paper baseline (CoT). The paper's strongest 7B number
+#     (82.0% pass@8192) comes from this configuration. Use this as
+#     the head-to-head against any of the "trick" profiles below.
+PRESETS["dsp_v2_cot"] = Profile(
+    name="dsp_v2_cot",
+    description=(
+        "DeepSeek-Prover-V2 7B/671B CoT 模式 (论文 Appendix A.2 原 "
+        "prompt). 输出 proof plan + 整证. 无 repair 循环. "
+        "↔ 论文 7B Table 1: pass@8192 = 82.0%."
+    ),
+    tools=[],
+    max_turns=1,
+    temperature=1.0,
+    framing="deepseek_prover_v2_cot",
+    observation=ObservationPolicy(
+        auto_inject_lean_compile=False,
+        include_knowledge_briefing=False,
+        inject_premises_in_prompt=False,
+        inject_few_shot=False,
+    ),
+    stop=StopCondition(on_text_only=True, max_total_tokens=400_000),
+)
+
+# 9c. Trick #1 — verify-and-fix loop on top of CoT. Paper does NOT
+#     use repair (each sample is independent). Expected gain comes
+#     from near-miss proofs: correct strategy, wrong lemma name /
+#     wrong type. The Lean error is fed back to the same model and
+#     it's asked to rewrite.
+PRESETS["dsp_v2_repair"] = Profile(
+    name="dsp_v2_repair",
+    description=(
+        "DSP-V2 CoT + 编译反馈循环. 每 sample 内最多 3 轮 verify+fix. "
+        "论文不做 repair, 是本框架的第一层增量."
+    ),
+    tools=[ToolKit.LEAN_VERIFY],
+    max_turns=4,                 # 1 initial + up to 3 repair
+    temperature=1.0,
+    framing="deepseek_prover_v2_repair",
+    observation=ObservationPolicy(
+        auto_inject_lean_compile=True,
+        include_knowledge_briefing=False,
+        inject_premises_in_prompt=False,
+        inject_few_shot=False,
+    ),
+)
+
+# 9d. Trick #2 — knowledge accumulation. Same as 9c but turns on the
+#     persistent lemma bank + dialog index. Across the 244 problems,
+#     successful lemmas / dialog snippets from earlier problems are
+#     retrieved and injected into prompts of later problems. Activate
+#     with --knowledge-db, --dialog-index, --lemma-bank-db. Without
+#     those CLI flags this profile silently degrades to dsp_v2_repair.
+PRESETS["dsp_v2_repair_knowledge"] = Profile(
+    name="dsp_v2_repair_knowledge",
+    description=(
+        "DSP-V2 + repair + 跨题知识沉淀 (lemma bank, dialog index). "
+        "需要 --knowledge-db / --lemma-bank-db / --dialog-index 才生效."
+    ),
+    tools=[ToolKit.LEAN_VERIFY, ToolKit.LEMMA_BANK,
+           ToolKit.PREMISE_SEARCH],
+    max_turns=4,
+    temperature=1.0,
+    framing="deepseek_prover_v2_repair",
+    observation=ObservationPolicy(
+        auto_inject_lean_compile=True,
+        include_knowledge_briefing=True,
+        inject_premises_in_prompt=True,
+        n_premises=4,
+        inject_few_shot=False,
+        inject_similar_dialogs=True,
+    ),
+)
+
+# 9e. Trick #3 — heterogeneous parallel ensemble of the 4 above.
+#     A shared broadcast bus pipes any partial discovery (lemma
+#     proven, error category etc.) across sub-profiles. Effectively
+#     trades 4× LLM calls per sample for 4× more diverse strategies
+#     per sample.
+PRESETS["dsp_v2_heterogeneous"] = Profile(
+    name="dsp_v2_heterogeneous",
+    description=(
+        "DSP-V2 4 路异构并行 (non-CoT + CoT + repair + repair+knowledge) "
+        "+ broadcast bus. 任一路成功即整 sample 成功. "
+        "样本预算 N 实际等价于单 profile 的 pass@(N×4) 上界."
+    ),
+    tools=[ToolKit.LEAN_VERIFY, ToolKit.BROADCAST],
+    max_turns=4,
+    temperature=1.0,
+    framing="deepseek_prover_v2_repair",
+    search=SearchConfig(
+        kind="parallel",
+        beam_width=4,
+        parallel_profiles=[
+            "dsp_v2_non_cot",
+            "dsp_v2_cot",
+            "dsp_v2_repair",
+            "dsp_v2_repair_knowledge",
+        ],
+    ),
+)
+
+# shim were removed. They had been empty / no-op  when MCTS / 
 # best_first / beam graduated into PRESETS. New "experimental" gating
 # can be re-introduced if and when there's an actual preset to gate.
-
 
 def get_profile(name: str) -> Profile:
     if name not in PRESETS:
@@ -466,16 +597,13 @@ def get_profile(name: str) -> Profile:
             f"Unknown profile '{name}'. Available: {sorted(PRESETS)}")
     return PRESETS[name]
 
-
 def register_profile(profile: Profile) -> None:
     """运行时注册一个新 profile (例如从 YAML 加载)."""
     PRESETS[profile.name] = profile
 
-
 def list_profiles() -> list[str]:
     """列出当前所有可用 profile 名 (含 register_profile 注册的)."""
     return sorted(PRESETS.keys())
-
 
 def load_profile_from_yaml(path: str) -> Profile:
     """从 YAML 加载 Profile —— 用户态扩展点, 不动代码就能加新算法."""
@@ -484,12 +612,11 @@ def load_profile_from_yaml(path: str) -> Profile:
         data = yaml.safe_load(f)
     return _profile_from_dict(data)
 
-
 def _profile_from_dict(d: dict) -> Profile:
     search_d = d.get("search", {}) or {}
     obs_d = d.get("observation", {}) or {}
     stop_d = d.get("stop", {}) or {}
-    # v12: silently drop legacy keys so old YAMLs still load. The
+
     # fields themselves are gone; the YAMLs in config/profiles/* may
     # still mention them after auto-regen from older PRESETS.
     obs_d = {k: v for k, v in obs_d.items()

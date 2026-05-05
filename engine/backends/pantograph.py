@@ -71,9 +71,7 @@ from engine.transport import REPLTransport, TransportStats
 
 logger = logging.getLogger(__name__)
 
-
 # ─── Wire-format dataclasses ─────────────────────────────────
-
 
 @dataclass
 class GoalFragment:
@@ -113,7 +111,6 @@ class GoalFragment:
             is_meta=bool(d.get("is_meta", False)),
         )
 
-
 @dataclass
 class MVarFocusResult:
     """Result of asking Pantograph to focus on a specific mvar.
@@ -129,7 +126,6 @@ class MVarFocusResult:
     remaining: list[GoalFragment] = field(default_factory=list)
     error: str = ""
 
-
 @dataclass
 class DraftResult:
     """Result of inserting a ``sorry``-hole during draft-sketch-prove."""
@@ -138,9 +134,7 @@ class DraftResult:
     proof_state: int = -1
     error: str = ""
 
-
 # ─── Backend ─────────────────────────────────────────────────
-
 
 class PantographBackend(REPLTransport):
     """Pantograph adapter implementing ``REPLTransport``.
@@ -575,9 +569,7 @@ class PantographBackend(REPLTransport):
         self._proof_state_goals[new_ps] = list(existing) + [hole]
         return DraftResult(success=True, holes=[hole], proof_state=new_ps)
 
-
 # ─── Module-level helpers ────────────────────────────────────
-
 
 def extract_proof_term(backend: PantographBackend,
                         proof_state: int) -> Optional[str]:

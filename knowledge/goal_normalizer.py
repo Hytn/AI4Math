@@ -19,7 +19,6 @@ from __future__ import annotations
 import hashlib
 import re
 
-
 # ═══════════════════════════════════════════════════════════════
 # Level 1: 变量抹除 (regex-based, Phase 1)
 # ═══════════════════════════════════════════════════════════════
@@ -52,7 +51,6 @@ _VAR_PATTERN = re.compile(
 
 # 数字字面量
 _NUM_PATTERN = re.compile(r'\b\d+\b')
-
 
 def normalize_level1(goal: str) -> str:
     """Level 1 规范化：抹除变量名和数字字面量
@@ -91,7 +89,6 @@ def normalize_level1(goal: str) -> str:
 
     return result
 
-
 def normalize_goal_for_key(goal: str) -> str:
     """生成用于 tactic_effectiveness 表的 goal_pattern key
 
@@ -110,7 +107,6 @@ def normalize_goal_for_key(goal: str) -> str:
         pattern = pattern[:200] + "…"
 
     return pattern
-
 
 # ═══════════════════════════════════════════════════════════════
 # Domain 分类 (规则, Phase 1)
@@ -139,7 +135,6 @@ _DOMAIN_SIGNALS: list[tuple[str, list[str]]] = [
                "Iff", "Exists", "∀", "∃", "¬"]),
 ]
 
-
 def classify_domain(goal: str, theorem: str = "") -> str:
     """根据 goal 和 theorem 文本推断数学领域
 
@@ -158,7 +153,6 @@ def classify_domain(goal: str, theorem: str = "") -> str:
 
     return max(scores, key=scores.get)
 
-
 # ═══════════════════════════════════════════════════════════════
 # 关键词提取 (用于引理检索)
 # ═══════════════════════════════════════════════════════════════
@@ -175,7 +169,6 @@ _STOP_WORDS = frozenset({
 
 _KEYWORD_PATTERN = re.compile(r'[A-Za-z][A-Za-z0-9_.]+')
 
-
 def extract_keywords(text: str) -> list[str]:
     """从 theorem/lemma 文本中提取检索关键词"""
     tokens = _KEYWORD_PATTERN.findall(text)
@@ -187,7 +180,6 @@ def extract_keywords(text: str) -> list[str]:
             seen.add(lower)
             keywords.append(t)
     return keywords[:30]  # 限制数量
-
 
 def statement_hash(statement: str) -> str:
     """引理 statement 的去重哈希"""

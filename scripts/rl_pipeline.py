@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """scripts/rl_pipeline.py — End-to-end RL flywheel orchestrator.
 
-Closes the v4 gap noted in REFACTOR_REPORT.md (and §九.4 of the v4 plan):
+Closes the v4 gap noted in REFACTOR_REPORT.md:
 chains the four stages of the project's "explore → deposit → train →
 deploy" loop into a single command:
 
@@ -81,7 +81,6 @@ if str(REPO_ROOT) not in sys.path:
 
 logger = logging.getLogger("rl_pipeline")
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # Stage outcomes
 # ─────────────────────────────────────────────────────────────────────────
@@ -104,7 +103,6 @@ class StageResult:
         m = ", ".join(f"{k}={v}" for k, v in self.metrics.items() if k != "error")
         return f"[ok:{self.stage}] {m}" if m else f"[ok:{self.stage}]"
 
-
 @dataclass
 class IterResult:
     iter_idx: int
@@ -114,7 +112,6 @@ class IterResult:
     @property
     def all_ok(self) -> bool:
         return all(s.ok for s in self.stages)
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # Stage 1: eval
@@ -178,9 +175,8 @@ def stage_eval(*, iter_dir: Path, profile: str, benchmark: str,
         metrics={"n_dialogs": n_dialogs, "profile": profile,
                  "benchmark": benchmark, "provider": provider})
 
-
 # ─────────────────────────────────────────────────────────────────────────
-# Stage 1b (v7.1): rollout — TreeRolloutSampler-driven roll-outs
+# Stage 1b: rollout — TreeRolloutSampler-driven roll-outs
 # ─────────────────────────────────────────────────────────────────────────
 
 def stage_rollout(*, iter_dir: Path,
@@ -373,7 +369,6 @@ def stage_rollout(*, iter_dir: Path,
                   "backend": backend,
                   "policy_kind": policy_kind})
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # Stage 2: collect (dialogs → SFT JSONL)
 # ─────────────────────────────────────────────────────────────────────────
@@ -421,7 +416,6 @@ def stage_collect(*, traces_dir: Path, output: Path,
         metrics={"n_in": len(dialogs), "n_out": n_written,
                  "preset": preset,
                  "successful_only": successful_only})
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # Stage 3: train world model
@@ -494,7 +488,6 @@ def stage_train_wm(*, traces_dir: Path, db_path: Optional[Path],
                   if k in ("accuracy", "f1", "train_size",
                             "test_size", "positive_rate")})
 
-
 def _trajectories_from_dialogs(traces_dir: Path) -> list:
     """Best-effort: synthesize RichProofTrajectory objects from dialog.json
     files for world-model training. Reads the v3.0 ``meta.search_tree``
@@ -525,7 +518,6 @@ def _trajectories_from_dialogs(traces_dir: Path) -> list:
             duration_ms=float(result_of(d).get("total_duration_ms", 0)),
         ))
     return out
-
 
 def _steps_from_dialog(d: dict) -> list:
     """Pull StepDetail records out of a single dialog. Strategy:
@@ -586,7 +578,6 @@ def _steps_from_dialog(d: dict) -> list:
         ))
     return steps
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # Stage 4: train LLM (delegated)
 # ─────────────────────────────────────────────────────────────────────────
@@ -641,7 +632,6 @@ def stage_train_llm(*, sft_jsonl: Path, model_out: Path,
         duration_s=time.monotonic() - t0,
         artifact=str(model_out),
         metrics={"cmd": rendered})
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # Top-level orchestration: one iteration / closed loop
@@ -699,7 +689,6 @@ def run_iteration(args, iter_idx: int, iter_dir: Path) -> IterResult:
 
     return res
 
-
 def cmd_iter(args) -> int:
     iter_dir = Path(args.iter_dir or
                      (REPO_ROOT / "results" / "rl" / "iter_0"))
@@ -708,7 +697,6 @@ def cmd_iter(args) -> int:
     for s in res.stages:
         print("  " + s.short())
     return 0 if res.all_ok else 1
-
 
 def cmd_loop(args) -> int:
     """Run multiple iterations sequentially. Each iteration may consume
@@ -735,7 +723,6 @@ def cmd_loop(args) -> int:
             print("    " + s.short())
     return 0 if all(r.all_ok for r in results) else 1
 
-
 def cmd_collect(args) -> int:
     r = stage_collect(
         traces_dir=Path(args.traces_dir),
@@ -747,9 +734,8 @@ def cmd_collect(args) -> int:
         print(f"  → {r.artifact}")
     return 0 if r.ok else 1
 
-
 def cmd_rollout(args) -> int:
-    """Stage 1b — sampler-driven rollout (v7.1)."""
+    """Stage 1b — sampler-driven rollout."""
     iter_dir = Path(args.iter_dir
                        or REPO_ROOT / "results" / "rl" / "iter_0")
     r = stage_rollout(
@@ -781,7 +767,6 @@ def cmd_rollout(args) -> int:
             print(f"  → {iter_dir / 'grpo_batch.jsonl'}")
     return 0 if r.ok else 1
 
-
 def cmd_train_wm(args) -> int:
     r = stage_train_wm(
         traces_dir=Path(args.traces_dir),
@@ -791,7 +776,6 @@ def cmd_train_wm(args) -> int:
     if r.artifact:
         print(f"  → {r.artifact}")
     return 0 if r.ok else 1
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # CLI
@@ -858,7 +842,7 @@ def parse_args():
     sp_wm.add_argument("--db", default=None)
     sp_wm.add_argument("--output", default="world_model.pkl")
 
-    # ── v7.1: sampler-driven rollout subcommand ──────────────────────
+    # ── sampler-driven rollout subcommand ──────────────────────
     sp_ro = sub.add_parser(
         "rollout",
         help="Stage 1b — sampler-driven rollout via TreeRolloutSampler. "
@@ -894,7 +878,6 @@ def parse_args():
 
     return p.parse_args()
 
-
 def main():
     args = parse_args()
     logging.basicConfig(
@@ -916,7 +899,6 @@ def main():
         "rollout":   cmd_rollout,
     }
     sys.exit(handlers[args.command](args))
-
 
 if __name__ == "__main__":
     main()

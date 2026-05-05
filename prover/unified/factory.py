@@ -21,13 +21,13 @@ Public API::
     load_world_model(path) -> Optional[WorldModelPredictor]
     load_dialog_index(path) -> Optional[DialogIndex]
     load_knowledge(db_path) -> tuple[store, writer, reader]
-        v11: optional-asset loaders extracted from the entrypoints. Each
+        
         is fail-soft: returns None on failure with a warning, never raises.
 
 History:
-  v8 — each entrypoint inlined ~30 lines of copy-pasted backend wiring.
-  v9 — unified backend construction here.
-  v11 — also unified world_model / dialog_index / knowledge loading.
+  
+  
+  
 """
 from __future__ import annotations
 
@@ -36,20 +36,17 @@ from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-
 _PROFILE_BACKEND_HINT = {
     "kimina_batch":   "kimina",
     "pantograph_dsp": "pantograph",
     "lookeng_lemma":  "lookeng",
 }
 
-
 def profile_backend_hint(profile_name: Optional[str]) -> Optional[str]:
     """Profile → implicit backend kind, or None if no implicit need."""
     if not profile_name:
         return None
     return _PROFILE_BACKEND_HINT.get(profile_name)
-
 
 def resolve_backend_kind(chosen: str,
                          profile_name: Optional[str] = None) -> str:
@@ -66,7 +63,6 @@ def resolve_backend_kind(chosen: str,
             f"profile '{profile_name}' implies backend '{hint}', using it")
         return hint
     return chosen  # "auto"
-
 
 async def build_infra_backends(
     kind: str,
@@ -111,11 +107,9 @@ async def build_infra_backends(
 
     return kimina, pantograph, lookeng
 
-
-# ═══════════════════════════════════════════════════════════════════════
-# v11: Optional-asset loaders (previously inlined per entrypoint)
 # ═══════════════════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════════════════
 
 def load_world_model(path: Optional[str]):
     """Load an sklearn-backed WorldModelPredictor from .pkl, or None.
@@ -136,7 +130,6 @@ def load_world_model(path: Optional[str]):
             f"Continuing without it.")
         return None
 
-
 def load_dialog_index(path: Optional[str]):
     """Load a SQLite-backed DialogIndex, or None on failure."""
     if not path:
@@ -153,7 +146,6 @@ def load_dialog_index(path: Optional[str]):
             f"could not load dialog index from {path}: {e}. "
             f"Continuing without it.")
         return None
-
 
 def load_knowledge(db_path: Optional[str]):
     """Open a UnifiedKnowledgeStore + writer + reader at db_path.
@@ -177,9 +169,8 @@ def load_knowledge(db_path: Optional[str]):
             f"Continuing without it.")
         return None, None, None
 
-
 # ═══════════════════════════════════════════════════════════════════════
-# v15: factory loaders for the v14 features that previously had no
+
 # CLI / no factory wiring. Without these, ``--policy-engine``,
 # ``--plugins-dir`` and ``--lemma-bank-db`` could not be exposed
 # through ``run_unified.py`` / ``run_eval.py`` and the v14 reservoirs
@@ -188,14 +179,12 @@ def load_knowledge(db_path: Optional[str]):
 # unmeasurable in production.
 # ═══════════════════════════════════════════════════════════════════════
 
-
 def load_policy_engine(enabled: bool):
     """Build a ``PolicyEngine`` with the 5 default rules, or return None.
 
     Args:
         enabled: ``True`` to construct ``PolicyEngine.default()``;
-                 anything else returns ``None`` (legacy v13 behaviour:
-                 hard ``max_turns`` termination, no declarative rules).
+                 anything else returns ``None``.
 
     Why a boolean and not a path?
         Default ``PolicyRule`` set is pure-Python doctrine (no persisted
@@ -221,7 +210,6 @@ def load_policy_engine(enabled: bool):
             f"could not construct PolicyEngine: {e}. "
             f"Falling back to hardcoded max_turns termination.")
         return None
-
 
 def load_plugin_loader(plugins_dir: Optional[str]):
     """Discover domain plugins from one or more directories.
@@ -264,7 +252,6 @@ def load_plugin_loader(plugins_dir: Optional[str]):
             f"{e}. Continuing without domain injection.")
         return None
 
-
 def load_persistent_lemma_bank(db_path: Optional[str],
                                  lean_version: Optional[str] = None,
                                  mathlib_rev: Optional[str] = None):
@@ -272,8 +259,7 @@ def load_persistent_lemma_bank(db_path: Optional[str],
 
     Args:
         db_path:       Path to the SQLite file. None / empty disables.
-        lean_version:  Optional Lean toolchain tag stamped on new lemmas
-                       (e.g. ``"leanprover/lean4:v4.28.0"``). Used so
+        lean_version:  Optional Lean toolchain tag stamped on new lemmas. Used so
                        a future ``recheck_after_upgrade`` step can flag
                        lemmas extracted under a different toolchain.
         mathlib_rev:   Optional Mathlib commit hash, same purpose.

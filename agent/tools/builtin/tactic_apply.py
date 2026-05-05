@@ -9,7 +9,7 @@ returns the resulting goal state as a JSON observation. It transparently
 updates a `search_state` object (if provided) so the outer SearchDriver
 can track tree expansion.
 
-v4: every successful or failed tactic application is also deposited
+
 into the KnowledgeWriter (if one is wired in), giving step-level
 profiles (reprover / leandojo / mcts / best_first / beam) the same
 auto-teach pipeline that whole-proof profiles already have via
@@ -27,7 +27,6 @@ from typing import Optional
 from agent.tools.base import Tool, ToolContext, ToolResult, ToolPermission
 
 logger = logging.getLogger(__name__)
-
 
 class TacticApplyTool(Tool):
     name = "tactic_apply"
@@ -73,10 +72,10 @@ class TacticApplyTool(Tool):
                  wm_min_confidence: float = 0.85):
         self._pool = lean_pool
         self._search_state = search_state  # may be None in non-search mode
-        # v4: optional KnowledgeWriter — when present, every step is
+
         # auto-deposited (Layer 1 tactic effectiveness + error patterns).
         self._kw = knowledge_writer
-        # v4: optional WorldModelPredictor — when present, the tool asks
+
         # "is this tactic likely to fail?" before sending to Lean. Only
         # high-confidence failures (≥ wm_min_confidence) are gated; we
         # never block a tactic the model is uncertain about.
@@ -105,7 +104,6 @@ class TacticApplyTool(Tool):
         # goal_pattern), which is the correct behaviour.
         goals_before = self._capture_goals_before(node_id)
 
-        # v4: optional WorldModel gate — short-circuit a tactic the
         # model is highly confident will fail. Only fires when both a
         # world model is wired AND we have a goal_state to feed it.
         gate = self._wm_gate(tactic, goals_before)
@@ -173,7 +171,7 @@ class TacticApplyTool(Tool):
             )
             obs["new_node_id"] = new_node_id
 
-        # ── v4: deposit the step into the knowledge pyramid ─────────────
+        # ── 
         # This is fail-soft — _deposit_step_safe swallows every exception.
         await self._deposit_step_safe(
             tactic=tactic,

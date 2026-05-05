@@ -1,7 +1,6 @@
 """engine/observability_stub.py — No-op metrics shim.
 
-Replaces ``engine/observability.py`` (deleted in v9 cleanup, 0
-non-internal callers). Keeps the call sites in ``async_lean_pool.py``
+Replaces ``engine/observability.py``. Keeps the call sites in ``async_lean_pool.py``
 and ``async_verification_scheduler.py`` working without rewriting them.
 
 If/when real metrics are needed, replace this with a Prometheus or
@@ -9,7 +8,6 @@ OpenTelemetry exporter and wire it into ``run_unified.py``.
 """
 from __future__ import annotations
 from contextlib import contextmanager
-
 
 class _NoOpMetrics:
     """Drop-in replacement for the old ``metrics`` module."""
@@ -30,6 +28,5 @@ class _NoOpMetrics:
 
     def snapshot(self) -> dict:
         return {}
-
 
 metrics = _NoOpMetrics()

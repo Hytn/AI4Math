@@ -1,4 +1,4 @@
-"""V6 — DialogIndex SQLite persistence tests.
+"""
 
 Closes V6+ item #1 from INFRA_MERGE_V5_REPORT.md ("DialogIndex
 persistence to SQLite"). The test surface pins three things:
@@ -30,11 +30,9 @@ from knowledge.dialog_index import (
     _ensure_schema,
 )
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Fixtures
 # ─────────────────────────────────────────────────────────────────────
-
 
 def _mk_dialog(theorem: str, solved: bool = True,
                proof: str = "by simp",
@@ -49,7 +47,6 @@ def _mk_dialog(theorem: str, solved: bool = True,
             "successful_proof": proof if solved else "",
         },
     }
-
 
 @pytest.fixture
 def populated_index() -> DialogIndex:
@@ -68,11 +65,9 @@ def populated_index() -> DialogIndex:
                    source="file:test/t4.json", timestamp=400.0)
     return idx
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Schema + connection helpers
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestSchema:
 
@@ -132,11 +127,9 @@ class TestSchema:
         with pytest.raises(RuntimeError, match="newer than this code"):
             idx.load_from_sqlite(db)
 
-
 # ─────────────────────────────────────────────────────────────────────
 # persist_to_sqlite
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestPersist:
 
@@ -260,11 +253,9 @@ class TestPersist:
             ).fetchone()["c"]
         assert count == 0
 
-
 # ─────────────────────────────────────────────────────────────────────
 # load_from_sqlite
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestLoad:
 
@@ -366,11 +357,9 @@ class TestLoad:
         assert n == 1
         assert idx._entries[0].theorem == "valid"
 
-
 # ─────────────────────────────────────────────────────────────────────
 # replace_from_sqlite — snapshot semantics
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestReplace:
 
@@ -398,11 +387,9 @@ class TestReplace:
         # Important contract: in-memory state is dropped even on miss
         assert populated_index.size == 0
 
-
 # ─────────────────────────────────────────────────────────────────────
 # End-to-end: persist + load + retrieval still works
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestRetrievalAfterRoundTrip:
 
@@ -447,11 +434,9 @@ class TestRetrievalAfterRoundTrip:
                                      top_k=1, solved_only=True)
         assert len(matches) >= 1
 
-
 # ─────────────────────────────────────────────────────────────────────
 # sqlite_file_size helper
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestFileSize:
 
@@ -467,11 +452,9 @@ class TestFileSize:
         assert size is not None
         assert size > 0
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Edge cases the V6 design contract pins
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestContract:
 

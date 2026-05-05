@@ -35,10 +35,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from engine.transport import LocalTransport, SocketTransport
 from engine.async_lean_pool import AsyncLeanPool
-# v9 删除了 engine.proof_session.ProofSessionManager (0 主路径调用方),
+
 # 它对应的 test_proof_session 也已停用 — 跳过, 不再 import。
 from engine._core import assemble_code
-
 
 # ─── Test Results ─────────────────────────────────────────────
 
@@ -74,9 +73,7 @@ class Results:
         print(f"{'='*60}\n")
         return self.failed == 0
 
-
 results = Results()
-
 
 # ─── Test: Transport Layer ────────────────────────────────────
 
@@ -95,7 +92,6 @@ async def test_transport_start(transport):
     mode = "repl" if not getattr(transport, 'is_single_shot', False) else "single_shot"
     results.record("transport_start", True, f"mode={mode}")
     return True
-
 
 async def test_transport_check_nat(transport):
     """Send #check Nat — most basic REPL interaction."""
@@ -116,7 +112,6 @@ async def test_transport_check_nat(transport):
 
     results.record("check_nat", True, f"{elapsed:.0f}ms")
     return True
-
 
 async def test_transport_import_mathlib(transport):
     """Import Mathlib — validates mathlib is available."""
@@ -140,7 +135,6 @@ async def test_transport_import_mathlib(transport):
     results.record("import_mathlib", True,
                     f"env_id={env_id}, {elapsed:.0f}ms")
     return True
-
 
 # ─── Test: Tactic Interaction ─────────────────────────────────
 
@@ -189,7 +183,6 @@ async def test_tactic_interaction(transport):
                        f"tactic applied, {len(goals)} goals remaining")
     return True
 
-
 # ─── Test: Full Proof Verification ───────────────────────────
 
 async def test_full_proof_verify(transport):
@@ -224,7 +217,6 @@ async def test_full_proof_verify(transport):
     results.record("full_proof", True, "verified successfully")
     return True
 
-
 # ─── Test: Error Classification ───────────────────────────────
 
 async def test_error_feedback(transport):
@@ -252,7 +244,6 @@ async def test_error_feedback(transport):
                     f"category={category}, msg={msg[:80]}")
     return True
 
-
 # ─── Test: Pool Integration ───────────────────────────────────
 
 async def test_pool_integration(project_dir: str):
@@ -277,16 +268,13 @@ async def test_pool_integration(project_dir: str):
                         f"sessions={stats['active_sessions']}")
         return True
 
-
 # ─── Test: Proof Session ─────────────────────────────────────
 
 async def test_proof_session(project_dir: str):
-    """v9: ProofSessionManager 已被删 (0 主路径调用方);
+    """
     此 smoke test 步骤已禁用, 替换为 no-op 占位."""
-    results.skip("proof_session",
-                  "ProofSessionManager removed in v9 cleanup")
+    results.skip
     return False
-
 
 # ─── Main ─────────────────────────────────────────────────────
 
@@ -342,7 +330,6 @@ async def run_all(args):
 
     return results.summary()
 
-
 def main():
     parser = argparse.ArgumentParser(
         description="AI4Math foundation smoke test")
@@ -356,7 +343,6 @@ def main():
 
     ok = asyncio.run(run_all(args))
     sys.exit(0 if ok else 1)
-
 
 if __name__ == "__main__":
     main()

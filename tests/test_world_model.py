@@ -45,7 +45,6 @@ WORKDIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if WORKDIR not in sys.path:
     sys.path.insert(0, WORKDIR)
 
-
 # Probe sklearn / scipy availability — gates the train→pkl round-trip.
 try:
     import sklearn  # noqa: F401
@@ -54,14 +53,12 @@ try:
 except ImportError:
     SKLEARN_OK = False
 
-
 from engine.world_model import (
     WorldModelPredictor, WorldModelPrediction,
     MockWorldModel, TrainedWorldModel, make_world_model,
 )
 from agent.tools.base import ToolContext
 from agent.tools.builtin.tactic_apply import TacticApplyTool
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # Fakes — same shape as the Gap #2 test file
@@ -75,7 +72,6 @@ class FakeTacticResult:
     remaining_goals: list = field(default_factory=list)
     error_message: str = ""
     error_category: str = ""
-
 
 class FakePool:
     base_env_id = 0
@@ -95,7 +91,6 @@ class FakePool:
     def call_count(self) -> int:
         return self._calls
 
-
 class HighConfidenceFailModel(WorldModelPredictor):
     """Predicts every tactic as a high-confidence failure.
 
@@ -106,13 +101,11 @@ class HighConfidenceFailModel(WorldModelPredictor):
             tactic=tactic, likely_success=False, confidence=0.95,
             reasoning="test stub: always reject")
 
-
 class HighConfidenceSuccessModel(WorldModelPredictor):
     def predict(self, goal_state, tactic, hypotheses=None, context=None):
         return WorldModelPrediction(
             tactic=tactic, likely_success=True, confidence=0.95,
             reasoning="test stub: always pass")
-
 
 class UncertainModel(WorldModelPredictor):
     """Predicts low-confidence failure — should NOT trigger the gate."""
@@ -121,11 +114,9 @@ class UncertainModel(WorldModelPredictor):
             tactic=tactic, likely_success=False, confidence=0.4,
             reasoning="test stub: uncertain")
 
-
 class CrashingModel(WorldModelPredictor):
     def predict(self, goal_state, tactic, hypotheses=None, context=None):
         raise RuntimeError("model exploded")
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # 1. TrainedWorldModel loader — no longer a TODO stub
@@ -150,7 +141,6 @@ class TestTrainedWorldModelLoader:
         bad.write_text("not a pickle file")
         wm = TrainedWorldModel(str(bad))
         assert not wm.is_trained
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # 2. make_world_model factory
@@ -186,7 +176,6 @@ class TestMakeWorldModel:
         # call must work and return a sensible structure.
         pred = wm.predict("⊢ True", "trivial")
         assert isinstance(pred, WorldModelPrediction)
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # 3. Train → save → load → predict round-trip
@@ -254,7 +243,6 @@ class TestPklRoundtrip:
         assert wm.is_trained, \
             "TrainedWorldModel must actually load valid .pkl files"
 
-
 def _train_tiny_model(tmp_path):
     """Helper: produce a real .pkl in tmp_path or return None if training
     couldn't gather enough samples."""
@@ -291,7 +279,6 @@ def _train_tiny_model(tmp_path):
     out = tmp_path / "tiny.pkl"
     t.save(str(out))
     return out
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # 4-7. TacticApplyTool world-model gate
@@ -388,7 +375,6 @@ class TestTacticApplyWMGate:
         out = asyncio.run(t.execute({"tactic": "trivial"}, ToolContext()))
         assert pool.call_count == 1
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # 8-10. Plumbing through tool_kits + runner
 # ─────────────────────────────────────────────────────────────────────────
@@ -423,7 +409,6 @@ class TestPlumbing:
         wm = make_world_model()  # → Mock
         runner = UnifiedProofRunner(llm=None, world_model=wm)
         assert isinstance(runner.world_model, MockWorldModel)
-
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

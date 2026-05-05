@@ -20,7 +20,6 @@ from prover.unified.runner import UnifiedResult
 
 logger = logging.getLogger(__name__)
 
-
 def unified_to_attempt(
     result: UnifiedResult,
     *,
@@ -67,7 +66,6 @@ def unified_to_attempt(
         repair_rounds=max(0, (loop.turns_used - 1) if loop else 0),
     )
 
-
 def _extract_lean_errors_from_loop(loop) -> tuple[list, str]:
     """从 LoopResult.messages 的 tool_result 内容里翻出 Lean 错误。"""
     if loop is None or not loop.messages:
@@ -92,9 +90,8 @@ def _extract_lean_errors_from_loop(loop) -> tuple[list, str]:
 
     return errors[:10], "\n---\n".join(stderr_parts[:5])
 
-
 def _classify_category(text_lower: str) -> ErrorCategory:
-    """v11: route through engine._core.classify_error for consistency
+    """
     with LeanVerifyTool / ErrorIntelligence. The string returned by
     classify_error is mapped onto the legacy ErrorCategory enum."""
     try:

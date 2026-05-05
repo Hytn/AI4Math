@@ -36,7 +36,6 @@ from prover.lemma_bank.bank import ProvedLemma
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class LemmaRecord:
     """持久化引理记录 (扩展 ProvedLemma)"""
@@ -69,7 +68,6 @@ class LemmaRecord:
 
     def to_lean(self) -> str:
         return f"{self.statement} {self.proof}"
-
 
 class PersistentLemmaBank:
     """SQLite 持久化引理银行

@@ -19,7 +19,6 @@ from engine.broadcast import BroadcastBus, BroadcastMessage
 
 logger = logging.getLogger(__name__)
 
-
 class AsyncVerificationScheduler:
     """异步三级验证调度器
 

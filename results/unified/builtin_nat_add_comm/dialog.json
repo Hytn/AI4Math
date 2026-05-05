@@ -4,9 +4,69 @@
     "problem_id": "builtin_nat_add_comm",
     "model": "claude-sonnet-4-20250514",
     "provider": "mock",
-    "system_prompt": "You are a Lean 4 theorem prover.\n\nTASK: Output a single, complete proof in one Lean block.\n\nRules:\n  • Output exactly one ```lean ... ``` code block.\n  • Begin the proof body with `:= by`.\n  • Prefer simple proofs (omega, simp, ring, decide, aesop) when applicable.\n  • Do NOT use `sorry` or `admit`.\n  • Do NOT call any tools — produce the proof directly.\n",
-    "started_at": "2026-05-04T07:45:52.494489Z",
-    "finished_at": "2026-05-04T07:45:52.494528Z",
+    "system_prompt": "You are DeepSeek-Prover-V2, completing Lean 4 proofs in a verify-and-fix loop.\n\nEach turn you will see either:\n  (a) a fresh theorem with a `sorry` placeholder, or\n  (b) your previous attempt + the Lean compiler's errors.\n\nWorkflow:\n  1. Provide a brief proof plan (2-5 sentences in natural language).\n  2. Output ONE complete Lean 4 proof in a ```lean ... ``` block.\n  3. Do NOT use `sorry` or `admit`.\n  4. On a repair turn, locate the FIRST error and rewrite the entire proof — no patches, no diffs.\n",
+    "tools": [
+      {
+        "name": "lean_verify",
+        "description": "Submit a complete Lean4 proof for verification. Returns structured feedback: success/failure, error messages, remaining goals, and specific repair suggestions.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "description": "Complete Lean4 code to verify"
+            },
+            "quick_check": {
+              "type": "boolean",
+              "description": "If true, use fast L1 check only (default false)"
+            }
+          },
+          "required": [
+            "code"
+          ]
+        },
+        "server_id": "builtin"
+      },
+      {
+        "name": "broadcast",
+        "description": "Read recent messages from your teammates (other agents working on the same theorem in parallel), or share your own discoveries with them.\n\nAction `read`: returns recent broadcasts ({source, kind, content}).\nAction `share`: publishes a discovery to all teammates.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "read",
+                "share"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "positive",
+                "negative",
+                "lemma",
+                "partial_proof"
+              ],
+              "description": "Only used when action=share."
+            },
+            "content": {
+              "type": "string"
+            },
+            "max_messages": {
+              "type": "integer",
+              "default": 10
+            }
+          },
+          "required": [
+            "action"
+          ]
+        },
+        "server_id": "builtin"
+      }
+    ],
+    "started_at": "2026-05-05T02:57:41.714349Z",
+    "finished_at": "2026-05-05T02:57:41.714391Z",
     "backends": {
       "kimina": {
         "present": false
@@ -18,30 +78,31 @@
         "present": false
       },
       "lean_pool": {
-        "present": false
+        "present": true,
+        "kind": "AsyncLeanPool"
       }
     }
   },
   "messages": [
     {
       "role": "user",
-      "content": "## Theorem to prove\n```lean\ntheorem nat_add_comm (a b : Nat) : a + b = b + a\n```\n\n## Informal statement\nAddition is commutative.\n\n## Example proofs for reference\n\nExample 1 (automation — try simple tactics first):\n```lean\ntheorem add_comm_nat (n m : Nat) : n + m = m + n := by\n  omega\n```\n\nExample 2 (induction with structured cases):\n```lean\ntheorem sum_range_id (n : Nat) : 2 * (Finset.range n).sum id = n * (n - 1) := by\n  induction n with\n  | zero => simp\n  | succ n ih =>\n    rw [Finset.sum_range_succ]\n    simp [Nat.mul_add, Nat.add_mul]\n    omega\n```\n\nExample 3 (have steps for intermediate results):\n```lean\ntheorem sq_nonneg_sum (a b : ℝ) : 0 ≤ a^2 + b^2 := by\n  have ha := sq_nonneg a\n  have hb := sq_nonneg b\n  linarith\n```\n\nExample 4 (rewriting with specific lemmas):\n```lean\ntheorem dvd_mul_of_dvd_left {a b : Nat} (h : a ∣ b) (c : Nat) : a ∣ b * c := by\n  rcases h with ⟨k, hk⟩\n  exact ⟨k * c, by rw [hk]; ring⟩\n```\n\nExample 5 (cases and contradiction):\n```lean\ntheorem not_prime_one : ¬ Nat.Prime 1 := by\n  intro h\n  exact Nat.Prime.one_lt h |>.false\n```\n\n\n## Task\nGenerate a complete Lean 4 proof. Output ONLY the proof body inside a single ```lean block. Do NOT use `sorry`."
+      "content": "## Theorem to prove\n```lean\ntheorem nat_add_comm (a b : Nat) : a + b = b + a\n```\n\n## Informal statement\nAddition is commutative.\n\n## Task\nProve the theorem. Available tools: `broadcast`. Iterate using tool feedback. Output the final proof in a single ```lean block. Do NOT use `sorry`."
     },
     {
       "role": "assistant",
-      "content": "```lean\n:= by\n  sorry\n```"
+      "content": "```lean\n:= by\n  omega\n```"
     }
   ],
   "result": {
-    "success": false,
+    "success": true,
     "total_attempts": 1,
     "total_tokens": 120,
     "total_duration_ms": 10,
-    "successful_proof": ":= by\n  sorry",
-    "termination": "text_only",
+    "successful_proof": ":= by\n  omega",
+    "termination": "proof_found",
     "extra": {
       "tools_called": [],
-      "final_content": "```lean\n:= by\n  sorry\n```"
+      "final_content": "```lean\n:= by\n  omega\n```"
     }
   }
 }

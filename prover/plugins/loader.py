@@ -26,7 +26,6 @@ try:
 except ImportError:
     yaml = None
 
-
 @dataclass
 class StrategyPlugin:
     """一个已加载的策略插件"""
@@ -78,7 +77,6 @@ class StrategyPlugin:
 
     def get_strategic_hint(self) -> str:
         return self.strategic_hint
-
 
 class PluginLoader:
     """插件发现与加载器"""

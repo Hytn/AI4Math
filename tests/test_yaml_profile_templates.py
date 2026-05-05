@@ -18,10 +18,8 @@ from prover.unified.profiles import (
     PRESETS, load_profile_from_yaml,
 )
 
-
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROFILE_DIR = os.path.join(HERE, "config", "profiles")
-
 
 def _yaml_files() -> list[str]:
     if not os.path.isdir(PROFILE_DIR):
@@ -31,11 +29,9 @@ def _yaml_files() -> list[str]:
         for f in os.listdir(PROFILE_DIR)
         if f.endswith(".yaml"))
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 1. Coverage: every shipped PRESET has a YAML
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestCoverage:
     def test_every_shipped_preset_has_a_yaml(self):
@@ -49,11 +45,9 @@ class TestCoverage:
                 f"template — regenerate via "
                 f"``python scripts/dump_profile_yamls.py``")
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 2. Structural round-trip
 # ─────────────────────────────────────────────────────────────────────
-
 
 @pytest.mark.parametrize(
     "yaml_path", _yaml_files(),
@@ -81,11 +75,9 @@ class TestRoundTrip:
             f"{yaml_path}: drift between YAML and Python preset. "
             f"Re-run ``python scripts/dump_profile_yamls.py`` to refresh.")
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 3. Required fields
 # ─────────────────────────────────────────────────────────────────────
-
 
 @pytest.mark.parametrize(
     "yaml_path", _yaml_files(),
@@ -109,11 +101,9 @@ class TestStructuralInvariants:
             assert t.value in valid, (
                 f"{yaml_path}: unknown ToolKit value {t.value!r}")
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 4. CLI-style use
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestRegisterFlow:
     def test_load_then_register_then_get(self):

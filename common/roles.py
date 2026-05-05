@@ -1,6 +1,6 @@
 """common/roles.py — 主路径实际使用的 LLM agent 角色 prompt.
 
-v13: 精简到实际有调用方的角色。v12 之前定义了 11 个 ``AgentRole`` +
+
 11 套 ROLE_PROMPTS + ``MODEL_TIER_OVERRIDES`` 三层 (174 行), 但主路径
 只用 2 个 (``DECOMPOSER`` 和 ``CONJECTURE_PROPOSER``), ``get_role_prompt``
 全仓 0 调用方。多余的角色 prompt 已迁到 ``prover/unified/system_prompts.py``
@@ -8,11 +8,9 @@ v13: 精简到实际有调用方的角色。v12 之前定义了 11 个 ``AgentRo
 """
 from enum import Enum
 
-
 class AgentRole(str, Enum):
     DECOMPOSER = "decomposer"
     CONJECTURE_PROPOSER = "conjecture_proposer"
-
 
 ROLE_PROMPTS = {
     AgentRole.DECOMPOSER: """\

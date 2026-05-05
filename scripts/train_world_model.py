@@ -58,13 +58,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-
 def _setup_logging(verbose: bool):
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-
 
 def cmd_train(args) -> int:
     """Extract → train → save. Returns 0 on success, non-zero on failure."""
@@ -125,7 +123,6 @@ def cmd_train(args) -> int:
 
     return 0
 
-
 def cmd_inspect(args) -> int:
     """Print summary stats on an existing .pkl model."""
     path = args.inspect
@@ -150,7 +147,6 @@ def cmd_inspect(args) -> int:
           f"confidence={pred.confidence:.3f}")
     print(f"     reasoning: {pred.reasoning}")
     return 0
-
 
 def parse_args():
     p = argparse.ArgumentParser(
@@ -191,14 +187,12 @@ def parse_args():
     p.add_argument("-v", "--verbose", action="store_true")
     return p.parse_args()
 
-
 def main():
     args = parse_args()
     _setup_logging(args.verbose)
     if args.inspect:
         sys.exit(cmd_inspect(args))
     sys.exit(cmd_train(args))
-
 
 if __name__ == "__main__":
     main()

@@ -23,7 +23,6 @@ from knowledge.reader import KnowledgeReader
 from prover.unified.profiles import ObservationPolicy, get_profile
 from prover.unified.runner import UnifiedProofRunner
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Sample dialog factory (kept independent from test_dialog_index)
 # ─────────────────────────────────────────────────────────────────────
@@ -41,11 +40,9 @@ def make_solved(theorem: str, *, proof: str) -> dict:
                    "termination": "success"},
     }
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 1. ObservationPolicy default
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestObservationPolicyDefaults:
     def test_inject_similar_dialogs_defaults_to_false(self):
@@ -65,16 +62,20 @@ class TestObservationPolicyDefaults:
         # because we don't know whether the caller has populated a
         # DialogIndex. Users explicitly enable it via YAML / inline
         # override.
+        # Exception: profiles named "*_knowledge" are explicitly the
+        # opt-in profiles for cross-problem knowledge retrieval — by
+        # convention their NAME signals the opt-in, and the runner
+        # gracefully no-ops when --dialog-index is not configured.
         for name, prof in PRESETS.items():
+            if name.endswith("_knowledge"):
+                continue
             assert prof.observation.inject_similar_dialogs is False, (
                 f"Preset {name!r} silently turns on cross-problem "
                 f"dialog injection — should be opt-in")
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 2. KnowledgeReader integration
 # ─────────────────────────────────────────────────────────────────────
-
 
 @pytest.fixture
 def populated_reader():
@@ -96,7 +97,6 @@ def populated_reader():
         proof="by ring"))
     reader.attach_dialog_index(idx, populate_from_store=False)
     return reader
-
 
 class TestReaderDialogMethods:
     def test_attach_makes_index_accessible(self, populated_reader):
@@ -153,23 +153,19 @@ class TestReaderDialogMethods:
         assert n == 0
         assert idx.size == size_before
 
-
 # ─────────────────────────────────────────────────────────────────────
 # 3. UnifiedProofRunner — initial-message injection
 # ─────────────────────────────────────────────────────────────────────
-
 
 @dataclass
 class _FakeProblem:
     theorem_statement: str = ""
     natural_language: str = ""
 
-
 class _NullLLM:
     """Minimal LLM stub — runner.__init__ only stores it."""
     def model_name(self): return "null"
     def generate(self, *a, **kw): raise RuntimeError("not used")
-
 
 class TestRunnerInitialMessage:
     def _build_runner(self, *, dialog_index=None):

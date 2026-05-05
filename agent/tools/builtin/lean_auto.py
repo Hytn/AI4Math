@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 from agent.tools.base import Tool, ToolContext, ToolResult, ToolPermission
 
-
 class LeanAutoTool(Tool):
     name = "lean_auto"
     description = (

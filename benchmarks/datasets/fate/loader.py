@@ -8,7 +8,7 @@ FATE (Formal Algebra Theorem Evaluation) 系列基准:
 数据来源: https://github.com/frenzymath
 论文: "FATE: A Formal Benchmark Series for Frontier Algebra of Multiple Difficulty Levels"
 
-v11: Lean 文件回退路径下沉到 ``_base.parse_lean_files``。JSON 路径保留
+
 本地 (FATE 的 JSON 同时携带 informal_statement, 不能简单复用 base)。
 """
 from __future__ import annotations
@@ -23,13 +23,11 @@ from prover.models import BenchmarkProblem
 
 logger = logging.getLogger(__name__)
 
-
 _DIFFICULTY_MAP = {
     "fate-m": "medium", "fatem": "medium",
     "fate-h": "hard",   "fateh": "hard",
     "fate-x": "extreme", "fatex": "extreme",
 }
-
 
 def _try_json(path: Path, prefix: str, difficulty: str
               ) -> list[BenchmarkProblem]:
@@ -82,7 +80,6 @@ def _try_json(path: Path, prefix: str, difficulty: str
             f"(difficulty={difficulty})")
         return problems
     return []
-
 
 def load(repo_path: str, split: str = "test", variant: str = "") -> list[BenchmarkProblem]:
     path = Path(repo_path)

@@ -65,7 +65,6 @@ from prover.models import BenchmarkProblem
 
 logger = logging.getLogger(__name__)
 
-
 def _difficulty_from_record(rec: dict) -> str:
     src = (rec.get("source", "") or "").lower()
     if "imo" in src or "olympiad" in src:
@@ -77,7 +76,6 @@ def _difficulty_from_record(rec: dict) -> str:
     if rec.get("problem_type") in ("Number Theory", "Algebra"):
         return "medium"
     return "easy"
-
 
 def _record_to_problem(rec: dict, split: str,
                         idx: int) -> Optional[BenchmarkProblem]:
@@ -129,7 +127,6 @@ def _record_to_problem(rec: dict, split: str,
             natural_language=nl_problem,
         )
 
-
 def _iter_jsonl(path: Path):
     with path.open("r", encoding="utf-8") as f:
         for line in f:
@@ -140,7 +137,6 @@ def _iter_jsonl(path: Path):
                 yield json.loads(line)
             except json.JSONDecodeError as e:
                 logger.debug(f"NuminaMath-LEAN: skipping malformed line: {e}")
-
 
 def _iter_parquet(path: Path):
     try:
@@ -153,7 +149,6 @@ def _iter_parquet(path: Path):
     df = pd.read_parquet(path)
     for _, row in df.iterrows():
         yield row.to_dict()
-
 
 def load(repo_path: str, split: str = "test") -> list[BenchmarkProblem]:
     """Load NuminaMath-LEAN problems from disk.
@@ -202,7 +197,6 @@ def load(repo_path: str, split: str = "test") -> list[BenchmarkProblem]:
         f"NuminaMath-LEAN: loaded {len(problems)} problems "
         f"from {src_path.name} (split={split})")
     return problems
-
 
 def hf_download_hint() -> str:
     """Return the recommended one-liner to fetch the dataset."""

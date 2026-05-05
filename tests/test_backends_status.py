@@ -1,4 +1,4 @@
-"""V6 — backends_status surfaced in dialog.json.
+"""
 
 The four community backend slots (Kimina, Pantograph, LooKeng) all
 expose ``is_fallback`` to indicate "I'm constructed, but the real
@@ -37,11 +37,9 @@ import pytest
 from agent.runtime.agent_loop import LoopResult, LoopMessage
 from prover.unified.runner import UnifiedProofRunner, UnifiedResult
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Fixtures
 # ─────────────────────────────────────────────────────────────────────
-
 
 def _runner(**kwargs) -> UnifiedProofRunner:
     """Build a runner without auto-registering the autoformalizer
@@ -52,13 +50,11 @@ def _runner(**kwargs) -> UnifiedProofRunner:
         **kwargs,
     )
 
-
 def _make_kimina(*, is_fallback: bool, is_alive: bool = True):
     b = MagicMock()
     type(b).is_fallback = property(lambda self: is_fallback)
     type(b).is_alive = property(lambda self: is_alive)
     return b
-
 
 def _make_pantograph(*, is_fallback: bool, mode: str = "pypantograph"):
     b = MagicMock()
@@ -66,17 +62,14 @@ def _make_pantograph(*, is_fallback: bool, mode: str = "pypantograph"):
     type(b).mode = mode
     return b
 
-
 def _make_lookeng(*, is_fallback: bool):
     b = MagicMock()
     type(b).is_fallback = property(lambda self: is_fallback)
     return b
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Collector: every slot empty
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestCollectorEmpty:
 
@@ -96,11 +89,9 @@ class TestCollectorEmpty:
         status = runner._collect_backend_status()
         assert "is_fallback" not in status["kimina"]
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Collector: each slot present
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestCollectorKimina:
 
@@ -119,7 +110,6 @@ class TestCollectorKimina:
         assert status["kimina"]["present"] is True
         assert status["kimina"]["is_fallback"] is True
         assert status["kimina"]["is_alive"] is False
-
 
 class TestCollectorPantograph:
 
@@ -144,7 +134,6 @@ class TestCollectorPantograph:
         assert status["pantograph"]["is_fallback"] is True
         assert status["pantograph"]["mode"] == "fallback"
 
-
 class TestCollectorLooKeng:
 
     def test_lookeng_real_backend(self):
@@ -157,7 +146,6 @@ class TestCollectorLooKeng:
         runner = _runner(lookeng_backend=_make_lookeng(is_fallback=True))
         status = runner._collect_backend_status()
         assert status["lookeng"]["is_fallback"] is True
-
 
 class TestCollectorLeanPool:
 
@@ -193,11 +181,9 @@ class TestCollectorLeanPool:
         assert "size" not in status["lean_pool"]
         assert "is_alive" not in status["lean_pool"]
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Collector: robustness
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestCollectorRobustness:
 
@@ -240,11 +226,9 @@ class TestCollectorRobustness:
         # on partial success.
         assert isinstance(status, dict)
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Surface in dialog.json (via UnifiedResult.save_unified)
 # ─────────────────────────────────────────────────────────────────────
-
 
 def _make_dummy_loop_result() -> LoopResult:
     """Minimal LoopResult so save_unified can write a file."""
@@ -258,7 +242,6 @@ def _make_dummy_loop_result() -> LoopResult:
         turns_used=1,
         stopped_reason="proof_found",
     )
-
 
 class TestSaveUnifiedSurfacesBackends:
 
@@ -297,7 +280,7 @@ class TestSaveUnifiedSurfacesBackends:
         assert "backends" not in d.get("meta", {})
 
     def test_search_tree_and_backends_coexist(self, tmp_path: Path):
-        # Both meta.search_tree (V3) and meta.backends (V6) can appear
+        # Both meta.search_tree and meta.backends can appear
         # together in the same dialog.
         ur = UnifiedResult(
             profile_name="mcts",
@@ -315,11 +298,9 @@ class TestSaveUnifiedSurfacesBackends:
         assert "search_tree" in d["meta"]
         assert "backends" in d["meta"]
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Default UnifiedResult construction has empty backends_status
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestDefaultBackendsStatus:
 

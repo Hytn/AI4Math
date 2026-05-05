@@ -81,7 +81,6 @@ from knowledge.tfidf_retriever import KnowledgeTFIDFRetriever
 
 logger = logging.getLogger(__name__)
 
-
 # ─────────────────────────────────────────────────────────────────────
 # SQLite persistence — V6 close of INFRA_MERGE_V5_REPORT.md V6+ item #1.
 #
@@ -138,7 +137,6 @@ CREATE TABLE IF NOT EXISTS dialog_index_meta (
 );
 """
 
-
 @contextmanager
 def _connect_sqlite(path: Union[str, Path]) -> Iterator[sqlite3.Connection]:
     """Open a SQLite connection with WAL + foreign keys; yield then close.
@@ -157,7 +155,6 @@ def _connect_sqlite(path: Union[str, Path]) -> Iterator[sqlite3.Connection]:
     finally:
         conn.close()
 
-
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     """Create tables and write the schema version. Idempotent."""
     conn.executescript(_SQLITE_DDL)
@@ -166,7 +163,6 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         ("schema_version", _SQLITE_SCHEMA_VERSION),
     )
     conn.commit()
-
 
 def _check_schema_compat(conn: sqlite3.Connection) -> Optional[str]:
     """Return the schema version stored in the file, or None if absent.
@@ -194,11 +190,9 @@ def _check_schema_compat(conn: sqlite3.Connection) -> Optional[str]:
                 "upgrade the AI4Math package to read this file.")
     return found
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Public dataclasses
 # ─────────────────────────────────────────────────────────────────────
-
 
 @dataclass
 class SimilarDialogMatch:
@@ -227,7 +221,6 @@ class SimilarDialogMatch:
     used_tactics: list[str] = field(default_factory=list)
     timestamp: float = 0.0
 
-
 @dataclass
 class _DialogEntry:
     """Internal: one row in the DialogIndex."""
@@ -238,11 +231,9 @@ class _DialogEntry:
     source: str = "memory"
     timestamp: float = 0.0
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Helpers (also exposed so other code can reuse the parsing rules)
 # ─────────────────────────────────────────────────────────────────────
-
 
 def extract_final_proof(dialog: dict) -> str:
     """Pull the final ``by …`` proof body out of a wrapped dialog dict.
@@ -284,7 +275,6 @@ def extract_final_proof(dialog: dict) -> str:
         if body:
             return body
     return ""
-
 
 def extract_used_tactics(dialog: dict, *,
                          tool_names: tuple[str, ...] = (
@@ -331,7 +321,6 @@ def extract_used_tactics(dialog: dict, *,
                     break
     return out
 
-
 def _dialog_solved(dialog: dict) -> bool:
     """Best-effort solved flag from a wrapped dialog dict."""
     if not isinstance(dialog, dict):
@@ -340,7 +329,6 @@ def _dialog_solved(dialog: dict) -> bool:
     if isinstance(result.get("success"), bool):
         return result["success"]
     return result.get("termination") == "success"
-
 
 def _dialog_theorem(dialog: dict) -> str:
     """Best-effort theorem text from a wrapped dialog dict."""
@@ -357,11 +345,9 @@ def _dialog_theorem(dialog: dict) -> str:
         return t.strip()
     return ""
 
-
 # ─────────────────────────────────────────────────────────────────────
 # DialogIndex
 # ─────────────────────────────────────────────────────────────────────
-
 
 class DialogIndex:
     """In-memory similarity index over saved proof dialogs.
@@ -674,7 +660,7 @@ class DialogIndex:
                 "\n\n_… (truncated for length)_\n")
         return rendered
 
-    # ── SQLite persistence (V6 — closes V5 V6+ #1) ─────────────────
+    # ── SQLite persistence (
 
     def persist_to_sqlite(
             self, db_path: Union[str, Path], *,

@@ -7,12 +7,10 @@ from benchmarks.datasets.numinamath_lean.loader import (
     load, hf_download_hint, _record_to_problem, _difficulty_from_record,
 )
 
-
 def test_hf_download_hint_format():
     h = hf_download_hint()
     assert "huggingface-cli" in h
     assert "AI-MO/NuminaMath-LEAN" in h
-
 
 def test_difficulty_from_record_olympiad():
     assert _difficulty_from_record({"source": "imo_2020"}) == "competition"
@@ -23,11 +21,9 @@ def test_difficulty_from_record_olympiad():
     assert _difficulty_from_record(
         {"source": "x", "problem_type": "Number Theory"}) == "medium"
 
-
 def test_record_to_problem_returns_none_without_formal_statement():
     rec = {"problem": "Find n.", "formal_statement": ""}
     assert _record_to_problem(rec, "test", 0) is None
-
 
 def test_record_to_problem_normal_record():
     rec = {
@@ -44,11 +40,9 @@ def test_record_to_problem_normal_record():
     assert bp.theorem_statement.startswith("theorem p")
     assert bp.source == "NuminaMath-LEAN"
 
-
 def test_load_missing_directory_returns_empty(tmp_path):
     out = load(str(tmp_path / "nonexistent"), split="test")
     assert out == []
-
 
 def test_load_jsonl_split(tmp_path):
     """End-to-end load from a synthetic JSONL file."""
@@ -70,7 +64,6 @@ def test_load_jsonl_split(tmp_path):
     assert problems[0].problem_id == "numinamath_test_000000"
     assert problems[1].theorem_statement.startswith("theorem q2")
 
-
 def test_load_skips_malformed_jsonl_lines(tmp_path):
     path = tmp_path / "ds"
     path.mkdir()
@@ -84,7 +77,6 @@ def test_load_skips_malformed_jsonl_lines(tmp_path):
     problems = load(str(path), split="test")
     assert len(problems) == 2
 
-
 def test_load_missing_split_file_returns_empty(tmp_path):
     """If the directory exists but has no matching split file, return []."""
     path = tmp_path / "ds"
@@ -94,7 +86,6 @@ def test_load_missing_split_file_returns_empty(tmp_path):
         '{"formal_statement": "theorem x : True"}', encoding="utf-8")
     problems = load(str(path), split="test")
     assert problems == []
-
 
 def test_load_via_top_level_dispatcher(tmp_path):
     """Confirm registration in benchmarks.loader works."""

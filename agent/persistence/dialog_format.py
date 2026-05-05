@@ -104,7 +104,6 @@ from typing import Any, Iterable, Optional, Union
 
 logger = logging.getLogger(__name__)
 
-
 # ── Constants ───────────────────────────────────────────────────────────
 
 SCHEMA_VERSION = "3.0"
@@ -138,7 +137,6 @@ DEFAULT_SERVER_MAP: dict[str, str] = {
     "cas_tool": "cas",
 }
 
-
 # ── Message classes ─────────────────────────────────────────────────────
 
 @dataclass
@@ -169,7 +167,6 @@ class ToolCall:
             arguments=args_str,
             server_id=server_id or DEFAULT_SERVER_MAP.get(name, "default"),
         )
-
 
 @dataclass
 class Message:
@@ -234,7 +231,6 @@ class Message:
             name=name,
             server_id=server_id or DEFAULT_SERVER_MAP.get(name, "default"),
         )
-
 
 # ── Builder ─────────────────────────────────────────────────────────────
 
@@ -436,7 +432,6 @@ class DialogBuilder:
         """Legacy/AgentCPM-compatible: return only the messages list."""
         return [m.to_dict() for m in self._messages]
 
-
 # ── I/O helpers ─────────────────────────────────────────────────────────
 
 def save_dialog(
@@ -485,7 +480,6 @@ def save_dialog(
     tmp.replace(p)  # atomic on POSIX
     return p
 
-
 def load_dialog(path: Union[str, Path]) -> dict:
     """Read a dialog from disk. Always returns the wrapped form,
     auto-upgrading legacy plain-list files."""
@@ -501,7 +495,6 @@ def load_dialog(path: Union[str, Path]) -> dict:
         }
     return data
 
-
 # ── Accessors (work on either wrapped or legacy form) ──────────────────
 
 def messages_of(dialog: Any) -> list[dict]:
@@ -515,20 +508,17 @@ def messages_of(dialog: Any) -> list[dict]:
         return dialog.build_messages()
     return []
 
-
 def meta_of(dialog: Any) -> dict:
     """Return the meta dict (empty for legacy plain lists)."""
     if isinstance(dialog, dict):
         return dict(dialog.get("meta") or {})
     return {}
 
-
 def result_of(dialog: Any) -> dict:
     """Return the result dict (empty for legacy plain lists)."""
     if isinstance(dialog, dict):
         return dict(dialog.get("result") or {})
     return {}
-
 
 def search_tree_of(dialog: Any) -> Optional[dict]:
     """Return ``meta.search_tree`` if present, else None.
@@ -542,7 +532,6 @@ def search_tree_of(dialog: Any) -> Optional[dict]:
         return dict(tree) if isinstance(tree, dict) else None
     return None
 
-
 def solved_path_of(dialog: Any) -> list[dict]:
     """Return the path-to-solution: the dialog's main ``messages`` list.
 
@@ -552,7 +541,6 @@ def solved_path_of(dialog: Any) -> list[dict]:
     about wanting the success path rather than the full tree."""
     return messages_of(dialog)
 
-
 # ── Validation ──────────────────────────────────────────────────────────
 
 @dataclass
@@ -561,15 +549,45 @@ class ValidationIssue:
     code: str
     message: str
 
-
 def validate_dialog(dialog: Any) -> list[ValidationIssue]:
     """Check structural invariants over the messages list.
 
     Accepts wrapped Dialog OR plain message list. Returns a list of
     issues (empty = OK). Non-fatal — live/streaming traces may
     momentarily break FIFO matching of tool_call ↔ tool_response.
+
+    Search-tree dialogs (``meta.search_tree`` present) move tool_call ↔
+    tool_response pairs **into individual node.messages** instead of the
+    top-level ``messages`` linear chain, so we run the FIFO match against
+    each node's messages independently.
     """
     messages = messages_of(dialog)
+    issues: list[ValidationIssue] = []
+
+    tree = search_tree_of(dialog)
+    if tree is not None:
+        # Search dialogs: top-level messages is the solved/best path
+        # (root → leaf flat replay) and may legitimately have unmatched
+        # tool calls if a sibling branch's tool response wasn't picked.
+        # Validate each node's local messages instead.
+        for node in tree.get("nodes") or []:
+            node_msgs = node.get("messages") or []
+            issues.extend(_validate_message_chain(
+                node_msgs,
+                location=f"search_tree.node[{node.get('node_id', '?')}]"))
+        # And do the structural search-tree check
+        issues.extend(_validate_search_tree(tree))
+    else:
+        issues.extend(_validate_message_chain(messages))
+
+    return issues
+
+
+def _validate_message_chain(
+    messages: list,
+    location: str = "messages",
+) -> list[ValidationIssue]:
+    """tool_call ↔ tool_response FIFO matching over a flat message list."""
     issues: list[ValidationIssue] = []
     pending: list[tuple[str, str]] = []  # (id, name) FIFO
 
@@ -578,7 +596,7 @@ def validate_dialog(dialog: Any) -> list[ValidationIssue]:
 
         if role not in ("user", "assistant", "tool"):
             issues.append(ValidationIssue(
-                i, "unknown_role", f"role={role!r}"))
+                i, "unknown_role", f"{location}: role={role!r}"))
             continue
 
         if role == "assistant":
@@ -590,13 +608,14 @@ def validate_dialog(dialog: Any) -> list[ValidationIssue]:
                 if not tc_id:
                     issues.append(ValidationIssue(
                         i, "tool_call_missing_id",
-                        f"tool {name!r} has no id"))
+                        f"{location}: tool {name!r} has no id"))
                 args = fn.get("arguments")
                 if not isinstance(args, str):
                     issues.append(ValidationIssue(
                         i, "tool_args_not_string",
-                        f"tool {name!r}: arguments must be a JSON-encoded "
-                        f"string, got {type(args).__name__}"))
+                        f"{location}: tool {name!r}: arguments must be a "
+                        f"JSON-encoded string, got "
+                        f"{type(args).__name__}"))
                 pending.append((tc_id, name))
 
         elif role == "tool":
@@ -605,31 +624,36 @@ def validate_dialog(dialog: Any) -> list[ValidationIssue]:
             if not pending:
                 issues.append(ValidationIssue(
                     i, "tool_response_unmatched",
-                    f"tool message for {name!r} has no preceding tool_call"))
+                    f"{location}: tool message for {name!r} has no "
+                    f"preceding tool_call"))
                 continue
             expected_id, expected_name = pending.pop(0)
             if tc_id and expected_id and tc_id != expected_id:
                 issues.append(ValidationIssue(
                     i, "tool_response_id_mismatch",
-                    f"expected tool_call_id={expected_id!r}, got {tc_id!r}"))
+                    f"{location}: expected tool_call_id={expected_id!r}, "
+                    f"got {tc_id!r}"))
             if name and expected_name and name != expected_name:
                 issues.append(ValidationIssue(
                     i, "tool_response_name_mismatch",
-                    f"expected name={expected_name!r}, got {name!r}"))
+                    f"{location}: expected name={expected_name!r}, "
+                    f"got {name!r}"))
 
     if pending:
         issues.append(ValidationIssue(
             len(messages), "tool_calls_without_response",
-            f"{len(pending)} unanswered tool_call(s): "
+            f"{location}: {len(pending)} unanswered tool_call(s): "
             f"{', '.join(n for _, n in pending)}"))
-
-    # Optional v3.0: structural check on meta.search_tree if present.
-    tree = search_tree_of(dialog)
-    if tree is not None:
-        issues.extend(_validate_search_tree(tree))
 
     return issues
 
+
+# Stub: kept for callers that only want the message-chain check (no
+# tree). Forwards to the helper above.
+def _legacy_validate_messages(
+    messages: list,
+) -> list[ValidationIssue]:  # pragma: no cover
+    return _validate_message_chain(messages)
 
 def _validate_search_tree(tree: dict) -> list[ValidationIssue]:
     """Structural checks on a meta.search_tree block.
@@ -682,7 +706,6 @@ def _validate_search_tree(tree: dict) -> list[ValidationIssue]:
             f"solved_node_id={solved} not present in tree.nodes"))
     return issues
 
-
 # ── Live-runtime helpers ────────────────────────────────────────────────
 
 def is_tool_response_user_msg(msg: dict) -> bool:
@@ -693,13 +716,11 @@ def is_tool_response_user_msg(msg: dict) -> bool:
             and "<tool_response>" in c
             and "</tool_response>" in c)
 
-
 def strip_tool_response_wrapper(text: str) -> str:
     if not text:
         return ""
     m = _TOOL_RESPONSE_RE.search(text)
     return (m.group(1) or "").strip() if m else text.strip()
-
 
 def split_dialog_at_markers(full_log: list[dict]) -> list[list[dict]]:
     """Split a long live conversation log on ``__CONTEXT_SPLIT__``
@@ -715,12 +736,10 @@ def split_dialog_at_markers(full_log: list[dict]) -> list[list[dict]]:
     segments.append(current)
     return segments
 
-
 # ── Internal helpers ────────────────────────────────────────────────────
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
 
 def _normalize_tool_spec(t: Any) -> dict:
     """Coerce any tool spec into the canonical {name, description,
@@ -754,7 +773,6 @@ def _normalize_tool_spec(t: Any) -> dict:
                              DEFAULT_SERVER_MAP.get(
                                  getattr(t, "name", ""), "default")),
     }
-
 
 __all__ = [
     "SCHEMA_VERSION", "SUPPORTED_SCHEMA_VERSIONS",

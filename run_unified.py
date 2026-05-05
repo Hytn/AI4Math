@@ -47,7 +47,6 @@ from common.constants import DEFAULT_CLAUDE_MODEL  # noqa: E402
 
 logger = logging.getLogger("run_unified")
 
-
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -96,7 +95,6 @@ def parse_args():
     p.add_argument("--out", type=str, default="results/unified",
                     help="Output dir for dialog.json")
 
-    # v10: previously-locked features now reachable from the CLI.
     # Both default to None (off) — the runner already accepts these
     # as constructor args and gracefully no-ops when None.
     p.add_argument(
@@ -122,7 +120,7 @@ def parse_args():
               "deposits successful proofs and reads briefings. Off by "
               "default (no knowledge persistence in single-run mode)."))
 
-    # ── v15: factory-loaded v14 reservoirs (previously only reachable
+    # ── 
     # through code-only ``UnifiedProofRunner(...)`` kwargs, never via CLI) ──
     p.add_argument(
         "--policy-engine", action="store_true",
@@ -153,7 +151,7 @@ def parse_args():
         "--lean-version", type=str, default=None,
         metavar="TAG",
         help=("Lean toolchain tag stamped on lemmas written to "
-              "--lemma-bank-db (e.g. 'leanprover/lean4:v4.28.0'). "
+              "--lemma-bank-db. "
               "Lets a future ``recheck_after_upgrade`` step flag "
               "lemmas extracted under a different toolchain."))
     p.add_argument(
@@ -161,7 +159,7 @@ def parse_args():
         metavar="HASH",
         help="Mathlib commit stamped on lemmas written to --lemma-bank-db.")
 
-    # ── v15: OpenAI-compatible providers (DeepSeek, vLLM, sglang, ollama, ...) ──
+    # ── 
     p.add_argument(
         "--api-base", type=str, default=None,
         metavar="URL",
@@ -170,7 +168,6 @@ def parse_args():
               "alias picks a sensible default (vllm→localhost:8000, "
               "deepseek→api.deepseek.com, ...)."))
 
-    # v12: opt-in LLM response caching. Off by default to preserve
     # legacy behaviour. With ``--cache`` the runner wraps the provider
     # in AsyncCachedProvider; same prompt → cached LLMResponse on hit.
     # Particularly valuable for pass@k sweeps and resumed eval runs.
@@ -182,9 +179,24 @@ def parse_args():
              "caching at any temperature.")
     p.add_argument("--cache-all", action="store_true",
                     help="With --cache, cache responses at any temperature.")
+
+    # ── Sampling overrides (v17) ─────────────────────────────────────
+    # These let you override profile defaults from the CLI without
+    # editing profiles.py. Critical for prover models: DeepSeek-Prover-V2
+    # paper uses temperature=1.0 for pass@k diversity, but the bundled
+    # profiles default to 0.7 (better for general LLMs in repair loops).
+    p.add_argument(
+        "--temperature", type=float, default=None, metavar="T",
+        help=("Override profile temperature. Recommended T=1.0 for "
+              "specialised prover models (DeepSeek-Prover-V2, Kimina); "
+              "T=0.6-0.8 for general LLMs. None = use profile default."))
+    p.add_argument(
+        "--max-turns", type=int, default=None, metavar="N",
+        help=("Override profile max_turns. Useful for budget-constrained "
+              "experiments or for stretching short profiles. "
+              "None = use profile default."))
     p.add_argument("-v", "--verbose", action="store_true")
     return p.parse_args()
-
 
 def load_problem(args):
     """Resolve --builtin / --theorem / --benchmark to a BenchmarkProblem."""
@@ -208,17 +220,16 @@ def load_problem(args):
         return problems[0]
     raise SystemExit("specify one of --theorem / --builtin / --benchmark")
 
-
 def build_llm(args):
     """Provider-aware LLM construction.
 
-    v12: when ``--cache`` is set, wrap the constructed provider in
+    
     AsyncCachedProvider. The cache lives for the lifetime of the
     process — across multiple problems in --benchmark mode this can
     cut LLM cost meaningfully (system prompt + few-shot prefix is
     shared across problems).
 
-    v15: route everything through ``create_async_provider`` so the
+    
     OpenAI-compatible aliases (deepseek / vllm / sglang / ollama /
     openai / openai_compat) all work without a per-alias if-branch
     here. ``--api-base`` overrides the alias default base URL.
@@ -258,8 +269,29 @@ def build_llm(args):
             getattr(args, "cache_all", False))
     return provider
 
-
 def build_lean_pool(args, cfg=None):
+    """构造 Lean 4 REPL 池。
+
+    三种情形:
+      * ``--backend mock`` —— 注入 ``MockTransport`` factory,所有 verify
+        默认走"成功"响应。这是冒烟评测无 Lean 时唯一能产出
+        ``success: true`` 的 dialog 路径。``meta.backends.lean_pool.is_mock``
+        会标记为 True,评测脚本应据此排除非真实证明。
+      * ``--lean`` —— 真实 Lean(``LocalTransport``)。
+      * 其他 —— 不构造池,runner 端跳过 verify。
+    """
+    if getattr(args, "backend", None) == "mock":
+        try:
+            from engine.async_lean_pool import AsyncLeanPool
+            from engine.transport import MockTransport
+            pool_size = (cfg or {}).get("lean_pool_size", 2)
+            return AsyncLeanPool(
+                pool_size=pool_size,
+                transport_factory=lambda _sid: MockTransport(),
+            )
+        except Exception as e:
+            logger.warning(f"could not start mock AsyncLeanPool: {e}")
+            return None
     if not args.lean:
         return None
     try:
@@ -270,14 +302,12 @@ def build_lean_pool(args, cfg=None):
         logger.warning(f"could not start AsyncLeanPool: {e}")
         return None
 
-
 async def main():
     args = parse_args()
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    # v9: load config (YAML + env overrides). CLI flags still win.
     from config.schema import load_config
     cfg = load_config(args.config)
     logger.info(
@@ -300,6 +330,9 @@ async def main():
     problem = load_problem(args)
     llm = build_llm(args)
     lean_pool = build_lean_pool(args, cfg)
+    if lean_pool is not None:
+        # 池构造时未启动;在这里 start (启动是 async 的,只能在事件循环里)。
+        await lean_pool.start()
 
     # ── Build infrastructure backends per --backend / per profile ───────
     from prover.unified.factory import (
@@ -311,9 +344,8 @@ async def main():
             chosen, url=args.backend_url, api_key=args.backend_api_key)
     )
 
-    # ── v10/v11: optional features previously locked behind code-only access ──
-    # v11: factory loaders make these one-liners + uniform with run_eval.py.
-    # v15: same treatment for v14 reservoirs (policy / plugins / lemma bank).
+    # ── v10/optional features previously locked behind code-only access ──
+
     from prover.unified.factory import (
         load_world_model, load_dialog_index, load_knowledge,
         load_policy_engine, load_plugin_loader, load_persistent_lemma_bank,
@@ -341,17 +373,28 @@ async def main():
         lookeng_backend=lookeng_backend,
         world_model=world_model,
         dialog_index=dialog_index,
-        # v15: previously only reachable via code, now driven from CLI.
-        # ``None`` defaults preserve v13 behaviour exactly when the
-        # flags are absent.
         policy_engine=policy_engine,
         plugin_loader=plugin_loader,
         persistent_lemma_bank=persistent_lemma_bank,
     )
+
+    # Apply CLI overrides (--temperature / --max-turns) BEFORE running
+    profile = get_profile(args.profile)
+    overrides = {}
+    if getattr(args, "temperature", None) is not None:
+        overrides["temperature"] = args.temperature
+    if getattr(args, "max_turns", None) is not None:
+        overrides["max_turns"] = args.max_turns
+    if overrides:
+        from dataclasses import replace as _dc_replace
+        from prover.unified import register_profile
+        profile = _dc_replace(profile, **overrides)
+        register_profile(profile)   # so runner.get_profile sees it
+        logger.info(f"  profile overrides applied: {overrides}")
+
     result = await runner.run(problem, profile_name=args.profile)
 
     # Print summary
-    profile = get_profile(args.profile)
     print(f"\n{'═' * 64}")
     print(f"Profile : {profile.name}  —  {profile.description}")
     print(f"Tools   : {[t.value for t in profile.tools]}")
@@ -400,13 +443,11 @@ async def main():
     if saved:
         print(f"dialog.json saved: {out_dir}/dialog.json")
 
-    # v12: surface cache stats so users can see whether --cache helped.
     cache_stats = getattr(llm, "cache_stats", None)
     if callable(cache_stats):
         st = cache_stats()
         print(f"LLM cache: hits={st['hits']} misses={st['misses']} "
               f"hit_rate={st['hit_rate']:.1%}")
-
 
 if __name__ == "__main__":
     asyncio.run(main())

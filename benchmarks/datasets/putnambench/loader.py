@@ -3,7 +3,7 @@
 支持 trishullab/PutnamBench 仓库结构:
   lean4/src/putnam_*.lean    ← Lean 4 题目
 
-v11: 共享解析逻辑下沉到 ``_base.parse_lean_files``。
+
 """
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ from prover.models import BenchmarkProblem
 
 logger = logging.getLogger(__name__)
 
-
 def _difficulty(name: str) -> str:
     nl = name.lower()
     if not re.search(r'(\d{4})', name):
@@ -26,7 +25,6 @@ def _difficulty(name: str) -> str:
     if "_b5" in nl or "_b6" in nl:
         return "hard"
     return "competition"
-
 
 def load(repo_path: str, split: str = "test") -> list[BenchmarkProblem]:
     repo = Path(repo_path)

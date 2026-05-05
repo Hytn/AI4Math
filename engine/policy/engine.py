@@ -31,7 +31,6 @@ from engine.policy.recovery import RecoveryRegistry, RecoveryAction
 
 logger = logging.getLogger(__name__)
 
-
 class PolicyAction(str, Enum):
     """Actions the policy engine can recommend."""
     CONTINUE = "continue"
@@ -45,7 +44,6 @@ class PolicyAction(str, Enum):
     GIVE_UP = "give_up"
     ESCALATE_TO_HUMAN = "escalate_to_human"
 
-
 @dataclass
 class PolicyDecision:
     """Result of policy evaluation."""
@@ -53,7 +51,6 @@ class PolicyDecision:
     reason: str
     rule_name: str = ""
     metadata: dict = field(default_factory=dict)
-
 
 class PolicyRule(ABC):
     """A single executable policy rule."""
@@ -65,7 +62,6 @@ class PolicyRule(ABC):
                  events: list[TaskEvent]) -> Optional[PolicyDecision]:
         """Return a PolicyDecision if this rule fires, None otherwise."""
         ...
-
 
 # ─── Built-in rules ─────────────────────────────────────────────────────────
 
@@ -92,7 +88,6 @@ class ConsecutiveSameErrorRule(PolicyRule):
                 metadata={"failure_class": cls.value, "count": self.threshold},
             )
         return None
-
 
 class BudgetEscalationRule(PolicyRule):
     """Escalate strategy at budget milestones (samples, tokens, or wall-time)."""
@@ -148,7 +143,6 @@ class BudgetEscalationRule(PolicyRule):
             )
         return None
 
-
 class BankedLemmaDecomposeRule(PolicyRule):
     """If we have banked lemmas and are stuck, try decompose."""
     name = "banked_lemma_decompose"
@@ -171,7 +165,6 @@ class BankedLemmaDecomposeRule(PolicyRule):
             )
         return None
 
-
 class ReflectionRule(PolicyRule):
     """Inject reflection after every N rounds."""
     name = "periodic_reflection"
@@ -189,7 +182,6 @@ class ReflectionRule(PolicyRule):
                 rule_name=self.name,
             )
         return None
-
 
 class InfraRecoveryRule(PolicyRule):
     """If task is BLOCKED, check recovery registry."""
@@ -228,7 +220,6 @@ class InfraRecoveryRule(PolicyRule):
                    f"(attempts: {sm.recovery_attempts})",
             rule_name=self.name,
         )
-
 
 # ─── Engine ──────────────────────────────────────────────────────────────────
 

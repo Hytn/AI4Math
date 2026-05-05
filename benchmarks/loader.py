@@ -30,7 +30,6 @@ _DEFAULT_PATHS = {
     "numinamath_lean": "data/NuminaMath-LEAN",
 }
 
-
 def load_benchmark(benchmark: str, split: str = "test",
                    path: str = "", limit: int = 0) -> list[BenchmarkProblem]:
     """加载指定基准数据集。
@@ -113,7 +112,6 @@ def load_benchmark(benchmark: str, split: str = "test",
 
     logger.info(f"[{benchmark}] 加载 {len(problems)} 道题 (split={split})")
     return problems
-
 
 def list_benchmarks() -> dict:
     """列出所有可用数据集。"""

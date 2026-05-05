@@ -36,11 +36,9 @@ from sampler import (
     Trajectory, RewardInfo,
 )
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # 1. Sampler ↔ Backend wiring
 # ═══════════════════════════════════════════════════════════════════════
-
 
 class TestBackendWiring:
     """ProofEnvConfig.backend → AsyncLeanPool.transport_factory."""
@@ -93,7 +91,7 @@ class TestBackendWiring:
         transport = factory(session_id=3)
 
         assert transport is not None
-        # v11: kimina/http now maps to KiminaServerBackend directly
+
         # (HTTPTransport thin wrapper was deleted — it just delegated).
         from engine.backends.kimina_server import KiminaServerBackend
         assert isinstance(transport, KiminaServerBackend), (
@@ -123,7 +121,7 @@ class TestBackendWiring:
         LooKeng(outer) wrapping KiminaServerBackend(inner). The factory
         must honour ``backend_inner_kind='kimina'`` and build the inner.
 
-        v11: HTTPTransport thin wrapper was deleted; the inner is now
+        
         KiminaServerBackend directly.
         """
         cfg = ProofEnvConfig(
@@ -157,7 +155,7 @@ class TestBackendWiring:
         """Any exception during transport construction must be caught
         and reported as None — never propagated to AsyncLeanPool.
 
-        v11: HTTPTransport was deleted; we now patch
+        
         ``KiminaServerBackend`` directly (the symbol the factory imports
         for backend='kimina').
         """
@@ -174,10 +172,9 @@ class TestBackendWiring:
             "factory must return None on construction failure so "
             "AsyncLeanPool can fall back to LocalTransport")
 
-
-class TestSlimeFactoryBackendV7:
-    """V7 fix: SlimeProofEnvFactory.setup_shared_pool used to ignore
-    the backend selector, forcing slime users onto LocalTransport."""
+class TestSlimeFactoryBackendV3:
+    """Verify slime sampler honours backend selector with v3 dialog.json
+    integration; the backend selector forces slime users onto LocalTransport."""
 
     def test_local_backend_no_transport_factory(self):
         """backend='local' must produce an AsyncLeanPool with
@@ -230,10 +227,9 @@ class TestSlimeFactoryBackendV7:
 
         asyncio.run(_t())
 
-
-class TestVeRLInteractionBackendV7:
-    """V7 closure: VeRLProofInteraction config must surface backend selection
-    so a verl YAML can pick Kimina without code changes."""
+class TestVeRLInteractionBackend:
+    """``VeRLProofInteraction`` 应该把 ``backend`` 字段透传给 ``ProofEnv``,
+    这样 verl YAML 不动代码就能切到 Kimina。"""
 
     def test_backend_field_surfaces_to_env_config(self):
         config = {
@@ -252,11 +248,9 @@ class TestVeRLInteractionBackendV7:
         interaction = VeRLProofInteraction({"name": "lean_prover"})
         assert interaction._env_config.backend == "local"
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # 2. Atomic env pool — race-freedom
 # ═══════════════════════════════════════════════════════════════════════
-
 
 class _CountingSampler(BaseSampler):
     """Sampler that just records which env was used by each rollout
@@ -290,7 +284,6 @@ class _CountingSampler(BaseSampler):
             return traj
         finally:
             self._env_queue.put_nowait(env)
-
 
 class TestEnvPoolRaceFree:
 
@@ -373,11 +366,9 @@ class TestEnvPoolRaceFree:
 
         asyncio.run(_t())
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # 3. Tree-shaped rollouts (GRPO-friendly groups)
 # ═══════════════════════════════════════════════════════════════════════
-
 
 class _ScriptedProofEnv:
     """A minimal stand-in for ProofEnv that drives the tree sampler
@@ -433,7 +424,6 @@ class _ScriptedProofEnv:
 
     async def close(self):
         pass
-
 
 class TestTreeRollout:
 
@@ -575,11 +565,9 @@ class TestTreeRollout:
         assert node_dicts[2]["status"] == "open"
         assert node_dicts[1]["tactic"] == "simp"
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # 4. Optional verl/slime imports — must not break anything
 # ═══════════════════════════════════════════════════════════════════════
-
 
 class TestOptionalRLFrameworkImports:
 
@@ -612,11 +600,9 @@ class TestOptionalRLFrameworkImports:
             proof_config={"project_dir": "/tmp", "max_turns": 5})
         assert loop._env_config.max_turns == 5
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # 5. End-to-end: all three layers wired together
 # ═══════════════════════════════════════════════════════════════════════
-
 
 class TestEndToEndUnification:
     """Smoke tests that exercise the full path:

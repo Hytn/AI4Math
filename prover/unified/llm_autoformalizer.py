@@ -43,7 +43,6 @@ from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
-
 DEFAULT_AUTOFORMALIZER_SYSTEM_PROMPT = """\
 You are a Lean 4 autoformalizer. Translate a natural-language
 math problem (and its expected answer type) into a single Lean 4
@@ -68,7 +67,6 @@ Example output:
   theorem ai4math_q : ∃ (n : ℕ),
       n ^ 2 > 100 ∧ ∀ (m : ℕ), m ^ 2 > 100 → n ≤ m
 """
-
 
 def make_llm_autoformalizer(
         llm: Any,
@@ -150,7 +148,6 @@ def make_llm_autoformalizer(
 
     return _autoformalize
 
-
 def make_llm_autoformalizer_async(
         llm: Any,
         *,
@@ -193,7 +190,6 @@ def make_llm_autoformalizer_async(
 
     return _async_translate
 
-
 def register_llm_autoformalizer(
         llm: Any, **kwargs) -> Callable[[str, str], str]:
     """Build and register an LLM-based autoformalizer in one call.
@@ -211,13 +207,10 @@ def register_llm_autoformalizer(
     register_autoformalizer(fn)
     return fn
 
-
 # ─── Internals ───────────────────────────────────────────────────────
-
 
 _LEAN_FENCE_RE = re.compile(
     r"```(?:lean(?:4)?)?\s*\n?(.*?)```", re.DOTALL | re.IGNORECASE)
-
 
 def _extract_content(resp: Any) -> str:
     """Pull a string out of an LLMResponse or a dict-shaped response.
@@ -238,7 +231,6 @@ def _extract_content(resp: Any) -> str:
         c = resp.get("content", "")
         return c if isinstance(c, str) else str(c or "")
     return ""
-
 
 def _strip_lean_fence(text: str) -> str:
     """If the LLM wrapped its output in ```lean fences, peel them off.

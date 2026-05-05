@@ -1,4 +1,4 @@
-"""V6 — Auto-register LLM autoformalizer when runner has an LLM.
+"""
 
 Closes the V5 "5-pattern heuristic is silly when an LLM is on the
 bench" gap one step further: V5 added ``register_llm_autoformalizer()``
@@ -29,14 +29,12 @@ from prover.unified.runner import UnifiedProofRunner
 from prover.unified.tools_infra import (
     _get_autoformalizer, register_autoformalizer)
 
-
 @pytest.fixture(autouse=True)
 def _reset_autoformalizer_registry():
     """Every test in this file starts with a fresh empty registry."""
     register_autoformalizer(None)
     yield
     register_autoformalizer(None)
-
 
 def _mock_llm(generate_return: str = "theorem ai4math_q : ∃ n : ℕ, n = n"):
     """Build a minimal LLM mock matching the LLMProvider interface."""
@@ -46,11 +44,9 @@ def _mock_llm(generate_return: str = "theorem ai4math_q : ∃ n : ℕ, n = n"):
     llm.generate = MagicMock(return_value=response)
     return llm
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Default behaviour
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestDefault:
 
@@ -87,11 +83,9 @@ class TestDefault:
         # a no-op here so we get it back unchanged.
         assert "ai4math_q" in result
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Backwards compat — explicit registration wins
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestExplicitRegistrationPreserved:
 
@@ -123,11 +117,9 @@ class TestExplicitRegistrationPreserved:
         register_autoformalizer(None)
         assert _get_autoformalizer() is None
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Opt-out
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestOptOut:
 
@@ -150,11 +142,9 @@ class TestOptOut:
         assert _get_autoformalizer() is explicit_fn
         assert runner._auto_registered_autoformalizer is False
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Robustness
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestRobustness:
 
@@ -184,11 +174,9 @@ class TestRobustness:
         with pytest.raises(RuntimeError):
             fn("anything", "natural")
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Heuristic fallback still reachable
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestFallbackPathStillWorks:
 
@@ -216,11 +204,9 @@ class TestFallbackPathStillWorks:
         register_autoformalizer(custom)
         assert _get_autoformalizer() is custom
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Multi-runner contract
 # ─────────────────────────────────────────────────────────────────────
-
 
 class TestMultipleRunners:
 

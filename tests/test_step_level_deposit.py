@@ -36,14 +36,12 @@ WORKDIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if WORKDIR not in sys.path:
     sys.path.insert(0, WORKDIR)
 
-
 from agent.tools.base import ToolContext
 from agent.tools.builtin.tactic_apply import TacticApplyTool
 from prover.unified.tool_kits import build_tool_registry
 from prover.unified.profiles import Profile, ToolKit
 from prover.unified.search_driver import SharedSearchState
 from engine.proof_context_store import StepDetail
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # Fakes — minimal, focused on the deposit contract
@@ -58,7 +56,6 @@ class FakeTacticResult:
     remaining_goals: list = field(default_factory=list)
     error_message: str = ""
     error_category: str = ""
-
 
 class FakePool:
     """Minimal AsyncLeanPool stand-in. Plays back a queue of results."""
@@ -80,7 +77,6 @@ class FakePool:
         self._calls += 1
         return r
 
-
 class RecordingWriter:
     """Captures every ingest_step call. Async, like the real writer."""
 
@@ -96,7 +92,6 @@ class RecordingWriter:
             raise RuntimeError("writer exploded")
         self._n += 1
         self.calls.append((step, theorem))
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # 1-2. Plumbing + happy path
@@ -145,7 +140,6 @@ class TestStepDepositPlumbing:
         assert step.error_message == "ring failed"
         assert step.error_category == "tactic_failed"
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # 3-4. Edge cases
 # ─────────────────────────────────────────────────────────────────────────
@@ -183,7 +177,6 @@ class TestStepDepositEdgeCases:
         out = asyncio.run(t.execute({"tactic": "trivial"}, ToolContext()))
         assert not out.is_error
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # 5. StepDetail shape
 # ─────────────────────────────────────────────────────────────────────────
@@ -219,7 +212,6 @@ class TestStepDetailShape:
         step, _ = w.calls[0]
         assert step.goals_before == ["⊢ True"]
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # 6. Monotonic step_index
 # ─────────────────────────────────────────────────────────────────────────
@@ -240,7 +232,6 @@ class TestMonotonicIndex:
         asyncio.run(run3())
         indices = [s.step_index for s, _ in w.calls]
         assert indices == [0, 1, 2]
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # 7-9. Plumbing through tool_kits + runner-side defaults
@@ -298,7 +289,6 @@ class TestToolKitsPlumbing:
                                       knowledge_writer=explicit)
         assert runner.knowledge_writer is explicit
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # 10. Linear profiles without TACTIC_APPLY are unaffected
 # ─────────────────────────────────────────────────────────────────────────
@@ -314,7 +304,6 @@ class TestLinearProfilesUnaffected:
         # build_tool_registry succeeds with no writer.
         reg = build_tool_registry(prof, lean_pool=FakePool([]))
         assert reg.get("lean_verify") is not None
-
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

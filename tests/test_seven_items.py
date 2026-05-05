@@ -23,7 +23,7 @@ import tempfile
 
 class TestDirectImports:
     def test_common_roles(self):
-        # v13: 精简到 2 个角色 (DECOMPOSER, CONJECTURE_PROPOSER) — 见
+
         # common/roles.py docstring。其他 9 个原本 0 主路径调用方。
         from common.roles import AgentRole, ROLE_PROMPTS
         assert len(AgentRole) == 2
@@ -36,13 +36,12 @@ class TestDirectImports:
         assert "simp" in code
 
     def test_common_few_shot(self):
-        # v13: prompt_builder 整文件删除 (109 行, 主路径只用 FEW_SHOT_EXAMPLES
+
         # 一个常量); 挪到 common/few_shot.py。
         from common.few_shot import FEW_SHOT_EXAMPLES
         assert isinstance(FEW_SHOT_EXAMPLES, str)
         assert "induction" in FEW_SHOT_EXAMPLES.lower()
 
-    # v12: removed test_common_working_memory / test_common_budget /
     # test_common_hook_types — those modules had 0 production callers
     # and were deleted along with agent.memory / agent.strategy /
     # agent.hooks. The "shim removed" test below still pins the
@@ -61,19 +60,20 @@ class TestDirectImports:
         for f in removed:
             assert not os.path.exists(f), f"Re-export shim should be removed: {f}"
 
-
 # ─── Item 1: Legacy cleanup ─────────────────────────────────────────────────
 
 class TestLegacyCleanup:
-    """v8 起 legacy CIC 内核已彻底删除 (engine/core/, kernel/, tactic/, state/,
+    """ kernel/, tactic/, state/,
     search/, api/, lean_bridge/, llm/, async_search.py)。本测试组从"验证
     LEGACY.md 存在"翻转为"验证 legacy 不再存在"。
     """
     def test_legacy_dirs_removed(self):
-        for d in ("core", "kernel", "tactic", "state", "search",
+        # ``engine/search/`` 现在是搜索代数的唯一权威实现 (prover 与 sampler
+        # 共用),不在清理范围内。其他历史目录(legacy CIC 内核等)仍应不存在。
+        for d in ("core", "kernel", "tactic", "state",
                   "api", "lean_bridge", "llm"):
             assert not os.path.exists(f"engine/{d}"), \
-                f"engine/{d}/ should be deleted in v8"
+                f"engine/{d}/ should be deleted"
 
     def test_async_search_removed(self):
         assert not os.path.exists("engine/async_search.py")
@@ -85,7 +85,6 @@ class TestLegacyCleanup:
         assert "Legacy modules" not in content
         # Active modules header should be there
         assert "核心模块" in content or "Active" in content
-
 
 # ─── Item 2: World model training ────────────────────────────────────────────
 
@@ -132,7 +131,6 @@ class TestWorldModelTrainer:
         assert trainer.samples[0].success is True
         assert trainer.samples[1].success is False
 
-
 # ─── Item 3: Broadcast goal relevance ────────────────────────────────────────
 
 class TestBroadcastRelevance:
@@ -166,13 +164,11 @@ class TestBroadcastRelevance:
         text = bus.render_for_prompt("dir_X")
         assert "found useful lemma" in text
 
-
 # ─── Item 4: Full role dispatch ──────────────────────────────────────────────
 
-# (TestFullSpectrumPlanner deleted in v9: agent/strategy/ removed entirely.
+# (TestFullSpectrumPlanner deleted in 
 #  The 14 unified profiles in prover/unified/profiles.py replaced the old
 #  light/medium/heavy/max strategy switcher.)
-
 
 # ─── Item 5: TF-IDF Knowledge retrieval ─────────────────────────────────────
 
@@ -199,9 +195,8 @@ class TestTFIDFRetriever:
         results = retriever.search("anything")
         assert results == []
 
-
 # ─── Item 7: Observability export ────────────────────────────────────────────
 
-# (TestObservabilityExport deleted in v9: engine/observability.py removed
+# (TestObservabilityExport deleted in 
 #  -- 0 callers outside the deleted sync VerificationScheduler.
 #  The async pool now uses the no-op shim engine/observability_stub.py.)

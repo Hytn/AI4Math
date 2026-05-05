@@ -1,6 +1,5 @@
 """agent/tools/builtin/lean_verify.py — Verify a Lean4 proof snippet
 
-v10: Two fixes from the v9 audit applied here:
 
   1. The previous implementation called ``pool.check_proof(code, ...)``
      but ``AsyncLeanPool`` exposes no such method — only
@@ -32,7 +31,6 @@ from agent.tools.base import Tool, ToolContext, ToolResult, ToolPermission
 
 logger = logging.getLogger(__name__)
 
-
 # ─────────────────────────────────────────────────────────────────
 # Theorem / proof split — the LLM tends to submit complete theorem
 # blocks ("theorem foo : ... := by ..."); ``verify_complete`` wants
@@ -41,7 +39,6 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────
 
 _PROOF_SPLIT_RE = re.compile(r"(\s*:=\s*by\b|\s*:=\s*(?=fun|⟨|\{|\())", re.DOTALL)
-
 
 def _split_theorem_and_proof(code: str) -> tuple[str, str]:
     """Best-effort split of ``theorem ... := by ...`` into (statement, proof).
@@ -60,7 +57,6 @@ def _split_theorem_and_proof(code: str) -> tuple[str, str]:
     statement = code[:m.start()]
     proof = code[m.start():]
     return (statement, proof)
-
 
 class LeanVerifyTool(Tool):
     name = "lean_verify"
@@ -142,12 +138,12 @@ class LeanVerifyTool(Tool):
         errors_list = list(getattr(result, "errors", []) or [])
         stderr = str(getattr(result, "stderr", "") or "")
 
-        # ── v11: integrity check ──────────────────────────────────
+        # ── 
         # Even if Lean accepts the proof, refuse it when the code uses
         # bypasses (axiom, native_decide, set_option maxHeartbeats 0,
         # sorry hidden in nested comments, etc.). Previously this logic
         # existed in prover/verifier/integrity_checker.py but had zero
-        # main-path callers; v11 wires it into LeanVerifyTool.
+        # main-path callers;.
         integrity_issues: list[str] = []
         try:
             from prover.verifier.integrity_checker import check_integrity
@@ -166,7 +162,7 @@ class LeanVerifyTool(Tool):
         # the structured signal the LLM actually benefits from.
         sorry_free = (not has_sorry) and ("sorry" not in code) and \
                      ("admit" not in code)
-        # v12: integrity issues only flip ``verified`` in strict mode.
+
         # In non-strict mode (the default for Mathlib-style benchmarks)
         # they're surfaced advisory in ``integrity_violations`` so
         # downstream consumers can act on them, but Lean's own
@@ -343,7 +339,7 @@ class LeanVerifyTool(Tool):
 
     @staticmethod
     def _classify_error(text: str) -> str:
-        """v11: defer to the canonical classifier in engine._core to keep
+        """
         all four legacy stderr→category implementations aligned. Falls
         back to a tiny inline table if engine import fails (e.g. stripped
         env)."""

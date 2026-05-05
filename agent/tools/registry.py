@@ -29,7 +29,6 @@ from agent.tools.base import (
 
 logger = logging.getLogger(__name__)
 
-
 class LegacyToolAdapter(Tool):
     """Wrap a plain function as a Tool for backward compatibility."""
 
@@ -47,7 +46,6 @@ class LegacyToolAdapter(Tool):
             return ToolResult.success(str(result))
         except Exception as e:
             return ToolResult.error(str(e))
-
 
 class ToolRegistry:
     """Central registry for all tools.
@@ -192,11 +190,9 @@ class ToolRegistry:
     def __repr__(self):
         return f"ToolRegistry({len(self._tools)} tools: {self.list_tools()})"
 
-
 # ── Global registry (backward compatible) ──
 
 _global_registry: Optional[ToolRegistry] = None
-
 
 def get_registry() -> ToolRegistry:
     """Get or create the global tool registry."""
@@ -204,7 +200,6 @@ def get_registry() -> ToolRegistry:
     if _global_registry is None:
         _global_registry = ToolRegistry()
     return _global_registry
-
 
 def register_tool(name: str, description: str, parameters: dict):
     """Decorator to register a function as a tool (backward compatible)."""

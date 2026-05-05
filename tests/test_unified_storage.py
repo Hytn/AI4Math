@@ -8,7 +8,7 @@ Validates:
   5. Decay and GC
   6. Backward-compatible EpisodicMemory and PersistentKnowledge
 
-(v10: KnowledgeBackend Protocol abstraction removed alongside knowledge.backend
+(
  module — the Protocol had no main-path consumer.)
 """
 import asyncio
@@ -23,14 +23,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from knowledge.store import UnifiedKnowledgeStore
 from knowledge.types import LemmaRecord, StrategyPattern
 
-
 @pytest.fixture
 def store():
     """In-memory unified store for testing."""
     s = UnifiedKnowledgeStore(":memory:")
     yield s
     s.close()
-
 
 class TestProtocol:
     def test_store_has_required_methods(self):
@@ -50,7 +48,6 @@ class TestProtocol:
         for method in required:
             assert hasattr(UnifiedKnowledgeStore, method), \
                 f"Missing method: {method}"
-
 
 class TestEpisodesInSQLite:
     @pytest.mark.asyncio
@@ -84,7 +81,6 @@ class TestEpisodesInSQLite:
         stats = await store.knowledge_stats()
         assert stats["episodes"] == 1
 
-
 class TestPersistentKnowledgeInSQLite:
     @pytest.mark.asyncio
     async def test_record_failure(self, store):
@@ -114,7 +110,6 @@ class TestPersistentKnowledgeInSQLite:
         stats = await store.knowledge_stats()
         assert stats["pk_failure_patterns"] == 1
         assert stats["pk_success_patterns"] == 1
-
 
 class TestReinforce:
     @pytest.mark.asyncio
@@ -157,7 +152,6 @@ class TestReinforce:
         results = await store.search_lemmas(verified_only=True)
         assert len(results) >= 0  # Just verify no crash
 
-
 class TestDecayAndGC:
     @pytest.mark.asyncio
     async def test_decay_all(self, store):
@@ -181,7 +175,6 @@ class TestDecayAndGC:
         stats = await store.gc_stale(threshold=0.1)
         assert stats["tactics_removed"] >= 1
 
-
 class TestExportTrajectories:
     @pytest.mark.asyncio
     async def test_export_empty(self, store):
@@ -195,8 +188,7 @@ class TestExportTrajectories:
             count = store.export_to_parquet(path, limit=10)
             assert count == 0  # No data to export
 
-
 # (TestBackwardCompatEpisodicMemory and TestBackwardCompatPersistentKnowledge
-#  removed in v9: agent/memory/{episodic_memory.py, persistent_knowledge.py}
+#  removed in 
 #  had 0 main-path callers and were deleted. Their unified-store SQLite
 #  paths are still exercised by TestPersistentKnowledgeInSQLite above.)

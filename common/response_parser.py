@@ -1,11 +1,10 @@
 """common/response_parser.py — LLM response extraction utilities.
 
-v13: 精简到主路径实际调用的函数。``extract_json`` / ``extract_sorry_blocks``
+
 v12 时还在 (26 行), 但 0 主路径调用方。
 """
 from __future__ import annotations
 import re
-
 
 def extract_lean_code(response: str) -> str:
     """Extract a Lean code block from an LLM response.

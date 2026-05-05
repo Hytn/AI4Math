@@ -4,7 +4,7 @@
   - AgentLoop:    多轮 agentic 循环 (LLM ↔ tool feedback), 是
                    ``UnifiedProofRunner`` 的主执行内核。
 
-历史模块 (v9 清理后已删除):
+历史模块 (
   - sub_agent / async_agent_pool / result_fuser / agent_tool / mailbox:
     这些是 Lane / 多智能体子系统的组件, 主入口
     (``run_unified.py``, ``run_eval.py --profile``) 完全不调用。

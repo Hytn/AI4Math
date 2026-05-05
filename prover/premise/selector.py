@@ -2,14 +2,13 @@
 
 支持三种模式: bm25, embedding, hybrid (融合两者)。
 
-v9: 70 条 built-in 前提已 dump 到 ``data/premises/builtin_core.jsonl``,
+
 selector 现在统一从外部 jsonl 加载, 不再保留代码内嵌副本。
 """
 from __future__ import annotations
 from prover.premise.bm25_retriever import BM25Retriever
 from prover.premise.embedding_retriever import EmbeddingRetriever
 from prover.premise.reranker import PremiseReranker
-
 
 class PremiseSelector:
     """Unified premise retrieval with configurable backend.
@@ -41,7 +40,6 @@ class PremiseSelector:
             if self._initialized:
                 return
 
-            # v9: load all premises from data/premises/*.jsonl
             # (builtin_core.jsonl + mathlib_core.jsonl + any user files).
             all_premises = self._load_external_premises()
             seen = {p["name"] for p in all_premises}

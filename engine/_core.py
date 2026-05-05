@@ -12,7 +12,6 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Optional
 
-
 # ═══════════════════════════════════════════════════════════════
 # Compile cache (thread-safe LRU, shared singleton)
 # ═══════════════════════════════════════════════════════════════
@@ -55,7 +54,6 @@ class CompileCache:
             "hit_rate": round(self.hits / total, 3) if total else 0,
             "size": len(self._cache),
         }
-
 
 class AsyncCompileCache:
     """Asyncio-safe LRU cache for compilation results (Fix #7).
@@ -112,7 +110,6 @@ class AsyncCompileCache:
             "size": len(self._cache),
         }
 
-
 # ═══════════════════════════════════════════════════════════════
 # Shared data types
 # ═══════════════════════════════════════════════════════════════
@@ -142,7 +139,6 @@ class TacticFeedback:
         """目标净变化: 正 = 进展, 负 = 增加了新目标"""
         return self.goals_closed - self.goals_opened
 
-
 @dataclass
 class FullVerifyResult:
     """完整证明验证结果"""
@@ -154,7 +150,6 @@ class FullVerifyResult:
     goals_remaining: list[str] = field(default_factory=list)
     has_sorry: bool = False
 
-
 # ═══════════════════════════════════════════════════════════════
 # Pure helper functions
 # ═══════════════════════════════════════════════════════════════
@@ -162,7 +157,6 @@ class FullVerifyResult:
 def which(cmd: str) -> Optional[str]:
     """跨平台的 which 实现"""
     return shutil.which(cmd)
-
 
 def assemble_code(theorem: str, proof: str, preamble: str = "") -> str:
     """组装完整的 Lean4 源文件
@@ -206,7 +200,6 @@ def assemble_code(theorem: str, proof: str, preamble: str = "") -> str:
         parts.append(thm)
 
     return "\n".join(parts)
-
 
 def classify_error(msg: str) -> str:
     """将 Lean4 错误消息分类, 按优先级匹配。"""
@@ -252,7 +245,6 @@ def classify_error(msg: str) -> str:
 
     return "other"
 
-
 def classify_error_structured(messages: list[dict]) -> tuple[str, str, dict]:
     """从 REPL 的结构化 JSON messages 中提取分类信息。
 
@@ -279,7 +271,6 @@ def classify_error_structured(messages: list[dict]) -> tuple[str, str, dict]:
 
     return (category, combined, metadata)
 
-
 def extract_expected(msg: str) -> str:
     """从错误消息中提取 expected type"""
     for marker in ["expected to have type", "expected type"]:
@@ -293,7 +284,6 @@ def extract_expected(msg: str) -> str:
                     end = min(end, pos)
             return rest[:end].strip()
     return ""
-
 
 def extract_actual(msg: str) -> str:
     """从错误消息中提取 actual type"""
@@ -309,7 +299,6 @@ def extract_actual(msg: str) -> str:
             return rest[:end].strip()
     return ""
 
-
 def make_cache_key(theorem: str, proof: str, preamble: str = "",
                    env_fingerprint: str = "") -> str:
     """Generate a deterministic cache key for a verification request.
@@ -324,11 +313,10 @@ def make_cache_key(theorem: str, proof: str, preamble: str = "",
         f"{env_fingerprint}||{preamble}||{theorem}||{proof}".encode()
     ).hexdigest()
 
-
 # ═══════════════════════════════════════════════════════════════
 # VerificationResult — three-level verification result (L0/L1/L2)
 #
-# Migrated from engine/verification_scheduler.py (sync, deleted in v9).
+# Migrated from engine/verification_scheduler.py.
 # Kept here so AsyncVerificationScheduler can import it without
 # pulling in the dead sync scheduler.
 # ═══════════════════════════════════════════════════════════════

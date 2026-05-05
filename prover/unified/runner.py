@@ -42,7 +42,6 @@ from prover.unified.search_driver import (
 
 logger = logging.getLogger(__name__)
 
-
 # ═══════════════════════════════════════════════════════════════════════
 # Result
 # ═══════════════════════════════════════════════════════════════════════
@@ -57,10 +56,9 @@ class UnifiedResult:
     sub_results: list = field(default_factory=list)  # for parallel mode
     search_summary: dict = field(default_factory=dict)
     total_duration_ms: int = 0
-    # v3.0: full search-tree payload for tree-search profiles. None for
     # linear / parallel runs; rendered into ``meta.search_tree`` in dialog.json.
     search_tree: Optional[dict] = None
-    # v6: structured backend-status block. Populated by the runner before
+
     # return; rendered into ``meta.backends`` by ``save_unified``. Tells
     # downstream consumers which backend actually serviced the run vs
     # which was *requested* — silently degraded "is_fallback=True"
@@ -85,9 +83,9 @@ class UnifiedResult:
         For tree-search runs (mcts / best_first / beam), the search tree
         is attached to ``meta.search_tree`` *in addition to* the linear
         ``messages`` list (which carries the solved or best-explored path).
-        Linear / parallel runs save unchanged from v2.0 behaviour.
+        Linear / parallel runs save unchanged from .
 
-        v6: Backend status (which backend was used, whether it was a
+        
         silent fallback) attaches to ``meta.backends``. Absent when
         ``backends_status`` is empty (e.g. legacy direct construction).
         """
@@ -107,7 +105,6 @@ class UnifiedResult:
             meta["backends"] = self.backends_status
         from agent.persistence.unified_storage import save_task
         return save_task(task_dir, dialog)
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # Runner
@@ -131,7 +128,7 @@ class UnifiedProofRunner:
                   policy_engine=None,
                   auto_register_llm_autoformalizer: bool = True):
         """
-        v14 新增三个可选注入:
+        
           plugin_loader        prover.plugins.PluginLoader 实例 — 按定理领域
                                注入 few-shot/premises/strategic_hint 到首条
                                user message。预留接口 A 的领域维度。
@@ -146,13 +143,13 @@ class UnifiedProofRunner:
         self.llm = llm
         self.lean_pool = lean_pool
         self.knowledge_store = knowledge_store
-        # v4: optional KnowledgeWriter — feeds Layer 1 from every tactic
+
         # application made by step-level profiles. Defaults to
         # knowledge_store.writer when the store exposes one.
         if knowledge_writer is None and knowledge_store is not None:
             knowledge_writer = getattr(knowledge_store, "writer", None)
         self.knowledge_writer = knowledge_writer
-        # v4: optional WorldModel — short-circuits high-confidence
+
         # tactic-failure predictions before the Lean call. None disables
         # the gate. Use ``engine.world_model.make_world_model(path)`` to
         # build the right impl (Trained if .pkl exists, Mock otherwise).
@@ -166,20 +163,19 @@ class UnifiedProofRunner:
         self.kimina_backend = kimina_backend
         self.pantograph_backend = pantograph_backend
         self.lookeng_backend = lookeng_backend
-        # v5: optional DialogIndex for cross-problem demonstration
+
         # injection. When present and the active profile has
         # ``observation.inject_similar_dialogs=True``, similar past
         # solved dialogs get prepended to the initial user message
         # as in-context demos. None disables the feature.
         self.dialog_index = dialog_index
-        # v14 (项④): optional plugin loader for domain-specific injection.
+
         self.plugin_loader = plugin_loader
-        # v14 (项③): optional persistent lemma bank — cross-problem reuse.
+
         self.persistent_lemma_bank = persistent_lemma_bank
-        # v14 (项②): optional policy engine — declarative early-term rules.
+
         self.policy_engine = policy_engine
 
-        # v6: by default, if the runner has an LLM and no autoformalizer
         # has been registered yet, plug the LLM in as the default NL→FL
         # translator for ``NLExistenceBridgeTool``. This closes the
         # "5-pattern heuristic is silly when an LLM is on the bench"
@@ -192,7 +188,7 @@ class UnifiedProofRunner:
         #      or ``register_llm_autoformalizer(...)`` before
         #      constructing the runner, we leave that callable in place.
         #   2. Pass ``auto_register_llm_autoformalizer=False`` to
-        #      preserve the V5-and-earlier behaviour (heuristic until
+        #      preserve the 
         #      the user explicitly registers).
         #   3. Registration failures are swallowed — autoformalization
         #      is a best-effort path, not a precondition for proof.
@@ -279,7 +275,7 @@ class UnifiedProofRunner:
             raise ValueError(f"unknown search.kind: {prof.search.kind}")
 
         ur.total_duration_ms = int((time.time() - start) * 1000)
-        # v6: capture backend introspection so the dialog records which
+
         # backend actually serviced the run (vs which was requested).
         # Done after dispatch so the data reflects post-run state
         # (e.g. a backend that started healthy but degraded mid-run).
@@ -451,7 +447,6 @@ class UnifiedProofRunner:
 
         loop = self._make_loop(registry, config, profile)
 
-        # v3: 富初始 prompt — 题目 + 检索引理 + few-shot
         initial = self._build_initial_message(problem, profile)
 
         loop_result = await loop.run(
@@ -460,7 +455,6 @@ class UnifiedProofRunner:
             tool_ctx=tool_ctx,
         )
 
-        # v3: auto_inject_lean_compile 后置兜底
         # 如果 loop 因 text_only 终止且产出 lean 代码但未走 lean_verify,
         # 这里自动跑一次完整编译, 让 success 标志反映真实验证结果。
         if (profile.observation.auto_inject_lean_compile
@@ -557,7 +551,6 @@ class UnifiedProofRunner:
                 tool_ctx=tool_ctx,
             )
             all_loop_results.append(lr)
-            # v3.0: stash this expansion's messages on the node so the
             # final dialog.json can reproduce the search tree faithfully.
             try:
                 msgs_dicts = self._loop_messages_to_dicts(lr)
@@ -614,7 +607,7 @@ class UnifiedProofRunner:
     async def _run_parallel(self, problem, profile: Profile) -> UnifiedResult:
         """异构 N 个 sub-profile 并行 + 共享广播总线 (项目原有特色).
 
-        v13: 真正接通 broadcast bus —— 之前 sub-profile 用 ``sp.__dict__``
+        
         实例化, parent profile 的 ``ToolKit.BROADCAST`` 不传播, 整个
         ``engine/broadcast.py`` 在主路径死代码, heterogeneous 实际只是
         best-of-4。现把 BROADCAST 注入每个 sub-profile 的 tools 列表,
@@ -678,7 +671,7 @@ class UnifiedProofRunner:
         # tactic_apply auto-returns goal state). For the optional auto-call
         # of lean_verify when LLM produced lean code without invoking it,
         # we'd plug into AgentLoop.on_turn. Kept minimal here.
-        # v14 (项②): inject policy_engine if available, else stay silent.
+
         return AgentLoop(
             llm=self.llm, tools=registry, config=config,
             policy_engine=self.policy_engine)
@@ -754,19 +747,100 @@ class UnifiedProofRunner:
             stopped_reason=("proof_found" if success else "search_exhausted"),
         )
 
-    # ── v3.0: tree-aware merge — only the solved path lands in `messages`,
+    # ── tree-aware merge — only the solved path lands in `messages`,
     # the rest of the tree rides under meta.search_tree. ─────────────────
+
+    @staticmethod
+    def _normalise_tool_call(tc) -> dict:
+        """把任意形态的 tool_call 规范成 OpenAI ChatCompletions schema:
+
+            {"id": str, "function": {"name": str, "arguments": JSON-string},
+             "server_id": str}
+
+        接受三种输入形态:
+          * 已经是 OpenAI 格式 (function.arguments 是 JSON 字符串)
+          * Anthropic / runtime 格式 (顶层 "name" + "input" dict)
+          * dataclass 对象 (有 .to_dict 或 .id/.name/.arguments 属性)
+        """
+        import json as _json
+        if isinstance(tc, dict):
+            d = dict(tc)
+            # 已经是 OpenAI 形式 → 只需保证 arguments 是字符串
+            if "function" in d and isinstance(d["function"], dict):
+                fn = dict(d["function"])
+                args = fn.get("arguments")
+                if not isinstance(args, str):
+                    fn["arguments"] = _json.dumps(args or {},
+                                                  ensure_ascii=False)
+                d["function"] = fn
+                d.setdefault("server_id", d.get("server_id", "default"))
+                return d
+            # Anthropic / runtime 形式 → 转为 OpenAI
+            name = d.get("name", "")
+            inp = d.get("input")
+            if inp is None:
+                inp = d.get("arguments", {})
+            return {
+                "id": d.get("id", ""),
+                "function": {
+                    "name": name,
+                    "arguments": _json.dumps(inp or {}, ensure_ascii=False),
+                },
+                "server_id": d.get("server_id", "default"),
+            }
+        if hasattr(tc, "to_dict"):
+            # 拆开 to_dict() 后再走一遍规范化
+            return UnifiedProofRunner._normalise_tool_call(tc.to_dict())
+        # Fallback: dataclass
+        args = getattr(tc, "arguments", "")
+        if not isinstance(args, str):
+            args = _json.dumps(args or {}, ensure_ascii=False)
+        return {
+            "id": getattr(tc, "id", ""),
+            "function": {
+                "name": getattr(tc, "name", ""),
+                "arguments": args,
+            },
+            "server_id": getattr(tc, "server_id", "default"),
+        }
 
     def _loop_messages_to_dicts(self, lr: LoopResult) -> list[dict]:
         """Convert a LoopResult's messages (LoopMessage objects) into
-        plain dialog message dicts for storage on a TreeNode."""
+        plain dialog message dicts for storage on a TreeNode.
+
+        Internal ``LoopMessage(role="tool_result", tool_results=[...])``
+        is normalised to dialog-schema ``{"role": "tool", "content": ...,
+        "tool_call_id": ...}`` so ``meta.search_tree.nodes[*].messages``
+        validates against ``dialog_format.validate_dialog``.
+        """
         out: list[dict] = []
+        # Track most recent assistant tool_call_ids so we can pair tool_result
+        # back to ids when LoopMessage didn't preserve them
+        recent_call_ids: list[str] = []
         for m in (lr.messages or []):
             # LoopMessage might already be dict-like; tolerate both.
             if isinstance(m, dict):
                 out.append(dict(m))
                 continue
-            d: dict = {"role": getattr(m, "role", "assistant")}
+            role = getattr(m, "role", "assistant")
+            # Normalise tool_result → one or more tool messages
+            if role == "tool_result":
+                tool_results = getattr(m, "tool_results", None) or []
+                # Pair with tool_call_ids from the most recent assistant
+                ids = recent_call_ids[:len(tool_results)] \
+                    if recent_call_ids else [""] * len(tool_results)
+                for content, tc_id in zip(tool_results, ids):
+                    out.append({
+                        "role": "tool",
+                        "content": (content if isinstance(content, str)
+                                    else str(content)),
+                        "tool_call_id": tc_id,
+                    })
+                # Consume the matched ids
+                recent_call_ids = recent_call_ids[len(tool_results):]
+                continue
+
+            d: dict = {"role": role}
             content = getattr(m, "content", "")
             if content:
                 d["content"] = content
@@ -775,17 +849,12 @@ class UnifiedProofRunner:
                 d["thought"] = thought
             tcs = getattr(m, "tool_calls", None)
             if tcs:
-                d["tool_calls"] = [
-                    tc if isinstance(tc, dict) else (
-                        tc.to_dict() if hasattr(tc, "to_dict")
-                        else {"id": getattr(tc, "id", ""),
-                              "function": {
-                                "name": getattr(tc, "name", ""),
-                                "arguments": getattr(tc, "arguments", "")},
-                              "server_id": getattr(tc, "server_id",
-                                                    "default")})
-                    for tc in tcs
-                ]
+                norm_tcs = []
+                for tc in tcs:
+                    norm_tcs.append(self._normalise_tool_call(tc))
+                d["tool_calls"] = norm_tcs
+                # Remember ids for the tool_result that follows
+                recent_call_ids = [t.get("id", "") for t in norm_tcs]
             tcid = getattr(m, "tool_call_id", None)
             if tcid:
                 d["tool_call_id"] = tcid
@@ -858,7 +927,7 @@ class UnifiedProofRunner:
         """构造富初始 user message: 题目 + 检索引理 + few-shot。
 
         v2 之前只有"Prove the theorem"一行, 实际上等于让 LLM 在零上下文下盲做。
-        v3 起按 ``profile.observation`` 注入:
+        
           - inject_premises_in_prompt: top-N 检索引理 (供 whole_proof 等无 premise_search 工具的 profile)
           - inject_few_shot: few-shot 示例 (DeepSeek-Prover/Goedel 风格)
 
@@ -882,7 +951,6 @@ class UnifiedProofRunner:
             except Exception as e:
                 logger.debug(f"few-shot skipped: {e}")
 
-        # v14: domain plugin injection (prover/plugins/) — 按定理领域注入
         # 额外 few-shot + premises + strategic hint。运行时 lazy-load, 找不到
         # 插件目录或没有匹配则静默跳过, 与 v13 行为一致。
         if self.plugin_loader is not None:
@@ -904,7 +972,6 @@ class UnifiedProofRunner:
             except Exception as e:
                 logger.debug(f"plugin injection skipped: {e}")
 
-        # v5: similar past dialogs (cross-problem demo retrieval)
         if profile.observation.inject_similar_dialogs \
                 and self.dialog_index is not None:
             try:
@@ -964,7 +1031,7 @@ class UnifiedProofRunner:
 
         返回 None 表示无验证器可用; True/False 表示验证结果。
 
-        v10: 修了 v9 留下的 method-name bug。pool 的真实接口是
+        
         ``verify_complete(theorem, proof, preamble)`` ——
         ``check_proof`` 从来不存在,旧代码每次都会落到 except 分支,
         导致 auto_inject_lean_compile 兜底实际从未生效。

@@ -12,9 +12,7 @@ from engine.backends.lookeng import (
 )
 from engine.transport import REPLTransport
 
-
 # ─── A scriptable inner transport ───────────────────────────
-
 
 class ScriptedInner(REPLTransport):
     """Records all commands it sees and replies according to a script.
@@ -47,14 +45,11 @@ class ScriptedInner(REPLTransport):
     def is_alive(self):
         return self._alive
 
-
 # ─── LemmaCacheEntry ─────────────────────────────────────────
-
 
 def test_lemma_cache_render_for_llm_strips_whitespace():
     e = LemmaCacheEntry(name="lem1", statement="  theorem lem1 : True   ")
     assert e.render_for_llm() == "theorem lem1 : True"
-
 
 def test_lemma_cache_render_for_compiler_with_proof():
     e = LemmaCacheEntry(
@@ -66,12 +61,10 @@ def test_lemma_cache_render_for_compiler_with_proof():
     assert ":= by" in out
     assert "rfl" in out
 
-
 def test_lemma_cache_render_for_compiler_falls_back_to_sorry():
     e = LemmaCacheEntry(name="lem1", statement="theorem lem1 : True")
     out = e.render_for_compiler()
     assert "sorry" in out
-
 
 def test_lemma_cache_render_for_compiler_handles_term_mode_proof():
     """Proof bodies starting with `:=` are term-mode, not tactic-mode."""
@@ -84,9 +77,7 @@ def test_lemma_cache_render_for_compiler_handles_term_mode_proof():
     # Should not double-add `:= by`
     assert ":= by" not in out
 
-
 # ─── RunningContext ──────────────────────────────────────────
-
 
 def test_running_context_append_and_render_briefing():
     ctx = RunningContext(
@@ -110,7 +101,6 @@ def test_running_context_append_and_render_briefing():
     # proof bodies should NOT leak into the LLM briefing
     assert "rfl" not in briefing
 
-
 def test_running_context_render_compiler_block_includes_everything():
     ctx = RunningContext(theorem_header="theorem main : True",
                           preamble="import Mathlib")
@@ -124,7 +114,6 @@ def test_running_context_render_compiler_block_includes_everything():
     assert "rfl" in block  # proof body IS in the compiler block
     assert "trivial" in block
 
-
 def test_running_context_fork_is_independent():
     ctx = RunningContext(theorem_header="T", preamble="import Mathlib")
     ctx.append(LemmaCacheEntry(name="a", statement="theorem a : True",
@@ -136,9 +125,7 @@ def test_running_context_fork_is_independent():
     assert len(fork.lemmas) == 2
     assert fork.session_id == "branch-1"
 
-
 # ─── LooKengBackend session lifecycle ────────────────────────
-
 
 @pytest.mark.asyncio
 async def test_begin_session_creates_running_context():
@@ -155,7 +142,6 @@ async def test_begin_session_creates_running_context():
     assert ctx.theorem_header == "theorem main : 1 + 1 = 2"
     assert ctx.preamble == "import Mathlib"
     assert ctx.lemmas == []
-
 
 @pytest.mark.asyncio
 async def test_submit_lemma_success_appends_to_context():
@@ -174,7 +160,6 @@ async def test_submit_lemma_success_appends_to_context():
         proof="rfl")
     assert r["ok"] is True
     assert r["running_context_size"] == 1
-
 
 @pytest.mark.asyncio
 async def test_submit_lemma_failure_doesnt_mutate_context():
@@ -195,7 +180,6 @@ async def test_submit_lemma_failure_doesnt_mutate_context():
     assert r["running_context_size"] == 0
     assert "type mismatch" in r["errors"][0]
 
-
 @pytest.mark.asyncio
 async def test_submit_lemma_unknown_session_errors():
     inner = ScriptedInner()
@@ -206,7 +190,6 @@ async def test_submit_lemma_unknown_session_errors():
         statement="theorem x : True", proof="trivial")
     assert r["ok"] is False
     assert "unknown session" in r["errors"][0]
-
 
 @pytest.mark.asyncio
 async def test_submit_lemma_max_size_guard():
@@ -226,7 +209,6 @@ async def test_submit_lemma_max_size_guard():
     assert r["ok"] is False
     assert "max" in r["errors"][0].lower()
 
-
 @pytest.mark.asyncio
 async def test_close_session_drops_context():
     inner = ScriptedInner()
@@ -237,7 +219,6 @@ async def test_close_session_drops_context():
     resp = await lk.send({"lookeng_op": "close_session", "session_id": sid})
     assert resp["ok"] is True
     assert lk.get_running_context(sid) is None
-
 
 @pytest.mark.asyncio
 async def test_compiler_block_assembled_correctly():
@@ -265,9 +246,7 @@ async def test_compiler_block_assembled_correctly():
     b_idx = second_compile.index("theorem b")
     assert p_idx < a_idx < b_idx
 
-
 # ─── build_running_context_prompt ────────────────────────────
-
 
 def test_running_context_prompt_omits_preamble_by_default():
     ctx = RunningContext(
@@ -275,7 +254,6 @@ def test_running_context_prompt_omits_preamble_by_default():
     out = build_running_context_prompt(ctx)
     assert "import Mathlib" not in out
     assert "theorem main" in out
-
 
 def test_running_context_prompt_includes_preamble_when_asked():
     ctx = RunningContext(

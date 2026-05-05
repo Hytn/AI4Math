@@ -1,6 +1,6 @@
 """engine/summary_compressor.py — Lean error & context compression
 
-v14: 从初版 ``engine/lane/summary_compressor.py`` (490 行) 回归。其余 lane
+
 子系统已下线, 但这个组件单独有用 —— 多轮 repair 场景下 (whole_proof_repair
 profile 跑到第 5 轮 / heterogeneous BroadcastBus 累积消息), Lean 错误
 堆叠很容易塞爆 context。完全无依赖, 拷贝到 engine/ 顶层。
@@ -41,14 +41,12 @@ from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
 from typing import Optional
 
-
 @dataclass
 class CompressionBudget:
     """Budget for summary compression — mirrors claw-code's SummaryCompressionBudget."""
     max_chars: int = 1200
     max_lines: int = 24
     max_line_chars: int = 160
-
 
 @dataclass
 class CompressionResult:
@@ -66,7 +64,6 @@ class CompressionResult:
         if self.original_chars == 0:
             return 1.0
         return self.compressed_chars / self.original_chars
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 1. Lean Error Compression
@@ -159,7 +156,6 @@ def compress_lean_errors(
 
     return result
 
-
 def _split_lean_errors(text: str) -> list[str]:
     """Split a raw Lean error output into individual error blocks."""
     # Lean errors typically separated by blank lines or file:line:col patterns
@@ -168,7 +164,6 @@ def _split_lean_errors(text: str) -> list[str]:
         # Try splitting by blank lines
         blocks = re.split(r'\n\s*\n', text)
     return [b.strip() for b in blocks if b.strip()]
-
 
 def _normalize_error(error: str) -> str:
     """Normalize whitespace and remove noisy prefixes."""
@@ -179,7 +174,6 @@ def _normalize_error(error: str) -> str:
     # Collapse multiple newlines
     error = re.sub(r'\n{3,}', '\n\n', error)
     return error.strip()
-
 
 def _dedup_key(error: str) -> str:
     """Generate a deduplication key for an error.
@@ -196,7 +190,6 @@ def _dedup_key(error: str) -> str:
     key = re.sub(r'\s+', ' ', key).strip()
     # Only use first 200 chars for comparison
     return key[:200]
-
 
 def _categorize_error(error: str) -> str:
     """Categorize a Lean error into a human-readable category."""
@@ -220,7 +213,6 @@ def _categorize_error(error: str) -> str:
     if 'failed to synthesize' in lower:
         return 'instance'
     return 'other'
-
 
 def _select_diverse_errors(
     unique_errors: list[str],
@@ -266,7 +258,6 @@ def _select_diverse_errors(
 
     return selected
 
-
 def _truncate_line(text: str, max_chars: int) -> str:
     """Truncate a single line, keeping the most informative part."""
     if len(text) <= max_chars:
@@ -278,7 +269,6 @@ def _truncate_line(text: str, max_chars: int) -> str:
         last = lines[-1][:max_chars // 2]
         return f"{first}\n  ... ({len(lines) - 2} lines omitted)\n  {last}"
     return text[:max_chars - 15] + " ... (truncated)"
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 2. AgentFeedback Compression
@@ -298,10 +288,8 @@ def compress_feedback(
 
     lines = feedback_text.split('\n')
 
-    # Phase 1: Remove blank lines and normalize
     lines = [l for l in lines if l.strip()]
 
-    # Phase 2: Truncate long type signatures
     compressed = []
     for line in lines:
         # Lean type sigs can be very long
@@ -309,7 +297,6 @@ def compress_feedback(
             line = _truncate_line(line, 120)
         compressed.append(line)
 
-    # Phase 3: Deduplicate goals
     seen_goals = set()
     final = []
     for line in compressed:
@@ -328,7 +315,6 @@ def compress_feedback(
         result = result[:budget - 20] + "\n... (truncated)"
 
     return result
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 3. Broadcast Message Compression
@@ -430,7 +416,6 @@ def compress_broadcast(
 
     return "\n".join(parts)
 
-
 def _compress_text_broadcast(text: str, budget: int) -> str:
     """Compress a pre-rendered broadcast text string."""
     if len(text) <= budget:
@@ -463,7 +448,6 @@ def _compress_text_broadcast(text: str, budget: int) -> str:
         used += len(truncated) + 1
 
     return "\n".join(result_lines)
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Convenience

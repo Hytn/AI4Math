@@ -56,7 +56,6 @@ def find_repl_binary() -> str:
             return c
     return ""
 
-
 # ─── REPL Session Pool ───────────────────────────────────────
 
 class REPLSession:
@@ -132,7 +131,6 @@ class REPLSession:
     @property
     def is_alive(self) -> bool:
         return self._process is not None and self._process.returncode is None
-
 
 class REPLPool:
     """Pool of REPL sessions with preamble prewarming.
@@ -239,7 +237,6 @@ class REPLPool:
             "prewarmed_envs": len(self._warm_env_ids),
         }
 
-
 # ─── Single-shot compile fallback ────────────────────────────
 
 async def verify_compile(code: str) -> dict:
@@ -280,11 +277,9 @@ async def verify_compile(code: str) -> dict:
                 "messages": [{"severity": "error", "data": str(e)}],
                 "goals": []}
 
-
 # ─── Client handlers ──────────────────────────────────────────
 
 _compile_semaphore = asyncio.Semaphore(MAX_CONCURRENT)
-
 
 async def handle_client_repl(reader, writer, pool: REPLPool):
     """Handle a client in REPL mode: one REPL process per connection."""
@@ -338,7 +333,6 @@ async def handle_client_repl(reader, writer, pool: REPLPool):
         except Exception as _exc:
             logger.debug(f"Suppressed exception: {_exc}")
 
-
 async def handle_client_compile(reader, writer):
     """Handle a client in compile mode: single-shot per request."""
     try:
@@ -384,7 +378,6 @@ async def handle_client_compile(reader, writer):
         except Exception as _exc:
             logger.debug(f"Suppressed exception: {_exc}")
 
-
 # ─── Main ─────────────────────────────────────────────────────
 
 async def main():
@@ -428,14 +421,12 @@ async def main():
     async with server:
         await server.serve_forever()
 
-
 async def shutdown(server, pool):
     logger.info("Shutting down...")
     server.close()
     if pool:
         await pool.shutdown()
     asyncio.get_event_loop().stop()
-
 
 if __name__ == "__main__":
     try:

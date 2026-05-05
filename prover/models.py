@@ -8,13 +8,11 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
 
-
 class AttemptStatus(str, Enum):
     SUCCESS = "success"
     LEAN_ERROR = "lean_error"
     TIMEOUT = "timeout"
     LLM_ERROR = "llm_error"
-
 
 class ErrorCategory(str, Enum):
     TYPE_MISMATCH = "type_mismatch"
@@ -26,7 +24,6 @@ class ErrorCategory(str, Enum):
     ELABORATION_ERROR = "elaboration_error"
     OTHER = "other"
 
-
 @dataclass
 class LeanError:
     category: ErrorCategory
@@ -37,7 +34,6 @@ class LeanError:
     expected_type: str = ""
     actual_type: str = ""
     suggestions: list[str] = field(default_factory=list)
-
 
 @dataclass
 class ProofAttempt:
@@ -67,7 +63,6 @@ class ProofAttempt:
         ]
         return d
 
-
 @dataclass
 class ProofTrace:
     trace_id: str = field(default_factory=lambda: str(uuid.uuid4())[:12])
@@ -78,7 +73,7 @@ class ProofTrace:
     attempts: list[ProofAttempt] = field(default_factory=list)
     solved: bool = False
     total_attempts: int = 0
-    correct_count: int = 0  # v2: count of successful attempts (for pass@k)
+    correct_count: int = 0  # 
     total_tokens: int = 0
     total_duration_ms: int = 0
     successful_proof: str = ""
@@ -163,7 +158,6 @@ class ProofTrace:
             ),
         )
 
-
 @dataclass
 class BenchmarkProblem:
     problem_id: str
@@ -173,7 +167,6 @@ class BenchmarkProblem:
     source: str = ""
     natural_language: str = ""
     tags: list[str] = field(default_factory=list)
-
 
 @dataclass
 class EvalResult:

@@ -1,4 +1,4 @@
-"""engine.policy — 可执行策略规则引擎 (v14 回归)
+"""engine.policy — 可执行策略规则引擎
 
 把 ``agent_loop`` 里硬编码的"何时升级 / 何时切角色 / 何时放弃"逻辑挪到
 此模块, 用 declarative ``PolicyRule`` 表达。每条规则可单独开关、单独

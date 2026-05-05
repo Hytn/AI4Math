@@ -1,6 +1,6 @@
 """tests/test_prover/test_verifier.py — 验证器模块测试
 
-v11: ``goal_extractor`` and ``error_parser`` were deleted (zero main-path
+
 callers, replaced by ``engine.error_intelligence``). Their TestGoalExtractor
 and TestErrorParser classes have been removed along with them.
 ``sorry_detector`` and ``integrity_checker`` are kept (the former is wired
@@ -11,7 +11,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from prover.verifier.sorry_detector import detect_sorry, count_sorries
 from prover.verifier.integrity_checker import check_integrity
-
 
 # ── Sorry Detector ──
 
@@ -61,7 +60,6 @@ class TestSorryDetector:
         code = "theorem t := by\n  sorry\n  sorry\n  sorry"
         report = detect_sorry(code)
         assert len(report.locations) == 3
-
 
 # ── Integrity Checker ──
 

@@ -3,7 +3,7 @@
 支持 Sphere-AI-Lab/FormalMATH-Bench 仓库结构:
   data/*.jsonl 或 lean4/*.lean
 
-v11: Lean 文件回退路径下沉到 ``_base.parse_lean_files``。JSONL/JSON 路径
+
 保留本地 (它们携带 informal_statement / difficulty)。
 """
 from __future__ import annotations
@@ -16,7 +16,6 @@ from benchmarks.datasets._base import parse_lean_files
 from prover.models import BenchmarkProblem
 
 logger = logging.getLogger(__name__)
-
 
 def _from_record(item: dict, line_num: int) -> BenchmarkProblem | None:
     stmt = item.get("formal_statement",
@@ -32,7 +31,6 @@ def _from_record(item: dict, line_num: int) -> BenchmarkProblem | None:
         source="FormalMATH",
         natural_language=item.get("informal_statement", ""),
     )
-
 
 def load(repo_path: str, split: str = "test") -> list[BenchmarkProblem]:
     path = Path(repo_path)

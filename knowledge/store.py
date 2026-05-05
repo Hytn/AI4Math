@@ -27,7 +27,6 @@ from knowledge.types import (
 
 logger = logging.getLogger(__name__)
 
-
 # ═══════════════════════════════════════════════════════════════
 # Layer 1/2/3 Schema
 # ═══════════════════════════════════════════════════════════════
@@ -185,7 +184,6 @@ CREATE TABLE IF NOT EXISTS pk_successes (
     UNIQUE(domain, tactic_combo)
 );
 """
-
 
 class UnifiedKnowledgeStore(ProofContextStore):
     """统一知识存储 — 继承 Layer 0, 新增 Layer 1/2/3
