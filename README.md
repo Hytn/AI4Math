@@ -382,6 +382,15 @@ bash reproduce_minif2f_7b_ablation.sh \
 
 ---
 
+## Results
+We test all methods on **DeepSeek-Prover-V2-7B** across **minif2f**:
+| method | pass@32 |
+|---|---|
+| repair | 97.13% |
+| mcts |  |
+|  |  |
+
+
 ## Citation and License
 
 ```bibtex
