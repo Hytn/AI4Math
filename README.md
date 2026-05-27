@@ -253,6 +253,14 @@ python run_eval.py \
 bash reproduce_minif2f_7b_ablation.sh \
     --api-base http://localhost:8000/v1 --samples 32
 
+# YAML-driven benchmark × profile matrix
+python scripts/eval/run_profile_matrix.py \
+    --config config/experiments/profile_matrix/smoke.yaml
+
+# Summarize matrix outputs as CSV / JSON / Markdown
+python scripts/eval/summarize_profile_matrix.py \
+    results/profile_matrix/smoke
+
 # Inspect what happened on each problem
 cat results/<run>/traces/minif2f/<problem_id>/dialog.json | jq '
   { problem: .meta.problem_id, success: .result.success,
@@ -275,6 +283,93 @@ Main CLI flags:
 | `--world-model PATH` | sklearn world-model for tactic gating in step-level profiles |
 | `--plugins-dir DIR` | Domain plugins |
 | `--policy-engine` | Enable declarative PolicyEngine (5 default rules) |
+
+---
+
+## Profile Matrix Runs
+
+Use `scripts/eval/run_profile_matrix.py` when you want a reproducible
+benchmark × profile sweep from YAML instead of hand-writing many `run_eval.py`
+commands. The matrix runner only expands combinations and assigns output
+directories; each cell still delegates to `run_eval.py`, so metrics and
+`dialog.json` stay identical to ordinary evaluations.
+
+Example smoke config:
+
+```bash
+python scripts/eval/run_profile_matrix.py \
+    --config config/experiments/profile_matrix/smoke.yaml
+```
+
+Example OpenAI-compatible Claude gateway config:
+
+```bash
+export PATH=/root/.elan/bin:$PATH
+source .venv/bin/activate
+export OPENAI_API_KEY=...
+
+python scripts/eval/run_profile_matrix.py \
+    --config config/experiments/profile_matrix/minif2f_claude_opus_4_7.yaml
+```
+
+Typical config fields:
+
+```yaml
+provider: openai_compat
+api_base: "http://example.com/v1"
+model: "claude-opus-4-7"
+omit_temperature: true
+
+lean_mode: real
+max_samples: 1
+limit: 5
+resume: true
+no_knowledge: true
+
+benchmarks:
+  - name: minif2f
+    split: test
+    project_dir: data/miniF2F
+
+profiles:
+  - whole_proof_repair
+```
+
+Notes:
+
+- `max_samples` is the sample budget for pass@k. `max_samples: 1` reports
+  pass@1; `max_samples: 32` reports pass@1/5/10/32.
+- `limit: 0` means the full split. Use a small `limit` before full runs.
+- `lean_mode: real` needs `lean` on `PATH`; if logs say `[FALLBACK] No Lean4
+  binary found`, run `export PATH=/root/.elan/bin:$PATH` before starting.
+- Some routed Claude/Bedrock models reject the `temperature` field; set
+  `omit_temperature: true` for those OpenAI-compatible gateways.
+
+Results are written under the configured `output_dir`, for example:
+
+```text
+results/profile_matrix/minif2f_claude_opus_4_7/
+  matrix.yaml
+  matrix_runs.json
+  logs/<benchmark>/<profile>.log
+  <benchmark>/<profile>/evals/eval_<benchmark>_<split>.json
+  <benchmark>/<profile>/traces/<benchmark>/<problem_id>/dialog.json
+```
+
+Summarize a completed matrix:
+
+```bash
+python scripts/eval/summarize_profile_matrix.py \
+    results/profile_matrix/minif2f_claude_opus_4_7
+```
+
+This writes:
+
+```text
+summary.csv
+summary.json
+summary.md
+```
 
 ---
 
@@ -315,6 +410,8 @@ reproduce_minif2f.sh                miniF2F-test reproduction (single profile)
 reproduce_minif2f_7b_ablation.sh    5-profile sweep
 run_unified.py                      Single-problem CLI
 run_eval.py                         Batch CLI
+scripts/eval/run_profile_matrix.py  YAML benchmark × profile matrix runner
+scripts/eval/summarize_profile_matrix.py  Matrix summary writer
 eval.sh                             Generic eval entrypoint
 ```
 
