@@ -8,3 +8,7 @@ results/rl_data/*.jsonl
 *.egg-info/
 dist/
 .DS_Store
+
+.sii/
+.venv/
+data/miniF2F/.lake
