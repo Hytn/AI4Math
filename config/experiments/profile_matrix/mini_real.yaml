@@ -1,0 +1,33 @@
+name: mini_real
+
+provider: mock
+lean_mode: real
+backend: auto
+max_samples: 1
+limit: 1
+resume: true
+no_knowledge: true
+pool_size: 2
+
+output_dir: results/profile_matrix/mini_real
+
+benchmarks:
+  - name: minif2f
+    split: test
+    project_dir: data/miniF2F
+
+  - name: proofnet
+    split: test
+    project_dir: data/ProofNet
+
+  - name: putnambench
+    split: test
+    project_dir: data/PutnamBench/lean4
+
+profiles:
+  - whole_proof
+  - whole_proof_repair
+  - dsp
+  - reprover
+  - conjecture_driven
+
