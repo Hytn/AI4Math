@@ -1,0 +1,29 @@
+name: smoke
+
+provider: mock
+lean_mode: skip
+max_samples: 1
+limit: 1
+resume: true
+no_knowledge: true
+
+output_dir: results/profile_matrix/smoke
+
+benchmarks:
+  - name: minif2f
+    split: test
+    project_dir: data/miniF2F
+
+  - name: proofnet
+    split: test
+    project_dir: data/ProofNet
+
+  - name: putnambench
+    split: test
+    project_dir: data/PutnamBench/lean4
+
+profiles:
+  - whole_proof
+  - whole_proof_repair
+  - dsp
+

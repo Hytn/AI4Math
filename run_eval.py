@@ -343,6 +343,10 @@ def main():
         "--api-base", default=None, metavar="URL",
         help=("OpenAI-compatible API base URL. Used by --provider="
               "openai/deepseek/vllm/sglang/ollama/openai_compat."))
+    parser.add_argument(
+        "--omit-temperature", action="store_true",
+        help=("Do not send temperature to OpenAI-compatible providers. "
+              "Some routed Claude/Bedrock models reject this field."))
 
     # ── Lean 项目目录 (v17): 决定 REPL 在哪里寻找 lakefile + Mathlib ──
     parser.add_argument(
@@ -404,6 +408,7 @@ def main():
         "model": args.model,
         "api_key": "",
         "api_base": getattr(args, "api_base", None) or "",
+        "omit_temperature": getattr(args, "omit_temperature", False),
     }
     # Per-provider api_key env-var lookup. Anthropic stays
     # backward-compatible (auto-pick from env); OpenAI-family providers

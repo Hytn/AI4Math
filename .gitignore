@@ -5,8 +5,11 @@ config/local.yaml
 results/traces/*.json
 results/evals/*.json
 results/rl_data/*.jsonl
+results/profile_matrix/
+.lake/
 *.egg-info/
 dist/
 .DS_Store
 
 .sii/
+.venv/

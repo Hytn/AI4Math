@@ -406,7 +406,8 @@ class AsyncOpenAIProvider(AsyncLLMProvider):
     def __init__(self, model: str = "gpt-4o-mini",
                  api_key: str = "",
                  api_base: str = "",
-                 timeout_s: float = 120.0):
+                 timeout_s: float = 120.0,
+                 omit_temperature: bool = False):
         self._model = model
         # Allow empty api_key for local servers (vLLM/sglang/ollama).
         # The OpenAI client requires *some* string, so default to
@@ -415,6 +416,7 @@ class AsyncOpenAIProvider(AsyncLLMProvider):
             "OPENAI_API_KEY", "") or "EMPTY"
         self._api_base = api_base or os.environ.get("OPENAI_API_BASE", "")
         self._timeout_s = timeout_s
+        self._omit_temperature = omit_temperature
         self._client = None
 
     @property
@@ -544,8 +546,9 @@ class AsyncOpenAIProvider(AsyncLLMProvider):
         oai_messages.extend(self._claude_messages_to_openai(messages or []))
 
         kwargs = dict(
-            model=self._model, max_tokens=max_tokens,
-            temperature=temperature, messages=oai_messages)
+            model=self._model, max_tokens=max_tokens, messages=oai_messages)
+        if not self._omit_temperature:
+            kwargs["temperature"] = temperature
         if tools:
             kwargs["tools"] = self._claude_tools_to_openai(tools)
 
@@ -762,6 +765,7 @@ def create_async_provider(config: dict) -> AsyncLLMProvider:
     api_key = config.get("api_key", "")
     api_base = config.get("api_base", "")
     model = config.get("model", "")
+    omit_temperature = bool(config.get("omit_temperature", False))
 
     if p == "anthropic":
         return AsyncClaudeProvider(
@@ -799,7 +803,8 @@ def create_async_provider(config: dict) -> AsyncLLMProvider:
                 f"provider={p!r}: 'model' must be specified "
                 f"(local servers don't have a default).")
         return AsyncOpenAIProvider(
-            model=model, api_key=api_key, api_base=api_base)
+            model=model, api_key=api_key, api_base=api_base,
+            omit_temperature=omit_temperature)
 
     raise ValueError(
         f"Unknown provider: {p!r}. "

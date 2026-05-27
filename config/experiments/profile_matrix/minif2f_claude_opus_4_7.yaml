@@ -1,0 +1,22 @@
+name: minif2f_claude_opus_4_7
+
+provider: openai_compat
+api_base: "http://apicz.boyuerichdata.com/v1"
+omit_temperature: true
+model: "claude-opus-4-7"
+
+lean_mode: skip
+max_samples: 1
+limit: 1
+resume: true
+no_knowledge: true
+
+output_dir: results/profile_matrix/minif2f_claude_opus_4_7
+
+benchmarks:
+  - name: minif2f
+    split: test
+    project_dir: data/miniF2F
+
+profiles:
+  - whole_proof_repair
