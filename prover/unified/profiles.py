@@ -189,7 +189,11 @@ PRESETS: dict[str, Profile] = {
         max_turns=1,
         framing="whole_proof",
         observation=ObservationPolicy(
-            auto_inject_lean_compile=False,   # 严格单轮, 不回灌
+            # Single-shot, but still verified when a Lean pool is
+            # available. This keeps whole_proof usable as a real
+            # pass@k baseline instead of counting any sorry-free code
+            # block as solved.
+            auto_inject_lean_compile=True,
             include_knowledge_briefing=True,  # 但仍可注入 few-shot 和检索的引理
         ),
         stop=StopCondition(on_text_only=True),

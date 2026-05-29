@@ -135,6 +135,7 @@ class LocalTransport(REPLTransport):
         self._alive = False
         self._fallback = False
         self._single_shot = False
+        self._single_shot_cmd: list[str] = []
         self._stats = TransportStats()
         self._send_lock = asyncio.Lock()
         self._heartbeat_task: Optional[asyncio.Task] = None
@@ -152,9 +153,12 @@ class LocalTransport(REPLTransport):
         lean_bin = _which("lean")
         if lean_bin:
             self._repl_binary = lean_bin
+            self._single_shot_cmd = self._build_single_shot_cmd(lean_bin)
             self._single_shot = True
             self._alive = True
-            logger.info(f"LocalTransport: single-shot mode with {lean_bin}")
+            logger.info(
+                "LocalTransport: single-shot mode with %s",
+                " ".join(self._single_shot_cmd))
             return True
 
         logger.warning("LocalTransport: [FALLBACK] No Lean4 binary found")
@@ -266,7 +270,7 @@ class LocalTransport(REPLTransport):
         t0 = time.monotonic()
         try:
             proc = await asyncio.create_subprocess_exec(
-                self._repl_binary, "--stdin",
+                *self._single_shot_cmd, "--stdin",
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -300,6 +304,21 @@ class LocalTransport(REPLTransport):
             self._stats.record_failure()
             logger.error(f"LocalTransport single-shot: {e}")
             return None
+
+    def _build_single_shot_cmd(self, lean_bin: str) -> list[str]:
+        """Use Lake's environment when the project has a lakefile.
+
+        A bare `lean --stdin` does not see Mathlib from `.lake`, so
+        benchmarks such as miniF2F must run through `lake env lean`.
+        """
+        has_lakefile = any(
+            os.path.exists(os.path.join(self._project_dir, name))
+            for name in ("lakefile.lean", "lakefile.toml")
+        )
+        lake_bin = _which("lake")
+        if has_lakefile and lake_bin:
+            return [lake_bin, "env", "lean"]
+        return [lean_bin]
 
     async def _heartbeat_loop(self):
         while self._alive and not self._fallback and not self._single_shot:

@@ -1,4 +1,4 @@
-name: minif2f_claude_opus_4_7_whole_proof_repair
+name: minif2f_claude_opus_4_7_whole_proof
 
 provider: openai_compat
 api_base: "http://apicz.boyuerichdata.com/v1"
@@ -19,4 +19,4 @@ benchmarks:
     project_dir: data/miniF2F
 
 profiles:
-  - whole_proof_repair
+  - whole_proof

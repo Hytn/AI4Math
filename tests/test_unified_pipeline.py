@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import pytest
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 # ══════════════════════════════════════════════════════════════════════
 # Test helpers
@@ -181,6 +182,52 @@ class TestAdapters:
     # test_unified_to_agent_result removed in 
     # agent.runtime.sub_agent.AgentResult which was deleted alongside
     # the rest of the SubAgent / AsyncAgentPool subsystem.
+
+# ══════════════════════════════════════════════════════════════════════
+# 4b. whole_proof auto verification
+# ══════════════════════════════════════════════════════════════════════
+
+class CapturingLeanPool:
+    def __init__(self):
+        self.calls = []
+
+    async def verify_complete(self, theorem: str, proof: str,
+                              preamble: str = ""):
+        self.calls.append((theorem, proof, preamble))
+        return SimpleNamespace(success=True, has_sorry=False, errors=[])
+
+
+class TestAutoVerifyProof:
+    @pytest.mark.asyncio
+    async def test_splits_full_theorem_block_before_verify_complete(self):
+        from prover.unified import UnifiedProofRunner
+
+        pool = CapturingLeanPool()
+        runner = UnifiedProofRunner(llm=None, lean_pool=pool)
+        problem = FakeProblem(theorem_statement="theorem t : True")
+
+        verified = await runner._auto_verify_proof(
+            problem, "theorem t : True := by\n  trivial")
+
+        assert verified is True
+        theorem, proof, preamble = pool.calls[-1]
+        assert theorem == "theorem t : True"
+        assert proof.strip() == ":= by\n  trivial"
+        assert preamble == ""
+
+    @pytest.mark.asyncio
+    async def test_keeps_problem_statement_for_proof_body(self):
+        from prover.unified import UnifiedProofRunner
+
+        pool = CapturingLeanPool()
+        runner = UnifiedProofRunner(llm=None, lean_pool=pool)
+        problem = FakeProblem(theorem_statement="theorem t : True")
+
+        verified = await runner._auto_verify_proof(problem, "by\n  trivial")
+
+        assert verified is True
+        assert pool.calls[-1] == ("theorem t : True", "by\n  trivial", "")
+
 
 # ══════════════════════════════════════════════════════════════════════
 # 5. ProofPipeline routes through unified when profile is set

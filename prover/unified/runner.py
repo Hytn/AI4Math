@@ -29,6 +29,7 @@ from typing import Optional
 
 from agent.runtime.agent_loop import AgentLoop, LoopConfig, LoopResult
 from agent.tools.base import ToolContext
+from agent.tools.builtin.lean_verify import _split_theorem_and_proof
 from agent.tools.registry import ToolRegistry
 
 from prover.unified.profiles import (
@@ -1046,7 +1047,11 @@ class UnifiedProofRunner:
                     f"has no verify_complete")
                 return None
             import inspect as _inspect
-            result = verify(problem.theorem_statement, proof_code, "")
+            statement, proof = _split_theorem_and_proof(proof_code)
+            if proof:
+                result = verify(statement, proof, "")
+            else:
+                result = verify(problem.theorem_statement, proof_code, "")
             if _inspect.iscoroutine(result):
                 result = await result
             success = bool(getattr(result, "success", False))
