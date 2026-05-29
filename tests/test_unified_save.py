@@ -247,5 +247,81 @@ class TestEndToEndSFT:
                     prompts_seen.add(p)
         assert prompts_seen == {"prove A", "prove B"}
 
+
+class TestRunEvalUnifiedLoopPersistence:
+    def test_run_eval_saves_loop_messages_not_lean_verify_adapter(self, tmp_path):
+        from agent.runtime.agent_loop import LoopMessage, LoopResult
+        from agent.persistence import load_task, validate_dialog
+        from prover.models import ProofTrace, ProofAttempt, AttemptStatus
+        from prover.unified.runner import UnifiedResult
+        from run_eval import _remember_unified_result, _save_trace_dialog
+
+        trace = ProofTrace(
+            problem_id="ldj01",
+            problem_name="lean_dojo_case",
+            theorem_statement="theorem t : True",
+            config_snapshot={"profile": "leandojo", "via": "unified"},
+        )
+        trace.add_attempt(ProofAttempt(
+            attempt_number=1,
+            generated_proof=":= by\n  trivial",
+            lean_result=AttemptStatus.SUCCESS,
+        ))
+        loop = LoopResult(
+            content="",
+            proof_code=":= by\n  trivial",
+            messages=[
+                LoopMessage(role="user", content="Advance one tactic."),
+                LoopMessage(
+                    role="assistant",
+                    content="",
+                    tool_calls=[{
+                        "id": "call_tactic_1",
+                        "name": "tactic_apply",
+                        "input": {"tactic": "trivial"},
+                    }],
+                ),
+                LoopMessage(
+                    role="tool_result",
+                    tool_results=['{"tactic":"trivial","success":true}'],
+                ),
+            ],
+            turns_used=1,
+            total_tokens=7,
+            stopped_reason="proof_found",
+            tools_called=["tactic_apply"],
+        )
+        ur = UnifiedResult(
+            profile_name="leandojo",
+            success=True,
+            proof_code=":= by\n  trivial",
+            loop_result=loop,
+        )
+        _remember_unified_result(trace, ur)
+
+        _save_trace_dialog(trace, tmp_path, model="mock", provider="unit")
+
+        dialog = load_task(tmp_path)
+        assert validate_dialog(dialog) == []
+        assert dialog["meta"]["problem_id"] == "ldj01"
+        assert dialog["meta"]["problem_name"] == "lean_dojo_case"
+        assert dialog["meta"]["theorem_statement"] == "theorem t : True"
+        assert dialog["meta"]["extra"]["saved_from"] == "unified_loop_result"
+
+        calls = [
+            tc["function"]["name"]
+            for msg in dialog["messages"]
+            for tc in msg.get("tool_calls", [])
+        ]
+        tool_names = [
+            msg.get("name") for msg in dialog["messages"]
+            if msg.get("role") == "tool"
+        ]
+        assert calls == ["tactic_apply"]
+        assert tool_names == ["tactic_apply"]
+        assert "lean_verify" not in calls
+        assert dialog["result"]["successful_proof"] == ":= by\n  trivial"
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
+
+

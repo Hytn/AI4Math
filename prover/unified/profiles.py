@@ -244,6 +244,7 @@ PRESETS: dict[str, Profile] = {
         framing="step_level_pure",
         observation=ObservationPolicy(
             auto_inject_goal_state=True,
+            auto_inject_lean_compile=False,  # 步级范式不提交整证编译
             inject_premises_in_prompt=False,   # 纯步级, 通过 tool 探索
             inject_few_shot=False,
         ),

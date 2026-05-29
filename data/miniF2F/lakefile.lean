@@ -14,3 +14,4 @@ lean_lib «MiniF2F» {
 }
 
 require mathlib from git "https://github.com/leanprover-community/mathlib4" @ "v4.24.0"
+require REPL from git "https://github.com/leanprover-community/repl.git" @ "v4.24.0"

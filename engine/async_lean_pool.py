@@ -36,6 +36,33 @@ from engine.observability_stub import metrics
 
 logger = logging.getLogger(__name__)
 
+def _declaration_code(theorem: str, proof: str = "") -> str:
+    thm = (theorem or "").strip()
+    prf = (proof or "").strip()
+    if not thm:
+        return prf
+    if ":=" in thm:
+        return thm
+    if not prf:
+        return thm
+    if prf.startswith(":="):
+        return f"{thm} {prf}"
+    if prf.startswith("by"):
+        return f"{thm} := {prf}"
+    return f"{thm} := by\n  {prf}"
+
+def _theorem_with_sorry(theorem: str) -> str:
+    """Return a theorem command with one sorry proof hole."""
+    stmt = (theorem or "").strip()
+    if not stmt:
+        return ""
+    for marker in (":= by", ":="):
+        idx = stmt.find(marker)
+        if idx >= 0:
+            stmt = stmt[:idx].rstrip()
+            break
+    return f"{stmt} := by sorry"
+
 class AsyncLeanSession:
     """单个 Lean4 REPL 的异步会话
 
@@ -95,6 +122,72 @@ class AsyncLeanSession:
 
         return True
 
+    async def start_proof(self, theorem: str) -> TacticFeedback:
+        """Open a theorem as an interactive proofState via lean4-repl."""
+        t0 = time.time()
+        self._total_requests += 1
+        code = _theorem_with_sorry(theorem)
+        if not code:
+            return TacticFeedback(
+                success=False, tactic="<start_proof>",
+                error_message="empty theorem statement",
+                error_category="invalid_request",
+                elapsed_ms=0, session_id=self.session_id)
+
+        if not (self._transport and self._transport.is_alive
+                and not self._transport.is_fallback
+                and not getattr(self._transport, "is_single_shot", False)):
+            elapsed = int((time.time() - t0) * 1000)
+            return TacticFeedback(
+                success=False, tactic="<start_proof>",
+                error_message="Interactive proofState requires lean4-repl",
+                error_category="no_repl",
+                elapsed_ms=elapsed, session_id=self.session_id)
+
+        resp = await self._transport.send({"cmd": code, "env": self.base_env_id})
+        elapsed = int((time.time() - t0) * 1000)
+        if not resp:
+            return TacticFeedback(
+                success=False, tactic="<start_proof>",
+                error_message="REPL communication failed",
+                error_category="internal",
+                elapsed_ms=elapsed, session_id=self.session_id)
+
+        messages = resp.get("messages", [])
+        errors = [m for m in messages if m.get("severity") == "error"]
+        if errors:
+            category, combined_msg, _meta = _classify_error_structured(messages)
+            return TacticFeedback(
+                success=False, tactic="<start_proof>",
+                error_message=(combined_msg or errors[0].get("data", ""))[:500],
+                error_category=category,
+                elapsed_ms=elapsed, session_id=self.session_id)
+
+        sorries = resp.get("sorries", []) or []
+        if not sorries:
+            return TacticFeedback(
+                success=False, tactic="<start_proof>",
+                error_message="REPL did not return a proofState for sorry",
+                error_category="no_proof_state",
+                elapsed_ms=elapsed, session_id=self.session_id)
+
+        first = sorries[0]
+        proof_state = int(first.get("proofState", -1))
+        goal = first.get("goal", "")
+        if proof_state < 0:
+            return TacticFeedback(
+                success=False, tactic="<start_proof>",
+                error_message="invalid proofState returned by REPL",
+                error_category="no_proof_state",
+                elapsed_ms=elapsed, session_id=self.session_id)
+
+        return TacticFeedback(
+            success=True, tactic="<start_proof>",
+            new_env_id=proof_state,
+            remaining_goals=[goal] if goal else [],
+            is_proof_complete=False,
+            elapsed_ms=elapsed, session_id=self.session_id)
+
     async def try_tactic(self, env_id: int, tactic: str) -> TacticFeedback:
         """在指定 env_id 上尝试一条 tactic"""
         t0 = time.time()
@@ -113,7 +206,16 @@ class AsyncLeanSession:
         full_code = _assemble_code(theorem, proof, preamble)
 
         if self._transport and self._transport.is_alive and not self._transport.is_fallback:
-            resp = await self._transport.send({"cmd": full_code, "env": 0})
+            if getattr(self._transport, "is_single_shot", False):
+                resp = await self._transport.send({"cmd": full_code, "env": 0})
+            else:
+                env_id = self.base_env_id
+                code = _declaration_code(theorem, proof)
+                if preamble and preamble.strip():
+                    pre = await self._transport.send({"cmd": preamble})
+                    if pre and "env" in pre:
+                        env_id = pre["env"]
+                resp = await self._transport.send({"cmd": code, "env": env_id})
             elapsed = int((time.time() - t0) * 1000)
             return self._parse_verify_response(resp, elapsed)
         else:
@@ -128,7 +230,13 @@ class AsyncLeanSession:
 
     async def _try_tactic_repl(self, env_id: int, tactic: str,
                                 t0: float) -> TacticFeedback:
-        resp = await self._transport.send({"cmd": tactic, "env": env_id})
+        if getattr(self._transport, "is_single_shot", False):
+            resp = await self._transport.send({"cmd": tactic, "env": env_id})
+        else:
+            resp = await self._transport.send({
+                "tactic": tactic,
+                "proofState": env_id,
+            })
         elapsed = int((time.time() - t0) * 1000)
 
         if not resp:
@@ -140,7 +248,7 @@ class AsyncLeanSession:
 
         messages = resp.get("messages", [])
         errors = [m for m in messages if m.get("severity") == "error"]
-        new_env = resp.get("env", env_id)
+        new_env = resp.get("proofState", resp.get("env", env_id))
         goals = resp.get("goals", [])
 
         if errors:
@@ -246,6 +354,10 @@ class AsyncLeanSession:
         return self._transport.is_fallback if self._transport else True
 
     @property
+    def is_single_shot(self) -> bool:
+        return bool(getattr(self._transport, "is_single_shot", False))
+
+    @property
     def base_env_id(self) -> int:
         return self._base_env_id
 
@@ -304,11 +416,14 @@ class AsyncLeanPool:
         self._transport_factory = transport_factory
         self._sessions: list[AsyncLeanSession] = []
         self._session_available = asyncio.Condition()
+        self._condition_loop = None
         self._started = False
         self._total_requests = 0
         self._total_latency_ms = 0
         self._compile_cache = _CompileCache(maxsize=1024)
         self._env_cache: dict[str, int] = {}
+        self._proof_state_sessions: dict[int, tuple[AsyncLeanSession, int]] = {}
+        self._next_proof_handle = 1_000_000
         self._next_session_id = pool_size
         self._env_version = 0
 
@@ -366,16 +481,45 @@ class AsyncLeanPool:
             f"AsyncLeanPool: {len(self._sessions)}/{self.pool_size} ready")
         return self._started
 
-    async def try_tactic(self, env_id: int, tactic: str) -> TacticFeedback:
-        """在空闲会话上尝试一条 tactic"""
+    async def start_proof(self, theorem: str) -> TacticFeedback:
+        """Create an interactive proofState for a theorem."""
         session = await self._acquire_session()
         try:
+            with metrics.timer("repl.start_proof"):
+                result = await session.start_proof(theorem)
+            self._record_latency(result.elapsed_ms)
+            if not result.success:
+                return result
+            handle = self._next_proof_handle
+            self._next_proof_handle += 1
+            self._proof_state_sessions[handle] = (session, result.new_env_id)
+            result.new_env_id = handle
+            return result
+        finally:
+            await self._release_session(session)
+
+    async def try_tactic(self, env_id: int, tactic: str) -> TacticFeedback:
+        """在空闲会话或绑定 proofState 的会话上尝试一条 tactic"""
+        bound = self._proof_state_sessions.get(env_id)
+        if bound is not None:
+            session = await self._acquire_specific_session(bound[0])
+            actual_state = bound[1]
+        else:
+            session = await self._acquire_session()
+            actual_state = env_id
+        try:
             with metrics.timer("repl.try_tactic"):
-                result = await session.try_tactic(env_id, tactic)
+                result = await session.try_tactic(actual_state, tactic)
             self._record_latency(result.elapsed_ms)
             metrics.increment("repl.try_tactic.total")
             if result.success:
                 metrics.increment("repl.try_tactic.success")
+                if bound is not None:
+                    handle = self._next_proof_handle
+                    self._next_proof_handle += 1
+                    self._proof_state_sessions[handle] = (
+                        session, result.new_env_id)
+                    result.new_env_id = handle
             return result
         finally:
             await self._release_session(session)
@@ -564,16 +708,20 @@ class AsyncLeanPool:
         avg_latency = (self._total_latency_ms / self._total_requests
                        if self._total_requests else 0)
         fallback = sum(1 for s in self._sessions if s.is_fallback)
+        single_shot = sum(1 for s in self._sessions if s.is_single_shot)
         return {
             "pool_size": self.pool_size,
             "active_sessions": sum(1 for s in self._sessions if s.is_alive),
             "busy_sessions": sum(1 for s in self._sessions if s.is_busy),
             "fallback_sessions": fallback,
+            "single_shot_sessions": single_shot,
             "all_fallback": fallback == len(self._sessions) and len(self._sessions) > 0,
+            "all_single_shot": single_shot == len(self._sessions) and len(self._sessions) > 0,
             "total_requests": self._total_requests,
             "avg_latency_ms": round(avg_latency, 1),
             "compile_cache": self._compile_cache.stats(),
             "env_cache_size": len(self._env_cache),
+            "proof_state_handles": len(self._proof_state_sessions),
         }
 
     @property
@@ -586,8 +734,18 @@ class AsyncLeanPool:
 
     # ── 会话调度 ──
 
+    def _ensure_condition_for_current_loop(self) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        if self._condition_loop is not loop:
+            self._session_available = asyncio.Condition()
+            self._condition_loop = loop
+
     async def _acquire_session(self) -> AsyncLeanSession:
         """异步获取空闲会话 (asyncio.Condition)"""
+        self._ensure_condition_for_current_loop()
         async with self._session_available:
             deadline = time.time() + self.timeout
             while True:
@@ -617,11 +775,33 @@ class AsyncLeanPool:
             self._sessions.append(overflow)
             return overflow
 
+    async def _acquire_specific_session(
+            self, target: AsyncLeanSession) -> AsyncLeanSession:
+        """Acquire the session that owns a proofState."""
+        self._ensure_condition_for_current_loop()
+        async with self._session_available:
+            deadline = time.time() + self.timeout
+            while True:
+                if target.is_alive and not target.is_busy:
+                    target._busy = True
+                    return target
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    raise TimeoutError(
+                        f"proofState session {target.session_id} is busy")
+                try:
+                    await asyncio.wait_for(
+                        self._session_available.wait(),
+                        timeout=min(remaining, 1.0))
+                except asyncio.TimeoutError:
+                    continue
+
     async def _release_session(self, session: AsyncLeanSession):
         """释放会话并通知等待者
 
         Overflow 会话在释放时自动关闭并移除, 防止列表无限增长。
         """
+        self._ensure_condition_for_current_loop()
         async with self._session_available:
             session._busy = False
 
@@ -668,10 +848,13 @@ class SyncLeanPool:
 
     def __init__(self, pool_size: int = 4, project_dir: str = ".",
                  preamble: str = "import Mathlib",
-                 timeout_seconds: int = 30):
+                 timeout_seconds: int = 30,
+                 transport_factory: Optional[
+                     Callable[[int], "REPLTransport"]] = None):
         self._async_pool = AsyncLeanPool(
             pool_size=pool_size, project_dir=project_dir,
-            preamble=preamble, timeout_seconds=timeout_seconds)
+            preamble=preamble, timeout_seconds=timeout_seconds,
+            transport_factory=transport_factory)
 
         # 独立事件循环线程 — 生命周期与 Pool 绑定
         self._loop = asyncio.new_event_loop()
@@ -701,6 +884,9 @@ class SyncLeanPool:
 
     def start(self) -> bool:
         return self._run(self._async_pool.start())
+
+    def start_proof(self, theorem: str) -> 'TacticFeedback':
+        return self._run(self._async_pool.start_proof(theorem))
 
     def try_tactic(self, env_id: int, tactic: str) -> 'TacticFeedback':
         return self._run(self._async_pool.try_tactic(env_id, tactic))

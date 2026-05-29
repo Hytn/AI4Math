@@ -22,6 +22,8 @@ class AsyncPoolProtocol(Protocol):
     pool 实现都能透明替换。
     """
 
+    async def start_proof(self, theorem: str) -> TacticFeedback: ...
+
     async def try_tactic(self, env_id: int, tactic: str) -> TacticFeedback: ...
 
     async def try_tactics_parallel(self, env_id: int,

@@ -123,10 +123,34 @@ class TestUnifiedAPI:
         ldj = get_profile("leandojo")
         assert any(t.value == "tactic_apply" for t in ldj.tools)
         assert ldj.max_turns >= 10
+        assert ldj.observation.auto_inject_lean_compile is False
 
         het = get_profile("heterogeneous")
         assert het.search.kind == "parallel"
         assert len(het.search.parallel_profiles) >= 2
+
+    def test_leandojo_initial_message_is_step_level_only(self):
+        from prover.unified import UnifiedProofRunner, get_profile
+
+        runner = UnifiedProofRunner(llm=FakeMockLLM())
+        msg = runner._build_initial_message(FakeProblem(), get_profile("leandojo"))
+        assert "Call `tactic_apply`" in msg
+        assert "Do NOT output a full proof" in msg
+        assert "Output the final proof" not in msg
+
+    def test_step_level_rejects_single_shot_pool(self):
+        from prover.unified import UnifiedProofRunner
+
+        class SingleShotPool:
+            def stats(self):
+                return {
+                    "active_sessions": 4,
+                    "all_fallback": False,
+                    "all_single_shot": True,
+                }
+
+        runner = UnifiedProofRunner(llm=FakeMockLLM(), lean_pool=SingleShotPool())
+        assert runner._lean_pool_supports_tactics() is False
 
 # ══════════════════════════════════════════════════════════════════════
 # 2. HeterogeneousEngine 

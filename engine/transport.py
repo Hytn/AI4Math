@@ -118,6 +118,8 @@ class LocalTransport(REPLTransport):
 
     REPL_CANDIDATES = [
         ".lake/build/bin/repl",
+        ".lake/packages/REPL/.lake/build/bin/repl",
+        ".lake/packages/repl/.lake/build/bin/repl",
         "lake-packages/repl/.lake/build/bin/repl",
     ]
 
@@ -137,10 +139,19 @@ class LocalTransport(REPLTransport):
         self._single_shot = False
         self._single_shot_cmd: list[str] = []
         self._stats = TransportStats()
+        self._known_envs: set[int] = set()
         self._send_lock = asyncio.Lock()
         self._heartbeat_task: Optional[asyncio.Task] = None
 
     async def start(self) -> bool:
+        if not os.path.isdir(self._project_dir):
+            logger.warning(
+                "LocalTransport: [FALLBACK] project_dir does not exist: %s",
+                self._project_dir)
+            self._alive = True
+            self._fallback = True
+            return True
+
         binary = self._repl_binary or self._find_repl_binary()
         if binary:
             self._repl_binary = binary
@@ -168,8 +179,10 @@ class LocalTransport(REPLTransport):
 
     async def _start_repl_process(self) -> bool:
         try:
+            cmd = self._build_repl_cmd()
+            self._known_envs.clear()
             self._process = await asyncio.create_subprocess_exec(
-                self._repl_binary,
+                *cmd,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -179,7 +192,8 @@ class LocalTransport(REPLTransport):
             self._fallback = False
             self._single_shot = False
             logger.info(
-                f"LocalTransport: REPL started (pid={self._process.pid})")
+                "LocalTransport: REPL started (pid=%s) with %s",
+                self._process.pid, " ".join(cmd))
             return True
         except (FileNotFoundError, PermissionError) as e:
             logger.warning(f"LocalTransport: {e}")
@@ -202,12 +216,22 @@ class LocalTransport(REPLTransport):
         return await self._start_repl_process()
 
     async def _kill_process(self):
-        if self._process and self._process.returncode is None:
-            try:
-                self._process.kill()
-                await asyncio.wait_for(self._process.wait(), timeout=5)
-            except (asyncio.TimeoutError, ProcessLookupError, OSError) as _exc:
-                logger.debug(f"Suppressed exception: {_exc}")
+        proc = self._process
+        self._process = None
+        if not proc:
+            return
+        try:
+            if proc.stdin and not proc.stdin.is_closing():
+                proc.stdin.close()
+                try:
+                    await proc.stdin.wait_closed()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+            if proc.returncode is None:
+                proc.kill()
+                await asyncio.wait_for(proc.wait(), timeout=5)
+        except (asyncio.TimeoutError, ProcessLookupError, OSError) as _exc:
+            logger.debug(f"Suppressed exception: {_exc}")
 
     async def send(self, cmd: dict) -> Optional[dict]:
         if self._fallback:
@@ -227,23 +251,54 @@ class LocalTransport(REPLTransport):
                     return None
 
             try:
-                data = (json.dumps(cmd, ensure_ascii=False) + "\n").encode()
+                wire_cmd = dict(cmd)
+                code = str(wire_cmd.get("cmd", "") or "").lstrip()
+                env = wire_cmd.get("env")
+                if code.startswith("import "):
+                    wire_cmd.pop("env", None)
+                elif env is not None:
+                    try:
+                        env_i = int(env)
+                    except Exception:
+                        env_i = -1
+                    if env_i not in self._known_envs:
+                        wire_cmd.pop("env", None)
+                data = (json.dumps(wire_cmd, ensure_ascii=False) + "\n\n").encode()
                 self._process.stdin.write(data)
                 await self._process.stdin.drain()
 
-                line = await asyncio.wait_for(
-                    self._process.stdout.readline(),
-                    timeout=self._timeout)
+                chunks = []
+                result = None
+                while True:
+                    line = await asyncio.wait_for(
+                        self._process.stdout.readline(),
+                        timeout=self._timeout)
+                    if not line:
+                        logger.warning("LocalTransport: empty response (crash?)")
+                        self._stats.record_failure()
+                        await self._restart_repl()
+                        return None
+                    if not line.strip() and not chunks:
+                        continue
+                    if line.strip():
+                        chunks.append(line)
+                    try:
+                        result = json.loads(b"".join(chunks).decode())
+                        break
+                    except json.JSONDecodeError:
+                        continue
 
                 elapsed_ms = (time.monotonic() - t0) * 1000
-
-                if not line:
-                    logger.warning("LocalTransport: empty response (crash?)")
-                    self._stats.record_failure()
-                    await self._restart_repl()
-                    return None
-
-                result = json.loads(line.decode())
+                if "env" in result:
+                    try:
+                        self._known_envs.add(int(result["env"]))
+                    except Exception:
+                        pass
+                if "message" in result and "messages" not in result:
+                    result["messages"] = [{
+                        "severity": "error",
+                        "data": str(result.get("message", "")),
+                    }]
                 self._stats.record_success(elapsed_ms)
                 return result
 
@@ -304,6 +359,16 @@ class LocalTransport(REPLTransport):
             self._stats.record_failure()
             logger.error(f"LocalTransport single-shot: {e}")
             return None
+
+    def _build_repl_cmd(self) -> list[str]:
+        has_lakefile = any(
+            os.path.exists(os.path.join(self._project_dir, name))
+            for name in ("lakefile.lean", "lakefile.toml")
+        )
+        lake_bin = _which("lake")
+        if has_lakefile and lake_bin:
+            return [lake_bin, "env", self._repl_binary]
+        return [self._repl_binary]
 
     def _build_single_shot_cmd(self, lean_bin: str) -> list[str]:
         """Use Lake's environment when the project has a lakefile.

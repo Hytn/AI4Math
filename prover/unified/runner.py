@@ -75,10 +75,14 @@ class UnifiedResult:
     backends_status: dict = field(default_factory=dict)
 
     def save_unified(self, task_dir: str, *, problem_id: str = "",
+                     problem_name: str = "",
+                     theorem_statement: str = "",
+                     informal_statement: str = "",
                      model: str = "", provider: str = "",
                      system_prompt: str = "",
                      tools: list = None,
-                     initial_task: str = ""):
+                     initial_task: str = "",
+                     meta_extra: dict | None = None):
         """Save dialog.json — standard project format.
 
         For tree-search runs (mcts / best_first / beam), the search tree
@@ -100,6 +104,14 @@ class UnifiedResult:
             initial_task=initial_task,
         )
         meta = dialog.setdefault("meta", {})
+        if problem_name:
+            meta["problem_name"] = problem_name
+        if theorem_statement:
+            meta["theorem_statement"] = theorem_statement
+        if informal_statement:
+            meta["informal_statement"] = informal_statement
+        if meta_extra:
+            meta.setdefault("extra", {}).update(meta_extra)
         if self.search_tree is not None:
             meta["search_tree"] = self.search_tree
         if self.backends_status:
@@ -437,18 +449,48 @@ class UnifiedProofRunner:
                     f"LooKeng begin_session failed (will retry on first "
                     f"tool call): {e}")
 
+        step_level_only = self._is_step_level_only(profile)
+        if step_level_only and not self._lean_pool_supports_tactics():
+            loop_result = self._step_level_error_result(
+                "step-level profile requires a real Lean REPL "
+                "(repl/lean4-repl), but the current Lean pool is "
+                "single-shot or unavailable")
+            return UnifiedResult(
+                profile_name=profile.name,
+                success=False,
+                proof_code="",
+                loop_result=loop_result,
+            )
+
+        if step_level_only:
+            boot = await self._bootstrap_step_level_state(problem, tool_ctx)
+            if boot is not None:
+                return UnifiedResult(
+                    profile_name=profile.name,
+                    success=False,
+                    proof_code="",
+                    loop_result=boot,
+                )
+
         config = LoopConfig(
             max_turns=profile.max_turns,
             temperature=profile.temperature,
             timeout_seconds=profile.stop.timeout_seconds,
             max_total_tokens=profile.stop.max_total_tokens,
-            stop_on_proof=profile.stop.on_proof_found,
+            stop_on_proof=(
+                False if step_level_only else profile.stop.on_proof_found),
             stop_on_text_only=profile.stop.on_text_only,
         )
 
         loop = self._make_loop(registry, config, profile)
 
         initial = self._build_initial_message(problem, profile)
+        if step_level_only and tool_ctx.current_goals:
+            initial += (
+                "\n\n## Current goal state\n```lean\n"
+                + "\n\n".join(tool_ctx.current_goals)
+                + "\n```"
+            )
 
         loop_result = await loop.run(
             system_prompt=system_prompt,
@@ -676,6 +718,66 @@ class UnifiedProofRunner:
         return AgentLoop(
             llm=self.llm, tools=registry, config=config,
             policy_engine=self.policy_engine)
+
+    def _is_step_level_only(self, profile: Profile) -> bool:
+        return (ToolKit.TACTIC_APPLY in profile.tools
+                and ToolKit.LEAN_VERIFY not in profile.tools)
+
+    def _step_level_error_result(self, message: str) -> LoopResult:
+        return LoopResult(
+            content=message,
+            proof_code="",
+            messages=[],
+            turns_used=0,
+            total_tokens=0,
+            total_latency_ms=0,
+            tools_called=[],
+            stopped_reason="error: step_level_requires_repl",
+        )
+
+    async def _bootstrap_step_level_state(
+            self, problem, tool_ctx: ToolContext) -> LoopResult | None:
+        start_proof = getattr(self.lean_pool, "start_proof", None)
+        if not callable(start_proof):
+            return self._step_level_error_result(
+                "lean_pool does not expose start_proof; cannot create "
+                "a lean4-repl proofState for tactic_apply")
+        try:
+            result = start_proof(problem.theorem_statement)
+            if asyncio.iscoroutine(result):
+                result = await result
+        except Exception as e:
+            return self._step_level_error_result(
+                f"failed to initialize proofState: {e}")
+
+        if not getattr(result, "success", False):
+            msg = getattr(result, "error_message", "") or "unknown error"
+            cat = getattr(result, "error_category", "") or "start_proof_failed"
+            return self._step_level_error_result(
+                f"failed to initialize proofState ({cat}): {msg}")
+
+        proof_state = getattr(result, "new_env_id", -1)
+        goals = list(getattr(result, "remaining_goals", []) or [])
+        tool_ctx.shared_state["proof_state_id"] = proof_state
+        tool_ctx.shared_state["tactics"] = []
+        tool_ctx.current_goals = goals
+        return None
+
+    def _lean_pool_supports_tactics(self) -> bool:
+        if self.lean_pool is None:
+            return False
+        stats_fn = getattr(self.lean_pool, "stats", None)
+        if not callable(stats_fn):
+            return hasattr(self.lean_pool, "try_tactic")
+        try:
+            stats = stats_fn() or {}
+        except Exception:
+            return hasattr(self.lean_pool, "try_tactic")
+        if stats.get("all_fallback"):
+            return False
+        if stats.get("all_single_shot"):
+            return False
+        return bool(stats.get("active_sessions", 0))
 
     async def _init_root_state(self, problem):
         """Establish a Lean REPL env at the theorem header — root of search."""
@@ -999,11 +1101,21 @@ class UnifiedProofRunner:
         if profile.tools:
             tool_list = ", ".join(
                 f"`{t.value}`" for t in profile.tools)
-            parts.append(
-                f"\n## Task\nProve the theorem. Available tools: {tool_list}. "
-                f"Iterate using tool feedback. Output the final proof in a "
-                f"single ```lean block. Do NOT use `sorry`."
-            )
+            if self._is_step_level_only(profile):
+                parts.append(
+                    f"\n## Task\nAdvance the proof one tactic at a time. "
+                    f"Available tools: {tool_list}. Call `tactic_apply` "
+                    f"with exactly one Lean tactic per turn; use the other "
+                    f"tools only when needed. Do NOT output a full proof, "
+                    f"a final proof, or any ```lean block. Do NOT use "
+                    f"`sorry`."
+                )
+            else:
+                parts.append(
+                    f"\n## Task\nProve the theorem. Available tools: {tool_list}. "
+                    f"Iterate using tool feedback. Output the final proof in a "
+                    f"single ```lean block. Do NOT use `sorry`."
+                )
         else:
             parts.append(
                 "\n## Task\nGenerate a complete Lean 4 proof. Output ONLY the "

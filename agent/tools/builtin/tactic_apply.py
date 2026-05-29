@@ -95,14 +95,13 @@ class TacticApplyTool(Tool):
                 "Lean REPL pool not available. tactic_apply requires a live "
                 "Lean 4 environment.")
 
-        # Decide which env_id to apply in
+        # Decide which proofState/env_id to apply in
+        self._ctx_proof_state = ctx.shared_state.get("proof_state_id")
         env_id = self._resolve_env_id(node_id)
 
-        # Capture goals_before from the search state (if available)
-        # for the step deposit. Without a search_state we have to leave
-        # this empty — Layer 1 deposit then becomes a noop (no
-        # goal_pattern), which is the correct behaviour.
-        goals_before = self._capture_goals_before(node_id)
+        # Capture goals_before from the search state or the live
+        # step-level ToolContext.
+        goals_before = self._capture_goals_before(node_id, ctx)
 
         # model is highly confident will fail. Only fires when both a
         # world model is wired AND we have a goal_state to feed it.
@@ -159,6 +158,14 @@ class TacticApplyTool(Tool):
             obs["error_category"] = getattr(r, "error_category", "unknown")
             obs["error_message"] = (
                 getattr(r, "error_message", "") or "")[:500]
+        else:
+            ctx.shared_state["proof_state_id"] = getattr(r, "new_env_id", -1)
+            ctx.current_goals = obs["remaining_goals"]
+            tactics = ctx.shared_state.setdefault("tactics", [])
+            tactics.append(tactic)
+            if obs["is_proof_complete"]:
+                obs["proof_code"] = ":= by\n" + "\n".join(
+                    f"  {t}" for t in tactics)
 
         # Tree-state bookkeeping (only when search driver is active)
         if self._search_state is not None and obs["success"]:
@@ -191,18 +198,19 @@ class TacticApplyTool(Tool):
     # ── helpers ────────────────────────────────────────────────────────
 
     def _resolve_env_id(self, node_id):
-        """Look up the env_id for a tree node, or return base env if no tree."""
+        """Look up the proofState/env_id for the current node."""
         if self._search_state is not None and node_id is not None:
             return self._search_state.env_id_for(node_id)
         if self._search_state is not None:
             return self._search_state.current_env_id()
-        # no search driver — use the pool's base env
-        return getattr(self._pool, "base_env_id", 0)
+        # no search driver — use the proofState bootstrapped by runner
+        return getattr(self, "_ctx_proof_state", None) or getattr(
+            self._pool, "base_env_id", 0)
 
-    def _capture_goals_before(self, node_id) -> list[str]:
+    def _capture_goals_before(self, node_id, ctx: ToolContext) -> list[str]:
         """Best-effort lookup of the goals at the node we're about to act on."""
         if self._search_state is None:
-            return []
+            return list(getattr(ctx, "current_goals", []) or [])
         try:
             cur = node_id
             if cur is None:

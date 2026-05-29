@@ -290,12 +290,24 @@ class AgentLoop:
                     total_tokens, start_time, tools_called, "text_only")
 
             if not tool_calls:
-                # No tools and not stopping → just continue
+                # No tools and not stopping → steer back to the active protocol.
                 messages.append({"role": "assistant", "content": content})
-                messages.append({
-                    "role": "user",
-                    "content": "Continue. If you have a proof, output it in a ```lean block.",
-                })
+                if tool_schemas:
+                    names = ", ".join(
+                        t.get("name", "") for t in tool_schemas
+                        if isinstance(t, dict) and t.get("name"))
+                    prompt = (
+                        "Continue by calling one available tool"
+                        f" ({names}) if it is useful. Do not output a "
+                        "```lean block unless the task explicitly asks for "
+                        "a complete proof."
+                    )
+                else:
+                    prompt = (
+                        "Continue. If you have a proof, output it in a "
+                        "```lean block."
+                    )
+                messages.append({"role": "user", "content": prompt})
                 continue
 
             # ── Execute tool calls ──
@@ -340,6 +352,12 @@ class AgentLoop:
                 role="tool_result",
                 tool_results=[tr["content"] for tr in tool_results]))
 
+            step_proof = self._extract_step_level_proof(tool_calls, tool_results)
+            if step_proof:
+                return self._make_result(
+                    last_content, step_proof, history, turn + 1,
+                    total_tokens, start_time, tools_called, "proof_found")
+
             # 而不是死等 max_turns。
             if self.policy_engine is not None:
                 try:
@@ -359,6 +377,20 @@ class AgentLoop:
         return self._make_result(
             last_content, last_proof, history, config.max_turns,
             total_tokens, start_time, tools_called, "max_turns")
+
+    @staticmethod
+    def _extract_step_level_proof(tool_calls, tool_results) -> str:
+        import json
+        for tc, tr in zip(tool_calls, tool_results):
+            if tc.get("name") != "tactic_apply" or tr.get("is_error", False):
+                continue
+            try:
+                payload = json.loads(tr.get("content", "") or "{}")
+            except Exception:
+                continue
+            if payload.get("is_proof_complete") and payload.get("proof_code"):
+                return str(payload["proof_code"])
+        return ""
 
     def _evaluate_policy(self, tool_calls, tool_results, turn: int):
         """

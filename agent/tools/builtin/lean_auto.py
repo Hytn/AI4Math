@@ -1,6 +1,7 @@
 """agent/tools/builtin/lean_auto.py — Try Lean4 automation tactics on current goal"""
 from __future__ import annotations
 
+import asyncio
 import json
 from agent.tools.base import Tool, ToolContext, ToolResult, ToolPermission
 
@@ -35,11 +36,19 @@ class LeanAutoTool(Tool):
         if not self._pool:
             return ToolResult.error("Lean REPL not available")
 
+        env_id = getattr(self._pool, "base_env_id", 0)
         successes = []
         for tactic in self.TACTICS:
             try:
-                r = self._pool.try_tactic(tactic, timeout=15)
-                if r and r.get("success"):
+                fn = self._pool.try_tactic
+                if asyncio.iscoroutinefunction(fn):
+                    r = await fn(env_id, tactic)
+                else:
+                    r = fn(env_id, tactic)
+                ok = bool(getattr(r, "success", False))
+                if isinstance(r, dict):
+                    ok = bool(r.get("success"))
+                if ok:
                     successes.append(tactic)
             except Exception:
                 continue

@@ -114,6 +114,49 @@ def load_existing_traces(trace_dir: Path) -> dict[str, dict]:
             logger.warning(f"  跳过损坏的 trace: {trace_file}: {e}")
     return existing
 
+def _remember_unified_result(trace: ProofTrace, result) -> None:
+    """Keep the real UnifiedResult around for dialog.json persistence.
+
+    ProofTrace is still the metrics/pass@k accumulator, but serializing it
+    would collapse an AgentLoop trajectory into a legacy lean_verify turn.
+    """
+    results = getattr(trace, "_unified_results", None)
+    if results is None:
+        results = []
+        setattr(trace, "_unified_results", results)
+    results.append(result)
+    setattr(trace, "_last_unified_result", result)
+    if getattr(result, "success", False):
+        setattr(trace, "_successful_unified_result", result)
+
+
+def _select_unified_result_for_dialog(trace: ProofTrace):
+    """Prefer the successful unified run; otherwise save the last run."""
+    return (getattr(trace, "_successful_unified_result", None)
+            or getattr(trace, "_last_unified_result", None))
+
+
+def _save_trace_dialog(trace: ProofTrace, task_dir: Path, *,
+                       model: str = "", provider: str = ""):
+    """Save dialog.json, preserving live AgentLoop messages when present."""
+    result = _select_unified_result_for_dialog(trace)
+    if result is not None and getattr(result, "loop_result", None) is not None:
+        return result.save_unified(
+            task_dir,
+            problem_id=trace.problem_id,
+            problem_name=trace.problem_name,
+            theorem_statement=trace.theorem_statement,
+            informal_statement=trace.natural_language,
+            model=model,
+            provider=provider,
+            meta_extra={
+                "trace_id": trace.trace_id,
+                "config_snapshot": trace.config_snapshot,
+                "saved_from": "unified_loop_result",
+            },
+        )
+    return trace.save_unified(task_dir, model=model, provider=provider)
+
 def _prove_single_unified(
     problem: BenchmarkProblem,
     llm,
@@ -224,6 +267,8 @@ def _prove_single_unified(
         except Exception as e:
             logger.error(f"    sample {sample_idx+1} failed: {e}")
             continue
+
+        _remember_unified_result(trace, ur)
 
         attempt = unified_to_attempt(ur, attempt_number=sample_idx + 1)
         # NOTE: ProofTrace.add_attempt() already updates solved /
@@ -459,7 +504,7 @@ def main():
     lean_env = None
     if args.lean_mode == "real":
         try:
-            from engine.async_lean_pool import AsyncLeanPool
+            from engine.async_lean_pool import SyncLeanPool
             pool_size = int(getattr(args, "pool_size", 4) or 4)
 
             # ── Resolve Lean project_dir ─────────────────────────────
@@ -497,7 +542,7 @@ def main():
             # 真实 LLM provider)。
             if getattr(args, "backend", None) == "mock":
                 from engine.transport import MockTransport
-                lean_env = AsyncLeanPool(
+                lean_env = SyncLeanPool(
                     pool_size=pool_size,
                     project_dir=project_dir,
                     transport_factory=lambda _sid: MockTransport())
@@ -505,11 +550,11 @@ def main():
                     "  Lean 4 池启动中 (pool_size=%d, transport=mock 冒烟)",
                     pool_size)
             else:
-                lean_env = AsyncLeanPool(
+                lean_env = SyncLeanPool(
                     pool_size=pool_size,
                     project_dir=project_dir)
                 logger.info(f"  Lean 4 池已启动 (pool_size={pool_size})")
-            asyncio.run(lean_env.start())
+            lean_env.start()
         except Exception as e:
             logger.warning(f"无法启动 AsyncLeanPool: {e}, 回退到 skip 模式")
             args.lean_mode = "skip"
@@ -617,9 +662,11 @@ def main():
             # 增量保存: 单文件 dialog.json.
             # 没有 result.json / meta_config.json / trace.json 这些副产物 ——
             # 所有 meta + result 全部内联进 dialog.json 的 wrapped object.
-            trace.save_unified(
+            _save_trace_dialog(
+                trace,
                 trace_dir / problem.problem_id,
                 model=getattr(llm, "model_name", ""),
+                provider=args.provider,
             )
             trace_dicts.append(trace.to_dict())
 
@@ -693,6 +740,14 @@ def main():
         logger.info(
             f"\nLLM cache: hits={st['hits']} misses={st['misses']} "
             f"hit_rate={st['hit_rate']:.1%} size={st['size']}")
+
+    if lean_env is not None:
+        try:
+            out = lean_env.shutdown()
+            if asyncio.iscoroutine(out):
+                asyncio.run(out)
+        except Exception as e:
+            logger.warning(f"Lean pool shutdown failed: {e}")
 
 if __name__ == "__main__":
     main()

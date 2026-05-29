@@ -132,6 +132,7 @@ DEFAULT_SERVER_MAP: dict[str, str] = {
     "premise_search": "mathlib",
     "tactic_suggest": "mathlib",
     "goal_inspect": "lean",
+    "tactic_apply": "lean",
     "lean_verify": "lean",
     "lean_auto": "lean",
     "cas_tool": "cas",
