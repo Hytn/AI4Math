@@ -277,7 +277,7 @@ class AgentLoop:
             # ── Check stop conditions ──
 
             # Stop if proof found (no sorry)
-            if (config.stop_on_proof and proof
+            if (not tool_calls and config.stop_on_proof and proof
                     and detect_sorry(proof).is_clean):
                 return self._make_result(
                     content, proof, history, turn + 1,

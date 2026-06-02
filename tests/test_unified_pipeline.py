@@ -52,6 +52,76 @@ class FakeMockLLM:
         )
 
 # ══════════════════════════════════════════════════════════════════════
+
+
+class TestAgentLoopToolCallOrdering:
+    @pytest.mark.asyncio
+    async def test_tool_calls_are_answered_before_proof_stop(self):
+        from agent.brain.async_llm_provider import LLMResponse
+        from agent.persistence.dialog_format import validate_dialog
+        from agent.runtime.agent_loop import AgentLoop, LoopConfig
+        from agent.tools.base import Tool, ToolContext, ToolResult
+        from agent.tools.registry import ToolRegistry
+
+        class OneToolCallLLM:
+            model_name = "tool-call-llm"
+
+            async def generate(self, system="", user="", temperature=0.7,
+                               tools=None, max_tokens=4096):
+                return await self.chat(
+                    system=system,
+                    messages=[{"role": "user", "content": user}],
+                    temperature=temperature,
+                    tools=tools,
+                    max_tokens=max_tokens,
+                )
+
+            async def chat(self, system="", messages=None, temperature=0.7,
+                           tools=None, max_tokens=4096):
+                return LLMResponse(
+                    content="I found a proof.\n```lean\nby simp\n```",
+                    model=self.model_name,
+                    tokens_in=1,
+                    tokens_out=1,
+                    latency_ms=1,
+                    tool_calls=[{
+                        "id": "call_1",
+                        "name": "premise_search",
+                        "input": {"query": "simp"},
+                    }],
+                    stop_reason="tool_use",
+                )
+
+        class PremiseSearchTool(Tool):
+            name = "premise_search"
+            description = "Search premises."
+            input_schema = {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            }
+
+            async def execute(self, input: dict, ctx: ToolContext) -> ToolResult:
+                return ToolResult.success("premise result")
+
+        registry = ToolRegistry()
+        registry.register(PremiseSearchTool())
+        loop = AgentLoop(
+            llm=OneToolCallLLM(),
+            tools=registry,
+            config=LoopConfig(max_turns=1, stop_on_proof=True),
+        )
+
+        result = await loop.run(system_prompt="", initial_message="prove it")
+        dialog = result.to_dialog(problem_id="tool_order")
+
+        assert result.stopped_reason == "max_turns"
+        assert result.tools_called == ["premise_search"]
+        assert [m.role for m in result.messages] == [
+            "user", "assistant", "tool_result"]
+        assert validate_dialog(dialog) == []
+
+
 # 1. unified module import + preset shape
 # ══════════════════════════════════════════════════════════════════════
 
