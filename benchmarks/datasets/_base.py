@@ -47,6 +47,25 @@ def _split_statement(full_text: str) -> str:
         return parts_eq[0].strip()
     return full_text.strip()
 
+def _extract_lean_preamble(content: str, theorem_start: int) -> str:
+    """Keep file-level Lean context needed before an extracted theorem."""
+    lines: list[str] = []
+    for line in content[:theorem_start].splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("--", "/-", "-/")):
+            lines.append(line.rstrip())
+            continue
+        if stripped.startswith((
+            "import ",
+            "open ",
+            "set_option ",
+            "namespace ",
+            "section",
+            "noncomputable ",
+        )):
+            lines.append(line.rstrip())
+    return "\n".join(lines).strip()
+
 def parse_lean_files(
     files: Iterable[Path],
     *,
@@ -92,6 +111,7 @@ def parse_lean_files(
                 theorem_statement=stmt,
                 difficulty=(difficulty_fn(name) if difficulty_fn else "medium"),
                 source=source,
+                lean_preamble=_extract_lean_preamble(content, m.start()),
             )
             if extra_fields is not None:
                 try:

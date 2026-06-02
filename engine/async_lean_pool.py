@@ -85,6 +85,8 @@ class AsyncLeanSession:
         self._base_env_id = 0
         self._total_requests = 0
         self._total_errors = 0
+        self._loaded_preamble = ""
+        self._preamble_env_cache: dict[str, int] = {}
 
         # Transport: 如果未提供, 延迟到 start() 中创建 LocalTransport
         self._transport = transport
@@ -115,6 +117,9 @@ class AsyncLeanSession:
             resp = await self._transport.send({"cmd": preamble, "env": 0})
             if resp and "env" in resp:
                 self._base_env_id = resp["env"]
+                self._loaded_preamble = preamble.strip()
+                if self._loaded_preamble:
+                    self._preamble_env_cache[self._loaded_preamble] = self._base_env_id
                 logger.info(
                     f"AsyncSession {self.session_id}: started, "
                     f"env_id={self._base_env_id}")
@@ -122,7 +127,46 @@ class AsyncLeanSession:
 
         return True
 
-    async def start_proof(self, theorem: str) -> TacticFeedback:
+    async def _env_for_preamble(
+            self, preamble: str) -> tuple[bool, int, str, str]:
+        preamble = (preamble or "").strip()
+        if not preamble:
+            return True, self.base_env_id, "", ""
+        cached = self._preamble_env_cache.get(preamble)
+        if cached is not None:
+            return True, cached, "", ""
+
+        env_id = self.base_env_id
+        code = preamble
+        loaded = self._loaded_preamble.strip()
+        if loaded and env_id > 0 and preamble.startswith(loaded):
+            suffix = preamble[len(loaded):].strip()
+            if not suffix:
+                self._preamble_env_cache[preamble] = env_id
+                return True, env_id, "", ""
+            code = suffix
+
+        resp = await self._transport.send({"cmd": code, "env": env_id})
+        if not resp:
+            return False, env_id, "REPL communication failed while loading preamble", "internal"
+
+        messages = resp.get("messages", [])
+        errors = [m for m in messages if m.get("severity") == "error"]
+        if errors:
+            category, combined_msg, _meta = _classify_error_structured(messages)
+            return (
+                False, env_id,
+                (combined_msg or errors[0].get("data", ""))[:500],
+                category,
+            )
+        if "env" not in resp:
+            return False, env_id, "REPL did not return an env for preamble", "internal"
+
+        env_id = int(resp["env"])
+        self._preamble_env_cache[preamble] = env_id
+        return True, env_id, "", ""
+
+    async def start_proof(self, theorem: str, preamble: str = "") -> TacticFeedback:
         """Open a theorem as an interactive proofState via lean4-repl."""
         t0 = time.time()
         self._total_requests += 1
@@ -144,7 +188,16 @@ class AsyncLeanSession:
                 error_category="no_repl",
                 elapsed_ms=elapsed, session_id=self.session_id)
 
-        resp = await self._transport.send({"cmd": code, "env": self.base_env_id})
+        ok, env_id, error_message, error_category = await self._env_for_preamble(preamble)
+        if not ok:
+            elapsed = int((time.time() - t0) * 1000)
+            return TacticFeedback(
+                success=False, tactic="<start_proof>",
+                error_message=error_message,
+                error_category=error_category or "preamble_failed",
+                elapsed_ms=elapsed, session_id=self.session_id)
+
+        resp = await self._transport.send({"cmd": code, "env": env_id})
         elapsed = int((time.time() - t0) * 1000)
         if not resp:
             return TacticFeedback(
@@ -481,12 +534,12 @@ class AsyncLeanPool:
             f"AsyncLeanPool: {len(self._sessions)}/{self.pool_size} ready")
         return self._started
 
-    async def start_proof(self, theorem: str) -> TacticFeedback:
+    async def start_proof(self, theorem: str, preamble: str = "") -> TacticFeedback:
         """Create an interactive proofState for a theorem."""
         session = await self._acquire_session()
         try:
             with metrics.timer("repl.start_proof"):
-                result = await session.start_proof(theorem)
+                result = await session.start_proof(theorem, preamble=preamble)
             self._record_latency(result.elapsed_ms)
             if not result.success:
                 return result
@@ -885,8 +938,8 @@ class SyncLeanPool:
     def start(self) -> bool:
         return self._run(self._async_pool.start())
 
-    def start_proof(self, theorem: str) -> 'TacticFeedback':
-        return self._run(self._async_pool.start_proof(theorem))
+    def start_proof(self, theorem: str, preamble: str = "") -> 'TacticFeedback':
+        return self._run(self._async_pool.start_proof(theorem, preamble=preamble))
 
     def try_tactic(self, env_id: int, tactic: str) -> 'TacticFeedback':
         return self._run(self._async_pool.try_tactic(env_id, tactic))

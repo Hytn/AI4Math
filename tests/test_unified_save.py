@@ -248,6 +248,41 @@ class TestEndToEndSFT:
         assert prompts_seen == {"prove A", "prove B"}
 
 
+class TestRunEvalResume:
+    def test_load_existing_traces_reads_dialog_task_dirs(self, tmp_path):
+        from run_eval import load_existing_traces
+
+        trace_dir = tmp_path / "traces" / "minif2f"
+        task_dir = trace_dir / "minif2f_test_t"
+        task_dir.mkdir(parents=True)
+        (task_dir / "dialog.json").write_text(json.dumps({
+            "schema_version": "3.0",
+            "meta": {
+                "problem_id": "minif2f_test_t",
+                "problem_name": "t",
+                "theorem_statement": "theorem t : True",
+                "extra": {"trace_id": "abc"},
+            },
+            "messages": [],
+            "result": {
+                "success": True,
+                "total_attempts": 7,
+                "total_tokens": 12,
+                "total_duration_ms": 34,
+                "successful_proof": "by trivial",
+            },
+        }), encoding="utf-8")
+
+        existing = load_existing_traces(trace_dir)
+
+        assert set(existing) == {"minif2f_test_t"}
+        trace = existing["minif2f_test_t"]
+        assert trace["solved"] is True
+        assert trace["correct_count"] == 1
+        assert trace["total_attempts"] == 1
+        assert trace["total_tokens"] == 12
+
+
 class TestRunEvalUnifiedLoopPersistence:
     def test_run_eval_saves_loop_messages_not_lean_verify_adapter(self, tmp_path):
         from agent.runtime.agent_loop import LoopMessage, LoopResult

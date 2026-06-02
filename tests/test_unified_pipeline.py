@@ -222,6 +222,63 @@ class TestUnifiedAPI:
         runner = UnifiedProofRunner(llm=FakeMockLLM(), lean_pool=SingleShotPool())
         assert runner._lean_pool_supports_tactics() is False
 
+    @pytest.mark.asyncio
+    async def test_step_level_bootstrap_passes_problem_preamble(self):
+        from agent.tools.base import ToolContext
+        from prover.unified import UnifiedProofRunner
+
+        class PreamblePool:
+            def __init__(self):
+                self.calls = []
+
+            def stats(self):
+                return {
+                    "active_sessions": 1,
+                    "all_fallback": False,
+                    "all_single_shot": False,
+                }
+
+            async def start_proof(self, theorem: str, preamble: str = ""):
+                self.calls.append((theorem, preamble))
+                return SimpleNamespace(
+                    success=True, new_env_id=7, remaining_goals=["goal"])
+
+        pool = PreamblePool()
+        runner = UnifiedProofRunner(llm=FakeMockLLM(), lean_pool=pool)
+        problem = SimpleNamespace(
+            theorem_statement="theorem t : True",
+            lean_preamble="import Mathlib\nopen Nat",
+        )
+        ctx = ToolContext()
+
+        boot = await runner._bootstrap_step_level_state(problem, ctx)
+
+        assert boot is None
+        assert pool.calls == [("theorem t : True", "import Mathlib\nopen Nat")]
+        assert ctx.shared_state["proof_state_id"] == 7
+        assert ctx.current_goals == ["goal"]
+
+    def test_parse_lean_files_preserves_file_preamble(self, tmp_path):
+        from benchmarks.datasets._base import parse_lean_files
+
+        lean_file = tmp_path / "T.lean"
+        lean_file.write_text(
+            "import Mathlib\n\n"
+            "set_option maxHeartbeats 0\n\n"
+            "open Nat\n\n"
+            "theorem t (n : Nat) : n = n := by rfl\n",
+            encoding="utf-8",
+        )
+
+        problems = parse_lean_files(
+            [lean_file], problem_id_prefix="p_", source="unit")
+
+        assert len(problems) == 1
+        assert problems[0].lean_preamble == (
+            "import Mathlib\n\n"
+            "set_option maxHeartbeats 0\n\n"
+            "open Nat")
+
 # ══════════════════════════════════════════════════════════════════════
 # 2. HeterogeneousEngine 
 # ══════════════════════════════════════════════════════════════════════

@@ -167,6 +167,7 @@ class BenchmarkProblem:
     source: str = ""
     natural_language: str = ""
     tags: list[str] = field(default_factory=list)
+    lean_preamble: str = ""
 
 @dataclass
 class EvalResult:

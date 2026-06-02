@@ -22,6 +22,7 @@
 """
 from __future__ import annotations
 import asyncio
+import inspect
 import logging
 import time
 from dataclasses import dataclass, field
@@ -743,7 +744,16 @@ class UnifiedProofRunner:
                 "lean_pool does not expose start_proof; cannot create "
                 "a lean4-repl proofState for tactic_apply")
         try:
-            result = start_proof(problem.theorem_statement)
+            lean_preamble = getattr(problem, "lean_preamble", "") or ""
+            try:
+                params = inspect.signature(start_proof).parameters
+            except (TypeError, ValueError):
+                params = {}
+            if lean_preamble and "preamble" in params:
+                result = start_proof(
+                    problem.theorem_statement, preamble=lean_preamble)
+            else:
+                result = start_proof(problem.theorem_statement)
             if asyncio.iscoroutine(result):
                 result = await result
         except Exception as e:

@@ -95,8 +95,29 @@ def prove_single(problem: BenchmarkProblem, llm, premise_selector,
         persistent_lemma_bank=persistent_lemma_bank,
     )
 
+def _dialog_to_trace_dict(dialog: dict, *, fallback_problem_id: str) -> dict:
+    """Project saved dialog.json into the trace shape metrics expects."""
+    meta = dialog.get("meta", {}) if isinstance(dialog, dict) else {}
+    result = dialog.get("result", {}) if isinstance(dialog, dict) else {}
+    success = bool(result.get("success", False))
+    return {
+        "trace_id": (meta.get("extra", {}) or {}).get("trace_id", ""),
+        "problem_id": meta.get("problem_id") or fallback_problem_id,
+        "problem_name": meta.get("problem_name", ""),
+        "theorem_statement": meta.get("theorem_statement", ""),
+        "solved": success,
+        # dialog.result.total_attempts is AgentLoop turns, not pass@k samples.
+        "total_attempts": 1,
+        "correct_count": 1 if success else 0,
+        "total_tokens": int(result.get("total_tokens", 0) or 0),
+        "total_duration_ms": int(result.get("total_duration_ms", 0) or 0),
+        "successful_proof": result.get("successful_proof", ""),
+        "attempts": [],
+    }
+
+
 def load_existing_traces(trace_dir: Path) -> dict[str, dict]:
-    """Load all existing trace files from a directory.
+    """Load existing legacy traces or canonical dialog.json task dirs.
 
     Returns: {problem_id: trace_dict}
     """
@@ -106,12 +127,22 @@ def load_existing_traces(trace_dir: Path) -> dict[str, dict]:
 
     for trace_file in trace_dir.glob("*.json"):
         try:
-            with open(trace_file) as f:
+            with open(trace_file, encoding="utf-8") as f:
                 data = json.load(f)
             pid = data.get("problem_id", trace_file.stem)
             existing[pid] = data
         except (json.JSONDecodeError, OSError) as e:
             logger.warning(f"  跳过损坏的 trace: {trace_file}: {e}")
+
+    for dialog_file in trace_dir.glob("*/dialog.json"):
+        try:
+            with open(dialog_file, encoding="utf-8") as f:
+                dialog = json.load(f)
+            trace = _dialog_to_trace_dict(
+                dialog, fallback_problem_id=dialog_file.parent.name)
+            existing[trace["problem_id"]] = trace
+        except (json.JSONDecodeError, OSError, TypeError, ValueError) as e:
+            logger.warning(f"  跳过损坏的 dialog: {dialog_file}: {e}")
     return existing
 
 def _remember_unified_result(trace: ProofTrace, result) -> None:
@@ -506,6 +537,15 @@ def main():
         try:
             from engine.async_lean_pool import SyncLeanPool
             pool_size = int(getattr(args, "pool_size", 4) or 4)
+            lean_timeout = 30
+            try:
+                from prover.unified import get_profile as _get_profile
+                prof = _get_profile(args.profile)
+                lean_timeout = max(
+                    lean_timeout,
+                    int(getattr(prof.stop, "timeout_seconds", lean_timeout)))
+            except Exception as e:
+                logger.debug(f"using default Lean timeout: {e}")
 
             # ── Resolve Lean project_dir ─────────────────────────────
             # The REPL must run inside the project that has lakefile +
@@ -545,6 +585,7 @@ def main():
                 lean_env = SyncLeanPool(
                     pool_size=pool_size,
                     project_dir=project_dir,
+                    timeout_seconds=lean_timeout,
                     transport_factory=lambda _sid: MockTransport())
                 logger.info(
                     "  Lean 4 池启动中 (pool_size=%d, transport=mock 冒烟)",
@@ -552,8 +593,11 @@ def main():
             else:
                 lean_env = SyncLeanPool(
                     pool_size=pool_size,
-                    project_dir=project_dir)
-                logger.info(f"  Lean 4 池已启动 (pool_size={pool_size})")
+                    project_dir=project_dir,
+                    timeout_seconds=lean_timeout)
+                logger.info(
+                    f"  Lean 4 池已启动 (pool_size={pool_size}, "
+                    f"timeout={lean_timeout}s)")
             lean_env.start()
         except Exception as e:
             logger.warning(f"无法启动 AsyncLeanPool: {e}, 回退到 skip 模式")
