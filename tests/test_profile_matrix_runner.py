@@ -49,7 +49,7 @@ def test_build_runs_expands_cross_product_and_constructs_run_eval_commands(tmp_p
         ],
         "profiles": [
             "whole_proof",
-            {"name": "dsp", "temperature": 1.0},
+            {"name": "dsp", "temperature": 1.0, "profile_timeout": 1800},
         ],
     }
 
@@ -70,6 +70,7 @@ def test_build_runs_expands_cross_product_and_constructs_run_eval_commands(tmp_p
     assert proofnet.command[proofnet.command.index("--limit") + 1] == "1"
     dsp = runs[1]
     assert dsp.command[dsp.command.index("--temperature") + 1] == "1.0"
+    assert dsp.command[dsp.command.index("--profile-timeout") + 1] == "1800"
 
 
 def test_filters_reduce_matrix(tmp_path):

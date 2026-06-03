@@ -617,6 +617,11 @@ def main():
     parser.add_argument(
         "--max-turns", type=int, default=None, metavar="N",
         help=("Override profile max_turns. None = use profile default."))
+    parser.add_argument(
+        "--profile-timeout", type=float, default=None, metavar="SECONDS",
+        help=("Override profile stop.timeout_seconds for the whole "
+              "AgentLoop. Useful when a slow API/model needs enough wall "
+              "time to reach repair turns. None = use profile default."))
 
     args = parser.parse_args()
 
@@ -629,11 +634,15 @@ def main():
         cli_overrides["temperature"] = args.temperature
     if getattr(args, "max_turns", None) is not None:
         cli_overrides["max_turns"] = args.max_turns
-    if cli_overrides:
+    profile_timeout = getattr(args, "profile_timeout", None)
+    if cli_overrides or profile_timeout is not None:
         from dataclasses import replace as _dc_replace
         from prover.unified import get_profile, register_profile
         try:
             base = get_profile(args.profile)
+            if profile_timeout is not None:
+                cli_overrides["stop"] = _dc_replace(
+                    base.stop, timeout_seconds=profile_timeout)
             register_profile(_dc_replace(base, **cli_overrides))
             logger.info(
                 f"  profile {args.profile!r} overrides applied: "

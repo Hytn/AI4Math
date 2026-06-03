@@ -53,6 +53,7 @@ _VALUE_FLAGS = {
     "pool_size": "--pool-size",
     "temperature": "--temperature",
     "max_turns": "--max-turns",
+    "profile_timeout": "--profile-timeout",
 }
 
 _BENCHMARK_PROJECT_DIRS = {
