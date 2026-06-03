@@ -6,8 +6,162 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+
+class TestDialogResumeSuccessRecovery:
+    """Recover cached dialogs where final lean_verify succeeded at max_turns."""
+
+    def _dialog(self, payload):
+        import json
+        return {
+            "meta": {"problem_id": "p1", "problem_name": "t"},
+            "messages": [
+                {
+                    "role": "assistant",
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "function": {
+                            "name": "lean_verify",
+                            "arguments": json.dumps({
+                                "code": "theorem t : True := by trivial"
+                            }),
+                        },
+                    }],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_1",
+                    "name": "lean_verify",
+                    "content": json.dumps(payload),
+                },
+            ],
+            "result": {
+                "success": False,
+                "termination": "max_turns",
+                "successful_proof": "stale assistant text",
+            },
+        }
+
+    def test_dialog_to_trace_recovers_verified_lean_tool_success(self):
+        from run_eval import _dialog_to_trace_dict
+
+        trace = _dialog_to_trace_dict(
+            self._dialog({
+                "verified": True,
+                "sorry_free": True,
+                "errors": [],
+            }),
+            fallback_problem_id="fallback",
+        )
+
+        assert trace["solved"] is True
+        assert trace["correct_count"] == 1
+        assert trace["successful_proof"] == "theorem t : True := by trivial"
+
+    def test_dialog_to_trace_rejects_integrity_violation_success(self):
+        from run_eval import _dialog_to_trace_dict
+
+        trace = _dialog_to_trace_dict(
+            self._dialog({
+                "verified": True,
+                "sorry_free": True,
+                "errors": [],
+                "integrity_violations": ["[critical] Uses native_decide"],
+            }),
+            fallback_problem_id="fallback",
+        )
+
+        assert trace["solved"] is False
+        assert trace["correct_count"] == 0
+        assert trace["successful_proof"] == ""
+
 # ═══════════════════════════════════════════════════════════════
 # ═══════════════════════════════════════════════════════════════
+
+class TestAutoVerifyResumeEvidence:
+    def test_dialog_to_trace_accepts_auto_verified_final_proof(self):
+        import json
+        from run_eval import _dialog_to_trace_dict
+
+        proof = "theorem target : True := by trivial"
+        dialog = {
+            "meta": {
+                "problem_id": "p1",
+                "problem_name": "target",
+                "theorem_statement": "theorem target : True",
+            },
+            "messages": [
+                {
+                    "role": "assistant",
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "function": {
+                            "name": "lean_verify",
+                            "arguments": json.dumps({"code": proof}),
+                        },
+                    }],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_1",
+                    "name": "lean_verify",
+                    "content": json.dumps({
+                        "verified": False,
+                        "sorry_free": True,
+                        "errors": ["old failed attempt"],
+                    }),
+                },
+            ],
+            "result": {
+                "success": True,
+                "termination": "proof_found",
+                "successful_proof": proof,
+                "extra": {
+                    "auto_verify": {
+                        "source": "runner.auto_verify",
+                        "backend": "lean4",
+                        "verified": True,
+                        "proves_target": True,
+                        "sorry_free": True,
+                    },
+                },
+            },
+        }
+
+        trace = _dialog_to_trace_dict(dialog, fallback_problem_id="fallback")
+
+        assert trace["solved"] is True
+        assert trace["correct_count"] == 1
+        assert trace["successful_proof"] == proof
+
+    def test_dialog_to_trace_rejects_auto_verify_wrong_target(self):
+        from run_eval import _dialog_to_trace_dict
+
+        dialog = {
+            "meta": {
+                "problem_id": "p1",
+                "problem_name": "target",
+                "theorem_statement": "theorem target : True",
+            },
+            "messages": [],
+            "result": {
+                "success": True,
+                "termination": "proof_found",
+                "successful_proof": "theorem helper : True := by trivial",
+                "extra": {
+                    "auto_verify": {
+                        "verified": True,
+                        "proves_target": True,
+                        "sorry_free": True,
+                    },
+                },
+            },
+        }
+
+        trace = _dialog_to_trace_dict(dialog, fallback_problem_id="fallback")
+
+        assert trace["solved"] is False
+        assert trace["successful_proof"] == ""
+
 
 class TestNestedCommentStrip:
     """Fix #6: _strip_comments must handle nested /- -/ correctly."""
@@ -250,3 +404,177 @@ class TestKnowledgeIntegration:
                 goal="⊢ n + 0 = n", theorem="Nat.add_zero")
             # May be empty if not enough data, but shouldn't crash
             assert isinstance(text, str)
+
+
+
+class TestStrictProofAcceptance:
+    def test_extract_lean_code_rejects_plain_reasoning_text(self):
+        from common.response_parser import extract_lean_code
+
+        text = (
+            "Let me think about the proof. We can derive a contradiction "
+            "and then finish later."
+        )
+
+        assert extract_lean_code(text) == ""
+
+    def test_dialog_to_trace_rejects_successful_natural_language_proof(self):
+        from run_eval import _dialog_to_trace_dict
+
+        dialog = {
+            "meta": {
+                "problem_id": "p1",
+                "problem_name": "t",
+                "theorem_statement": "theorem t : True",
+            },
+            "messages": [],
+            "result": {
+                "success": True,
+                "termination": "proof_found",
+                "successful_proof": "Let me think about the proof first.",
+            },
+        }
+
+        trace = _dialog_to_trace_dict(dialog, fallback_problem_id="fallback")
+
+        assert trace["solved"] is False
+        assert trace["correct_count"] == 0
+
+
+    def test_dialog_to_trace_requires_clean_verify_when_lean_verify_present(self):
+        import json
+        from run_eval import _dialog_to_trace_dict
+
+        dialog = {
+            "meta": {
+                "problem_id": "p1",
+                "problem_name": "target",
+                "theorem_statement": "theorem target : True",
+            },
+            "messages": [
+                {
+                    "role": "assistant",
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "function": {
+                            "name": "lean_verify",
+                            "arguments": json.dumps({
+                                "code": "theorem target : True := by trivial"
+                            }),
+                        },
+                    }],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_1",
+                    "name": "lean_verify",
+                    "content": json.dumps({
+                        "verified": False,
+                        "sorry_free": True,
+                        "errors": ["transport failed"],
+                    }),
+                },
+            ],
+            "result": {
+                "success": True,
+                "termination": "proof_found",
+                "successful_proof": "theorem target : True := by trivial",
+            },
+        }
+
+        trace = _dialog_to_trace_dict(dialog, fallback_problem_id="fallback")
+
+        assert trace["solved"] is False
+        assert trace["correct_count"] == 0
+
+    def test_dialog_to_trace_rejects_verified_wrong_target(self):
+        import json
+        from run_eval import _dialog_to_trace_dict
+
+        dialog = {
+            "meta": {
+                "problem_id": "p1",
+                "problem_name": "t",
+                "theorem_statement": "theorem target : True",
+            },
+            "messages": [
+                {
+                    "role": "assistant",
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "function": {
+                            "name": "lean_verify",
+                            "arguments": json.dumps({
+                                "code": "example : True := by trivial"
+                            }),
+                        },
+                    }],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_1",
+                    "name": "lean_verify",
+                    "content": json.dumps({
+                        "verified": True,
+                        "sorry_free": True,
+                        "errors": [],
+                    }),
+                },
+            ],
+            "result": {"success": False, "termination": "max_turns"},
+        }
+
+        trace = _dialog_to_trace_dict(dialog, fallback_problem_id="fallback")
+
+        assert trace["solved"] is False
+        assert trace["correct_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_lean_verify_marks_verified_helper_as_not_target(self):
+        import json
+        from types import SimpleNamespace
+        from agent.tools.base import ToolContext
+        from agent.tools.builtin.lean_verify import LeanVerifyTool
+
+        class Pool:
+            def __init__(self):
+                self.calls = 0
+
+            async def verify_complete(self, theorem, proof, preamble=""):
+                self.calls += 1
+                return SimpleNamespace(
+                    success=True, has_sorry=False, errors=[],
+                    goals_remaining=[], stderr="", elapsed_ms=1)
+
+        pool = Pool()
+        tool = LeanVerifyTool(lean_pool=pool)
+        result = await tool.execute(
+            {"code": "example : True := by trivial"},
+            ToolContext(theorem_statement="theorem target : True"),
+        )
+        payload = json.loads(result.content)
+
+        assert payload["verified"] is True
+        assert payload["proves_target"] is False
+        assert pool.calls == 1
+
+    @pytest.mark.asyncio
+    async def test_tactic_apply_rejects_sorry_before_pool_call(self):
+        import json
+        from agent.tools.base import ToolContext
+        from agent.tools.builtin.tactic_apply import TacticApplyTool
+
+        class Pool:
+            async def try_tactic(self, env_id, tactic):
+                raise AssertionError("sorry tactic should not reach Lean")
+
+        tool = TacticApplyTool(lean_pool=Pool())
+        result = await tool.execute(
+            {"tactic": "have h : True := by sorry"},
+            ToolContext(current_goals=["⊢ True"]),
+        )
+        payload = json.loads(result.content)
+
+        assert payload["success"] is False
+        assert payload["error_category"] == "integrity_violation"
+        assert "sorry" in payload["error_message"]

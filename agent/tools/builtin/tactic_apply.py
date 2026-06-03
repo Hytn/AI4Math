@@ -24,6 +24,8 @@ import json
 import logging
 import time
 from typing import Optional
+
+from prover.verifier.integrity_checker import check_integrity
 from agent.tools.base import Tool, ToolContext, ToolResult, ToolPermission
 
 logger = logging.getLogger(__name__)
@@ -89,6 +91,19 @@ class TacticApplyTool(Tool):
     async def execute(self, input: dict, ctx: ToolContext) -> ToolResult:
         tactic = input["tactic"].strip()
         node_id = input.get("node_id")
+
+        integrity_error = self._integrity_error(tactic)
+        if integrity_error:
+            obs = {
+                "tactic": tactic,
+                "success": False,
+                "is_proof_complete": False,
+                "remaining_goals": list(getattr(ctx, "current_goals", []) or []),
+                "num_goals": len(getattr(ctx, "current_goals", []) or []),
+                "error_category": "integrity_violation",
+                "error_message": integrity_error,
+            }
+            return ToolResult.success(json.dumps(obs, ensure_ascii=False))
 
         if not self._pool:
             return ToolResult.error(
@@ -196,6 +211,20 @@ class TacticApplyTool(Tool):
         return ToolResult.success(json.dumps(obs, ensure_ascii=False))
 
     # ── helpers ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _integrity_error(tactic: str) -> str:
+        try:
+            report = check_integrity(tactic)
+        except Exception:
+            if any(k in tactic for k in ("sorry", "admit")):
+                return "Tactic contains sorry/admit; incomplete proof steps are rejected."
+            return ""
+        if report.passed:
+            return ""
+        issues = [i.message for i in report.critical_issues]
+        return "; ".join(issues[:3]) or "Tactic failed integrity checks."
+
 
     def _resolve_env_id(self, node_id):
         """Look up the proofState/env_id for the current node."""

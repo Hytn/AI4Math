@@ -58,6 +58,45 @@ def _split_theorem_and_proof(code: str) -> tuple[str, str]:
     proof = code[m.start():]
     return (statement, proof)
 
+_DECL_RE = re.compile(r"\b(?:theorem|lemma)\s+([A-Za-z0-9_'.]+)|\bexample\b")
+
+def _target_theorem_name(theorem_statement: str) -> str:
+    """Extract the expected theorem name from a benchmark statement."""
+    m = re.search(r"\btheorem\s+([A-Za-z0-9_'.]+)", theorem_statement or "")
+    return m.group(1) if m else ""
+
+def _declaration_names(code: str) -> list[str]:
+    """Return theorem/lemma names, using '<example>' for anonymous examples."""
+    names: list[str] = []
+    try:
+        from prover.verifier.integrity_checker import _strip_comments
+        code = _strip_comments(code)
+    except Exception:
+        pass
+    for m in _DECL_RE.finditer(code or ""):
+        names.append(m.group(1) or "<example>")
+    return names
+
+def _code_targets_theorem(code: str, theorem_statement: str) -> bool:
+    """Whether a complete declaration block contains the requested theorem."""
+    target = _target_theorem_name(theorem_statement)
+    if not target:
+        return True
+    names = _declaration_names(code)
+    return bool(names and target in names)
+
+def _critical_integrity_issues(code: str) -> list[str]:
+    try:
+        from prover.verifier.integrity_checker import check_integrity
+        report = check_integrity(code)
+        return [
+            f"[{i.severity.value}] {i.message}"
+            for i in report.issues if i.severity.value == "critical"
+        ]
+    except Exception as e:
+        logger.debug(f"integrity_checker unavailable/failed: {e}")
+        return []
+
 class LeanVerifyTool(Tool):
     name = "lean_verify"
     description = (
@@ -112,12 +151,15 @@ class LeanVerifyTool(Tool):
 
     async def execute(self, input: dict, ctx: ToolContext) -> ToolResult:
         code = input["code"]
+        target_statement = getattr(ctx, "theorem_statement", "") or ""
+
+        proves_target = self._proves_target(code, target_statement)
 
         if not self._pool:
             return self._prefilter_only(code)
 
         # ── Real verification path ────────────────────────────────
-        statement, proof = _split_theorem_and_proof(code)
+        statement, proof = self._verification_input(code, target_statement)
 
         try:
             result = await self._call_verify(statement or code, proof)
@@ -144,17 +186,7 @@ class LeanVerifyTool(Tool):
         # sorry hidden in nested comments, etc.). Previously this logic
         # existed in prover/verifier/integrity_checker.py but had zero
         # main-path callers;.
-        integrity_issues: list[str] = []
-        try:
-            from prover.verifier.integrity_checker import check_integrity
-            report = check_integrity(code)
-            if not report.passed:
-                integrity_issues = [
-                    f"[{i.severity.value}] {i.message}"
-                    for i in report.issues if i.severity.value == "critical"
-                ]
-        except Exception as e:
-            logger.debug(f"integrity_checker unavailable/failed: {e}")
+        integrity_issues: list[str] = _critical_integrity_issues(code)
 
         # Build the structured response. We keep the v9 fields
         # ("verified", "goals_remaining", "errors", "sorry_free") for
@@ -180,6 +212,7 @@ class LeanVerifyTool(Tool):
             "errors": [self._fmt_error(e) for e in errors_list[:5]],
             "sorry_free": sorry_free,
             "elapsed_ms": elapsed_ms,
+            "proves_target": proves_target,
         }
         if integrity_issues:
             response["integrity_violations"] = integrity_issues
@@ -212,6 +245,49 @@ class LeanVerifyTool(Tool):
     # ──────────────────────────────────────────────────────────────
     # Helpers
     # ──────────────────────────────────────────────────────────────
+
+
+    def _proves_target(self, code: str, target_statement: str) -> bool:
+        """Whether a successful verification should count as final success."""
+        if not target_statement:
+            return True
+        names = _declaration_names(code)
+        if not names:
+            # A proof body is interpreted against the target theorem.
+            return True
+        return _code_targets_theorem(code, target_statement)
+
+    def _verification_input(self, code: str, target_statement: str) -> tuple[str, str]:
+        """Choose whether to verify a full source block or a proof body."""
+        if target_statement:
+            names = _declaration_names(code)
+            if names:
+                # A complete declaration block that names the target is verified
+                # as submitted, preserving helper lemmas/imports in the block.
+                return code, ""
+            return target_statement, code
+        statement, proof = _split_theorem_and_proof(code)
+        return statement or code, proof
+
+    def _validation_error(self, message: str) -> ToolResult:
+        payload = {
+            "verified": False,
+            "goals_remaining": [],
+            "errors": [message],
+            "sorry_free": True,
+            "elapsed_ms": 0,
+            "agent_feedback": {
+                "is_proof_complete": False,
+                "remaining_goals": [],
+                "error_category": "target_mismatch",
+                "error_message": message,
+                "progress_score": 0.0,
+                "elapsed_ms": 0,
+                "repair_candidates": [],
+                "summary": message,
+            },
+        }
+        return ToolResult.success(json.dumps(payload, indent=2, ensure_ascii=False))
 
     async def _call_verify(self, statement: str, proof: str):
         """Invoke verify_complete on the pool, await if coroutine."""

@@ -30,7 +30,10 @@ from typing import Optional
 
 from agent.runtime.agent_loop import AgentLoop, LoopConfig, LoopResult
 from agent.tools.base import ToolContext
-from agent.tools.builtin.lean_verify import _split_theorem_and_proof
+from agent.tools.builtin.lean_verify import (
+    _split_theorem_and_proof, _declaration_names, _code_targets_theorem,
+    _critical_integrity_issues,
+)
 from agent.tools.registry import ToolRegistry
 
 from prover.unified.profiles import (
@@ -499,17 +502,29 @@ class UnifiedProofRunner:
             tool_ctx=tool_ctx,
         )
 
-        # 如果 loop 因 text_only 终止且产出 lean 代码但未走 lean_verify,
-        # 这里自动跑一次完整编译, 让 success 标志反映真实验证结果。
+        # Always re-check whole-proof style success against the target theorem
+        # when a real Lean verifier exists. This catches text-only false
+        # positives and lean_verify calls that compiled an unrelated example or
+        # helper lemma instead of the benchmark theorem. Step-level profiles are
+        # validated by tactic_apply proof-state completion instead.
         if (profile.observation.auto_inject_lean_compile
                 and loop_result.has_proof
                 and self.lean_pool is not None
-                and "lean_verify" not in (loop_result.tools_called or [])):
+                and not step_level_only):
             verified = await self._auto_verify_proof(
                 problem, loop_result.proof_code)
             if verified is not None:
+                loop_result.auto_verify = {
+                    "source": "runner.auto_verify",
+                    "backend": "lean4",
+                    "verified": bool(verified),
+                    "proves_target": bool(verified),
+                    "sorry_free": bool(verified),
+                }
                 loop_result.stopped_reason = (
                     "proof_found" if verified else "verification_failed")
+                if not verified:
+                    loop_result.proof_code = ""
 
         return UnifiedResult(
             profile_name=profile.name,
@@ -1169,11 +1184,20 @@ class UnifiedProofRunner:
                     f"has no verify_complete")
                 return None
             import inspect as _inspect
-            statement, proof = _split_theorem_and_proof(proof_code)
-            if proof:
-                result = verify(statement, proof, "")
+            target_statement = getattr(problem, "theorem_statement", "") or ""
+            if _critical_integrity_issues(proof_code):
+                return False
+            names = _declaration_names(proof_code)
+            if names:
+                if not _code_targets_theorem(proof_code, target_statement):
+                    return False
+                if len(names) == 1:
+                    statement, proof = _split_theorem_and_proof(proof_code)
+                    result = verify(statement, proof, "")
+                else:
+                    result = verify(proof_code, "", "")
             else:
-                result = verify(problem.theorem_statement, proof_code, "")
+                result = verify(target_statement, proof_code, "")
             if _inspect.iscoroutine(result):
                 result = await result
             success = bool(getattr(result, "success", False))

@@ -192,6 +192,50 @@ class TestLoopResultUnified:
 # 6. End-to-end: collect & SFT export uses meta.system_prompt
 # ─────────────────────────────────────────────────────────────────────────
 
+class TestLoopResultProofFields:
+    def test_failed_loop_stores_candidate_not_successful_proof(self):
+        from agent.runtime.agent_loop import LoopResult
+
+        result = LoopResult(
+            content="candidate",
+            proof_code="theorem t : True := by trivial",
+            turns_used=1,
+            total_tokens=1,
+            stopped_reason="verification_failed",
+        )
+
+        dialog = result.to_dialog(problem_id="p")
+
+        assert dialog["result"]["success"] is False
+        assert dialog["result"]["successful_proof"] == ""
+        assert dialog["result"]["extra"]["candidate_proof"] == (
+            "theorem t : True := by trivial")
+
+    def test_auto_verify_evidence_is_saved(self):
+        from agent.runtime.agent_loop import LoopResult
+
+        result = LoopResult(
+            content="done",
+            proof_code="theorem t : True := by trivial",
+            turns_used=1,
+            total_tokens=1,
+            stopped_reason="proof_found",
+            auto_verify={
+                "source": "runner.auto_verify",
+                "verified": True,
+                "proves_target": True,
+                "sorry_free": True,
+            },
+        )
+
+        dialog = result.to_dialog(problem_id="p")
+
+        assert dialog["result"]["success"] is True
+        assert dialog["result"]["successful_proof"] == (
+            "theorem t : True := by trivial")
+        assert dialog["result"]["extra"]["auto_verify"]["verified"] is True
+
+
 class TestEndToEndSFT:
     def test_collect_and_sft_export(self, tmp_path):
         from prover.models import ProofTrace, ProofAttempt, AttemptStatus

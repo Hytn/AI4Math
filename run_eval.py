@@ -36,6 +36,10 @@ from knowledge.store import UnifiedKnowledgeStore
 from knowledge.reader import KnowledgeReader
 from knowledge.writer import KnowledgeWriter
 from pathlib import Path
+from agent.tools.builtin.lean_verify import (
+    _declaration_names, _code_targets_theorem, _critical_integrity_issues,
+)
+from common.response_parser import looks_like_lean_code
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -95,11 +99,172 @@ def prove_single(problem: BenchmarkProblem, llm, premise_selector,
         persistent_lemma_bank=persistent_lemma_bank,
     )
 
+def _tool_call_name(call: dict) -> str:
+    if not isinstance(call, dict):
+        return ""
+    fn = call.get("function") if isinstance(call.get("function"), dict) else {}
+    return str(call.get("name") or fn.get("name") or "")
+
+
+def _tool_call_input(call: dict) -> dict:
+    if not isinstance(call, dict):
+        return {}
+    raw = call.get("input")
+    if isinstance(raw, dict):
+        return raw
+    fn = call.get("function") if isinstance(call.get("function"), dict) else {}
+    args = fn.get("arguments")
+    if isinstance(args, str):
+        try:
+            parsed = json.loads(args)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _payload_has_integrity_violations(payload: dict) -> bool:
+    if not isinstance(payload, dict):
+        return True
+    if payload.get("integrity_violations") or payload.get("integrity_errors"):
+        return True
+    feedback = payload.get("agent_feedback")
+    if isinstance(feedback, dict):
+        return bool(feedback.get("integrity_violations")
+                    or feedback.get("integrity_errors"))
+    return False
+
+
+def _is_valid_lean_verify_payload(payload: dict) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if _payload_has_integrity_violations(payload):
+        return False
+    return bool(
+        payload.get("verified") is True
+        and payload.get("sorry_free") is not False
+        and not payload.get("errors")
+    )
+
+
+def _saved_proof_is_acceptable(proof: str, theorem_statement: str) -> bool:
+    if not isinstance(proof, str) or not proof.strip():
+        return False
+    if not looks_like_lean_code(proof):
+        return False
+    if _critical_integrity_issues(proof):
+        return False
+    names = _declaration_names(proof)
+    if names and theorem_statement:
+        return _code_targets_theorem(proof, theorem_statement)
+    return True
+
+
+def _dialog_has_lean_verify_call(dialog: dict) -> bool:
+    messages = dialog.get("messages", []) if isinstance(dialog, dict) else []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("name") == "lean_verify":
+            return True
+        if any(_tool_call_name(call) == "lean_verify"
+               for call in (msg.get("tool_calls") or [])):
+            return True
+    return False
+
+
+def _dialog_verified_lean_proof(dialog: dict) -> str:
+    """Find a successful lean_verify submission in a saved dialog.
+
+    Older runs could hit max_turns immediately after a successful final
+    lean_verify call, leaving result.success=false. This recovers those
+    cached traces for --resume and summary generation.
+    """
+    messages = dialog.get("messages", []) if isinstance(dialog, dict) else []
+    meta = dialog.get("meta", {}) if isinstance(dialog, dict) else {}
+    theorem_statement = meta.get("theorem_statement", "") if isinstance(meta, dict) else ""
+    code_by_call_id: dict[str, str] = {}
+    last_lean_verify_code = ""
+
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        for call in msg.get("tool_calls") or []:
+            if _tool_call_name(call) != "lean_verify":
+                continue
+            code = _tool_call_input(call).get("code", "")
+            if not isinstance(code, str) or not code.strip():
+                continue
+            call_id = str(call.get("id") or "")
+            if call_id:
+                code_by_call_id[call_id] = code
+            last_lean_verify_code = code
+
+        if msg.get("name") != "lean_verify":
+            continue
+        try:
+            payload = json.loads(msg.get("content", "") or "{}")
+        except json.JSONDecodeError:
+            continue
+        if not _is_valid_lean_verify_payload(payload):
+            continue
+        call_id = str(msg.get("tool_call_id") or "")
+        code = code_by_call_id.get(call_id) or last_lean_verify_code
+        if _saved_proof_is_acceptable(code, theorem_statement):
+            return code
+
+    return ""
+
+
+def _dialog_auto_verified_proof(dialog: dict) -> str:
+    """Return saved proof when runner auto-verify recorded Lean success."""
+    if not isinstance(dialog, dict):
+        return ""
+    meta = dialog.get("meta", {}) if isinstance(dialog.get("meta"), dict) else {}
+    result = dialog.get("result", {}) if isinstance(dialog.get("result"), dict) else {}
+    if result.get("success") is not True:
+        return ""
+    extra = result.get("extra", {}) if isinstance(result.get("extra"), dict) else {}
+    auto_verify = extra.get("auto_verify", {})
+    if not isinstance(auto_verify, dict):
+        return ""
+    if _payload_has_integrity_violations(auto_verify):
+        return ""
+    if auto_verify.get("verified") is not True:
+        return ""
+    if auto_verify.get("proves_target") is False:
+        return ""
+    if auto_verify.get("sorry_free") is False:
+        return ""
+    if auto_verify.get("errors"):
+        return ""
+    proof = result.get("successful_proof", "")
+    theorem_statement = meta.get("theorem_statement", "")
+    if _saved_proof_is_acceptable(proof, theorem_statement):
+        return proof
+    return ""
+
+
 def _dialog_to_trace_dict(dialog: dict, *, fallback_problem_id: str) -> dict:
     """Project saved dialog.json into the trace shape metrics expects."""
     meta = dialog.get("meta", {}) if isinstance(dialog, dict) else {}
     result = dialog.get("result", {}) if isinstance(dialog, dict) else {}
-    success = bool(result.get("success", False))
+    theorem_statement = meta.get("theorem_statement", "")
+    verified_proof = _dialog_verified_lean_proof(dialog)
+    auto_verified_proof = "" if verified_proof else _dialog_auto_verified_proof(dialog)
+    result_proof = result.get("successful_proof", "")
+    result_success = bool(result.get("success", False))
+    result_success = result_success and not _dialog_has_lean_verify_call(dialog)
+    result_success = result_success and _saved_proof_is_acceptable(
+        result_proof, theorem_statement)
+    success = bool(verified_proof or auto_verified_proof or result_success)
+    successful_proof = ""
+    if verified_proof:
+        successful_proof = verified_proof
+    elif auto_verified_proof:
+        successful_proof = auto_verified_proof
+    elif result_success:
+        successful_proof = result_proof
     return {
         "trace_id": (meta.get("extra", {}) or {}).get("trace_id", ""),
         "problem_id": meta.get("problem_id") or fallback_problem_id,
@@ -111,7 +276,7 @@ def _dialog_to_trace_dict(dialog: dict, *, fallback_problem_id: str) -> dict:
         "correct_count": 1 if success else 0,
         "total_tokens": int(result.get("total_tokens", 0) or 0),
         "total_duration_ms": int(result.get("total_duration_ms", 0) or 0),
-        "successful_proof": result.get("successful_proof", ""),
+        "successful_proof": successful_proof,
         "attempts": [],
     }
 

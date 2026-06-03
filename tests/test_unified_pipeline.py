@@ -121,6 +121,115 @@ class TestAgentLoopToolCallOrdering:
             "user", "assistant", "tool_result"]
         assert validate_dialog(dialog) == []
 
+    @pytest.mark.asyncio
+    async def test_lean_verify_success_stops_on_last_turn(self):
+        import json
+        from agent.brain.async_llm_provider import LLMResponse
+        from agent.runtime.agent_loop import AgentLoop, LoopConfig
+        from agent.tools.base import Tool, ToolContext, ToolResult
+        from agent.tools.registry import ToolRegistry
+
+        proof = "theorem t : True := by trivial"
+
+        class OneLeanVerifyLLM:
+            model_name = "tool-call-llm"
+
+            async def chat(self, system="", messages=None, temperature=0.7,
+                           tools=None, max_tokens=4096):
+                return LLMResponse(
+                    content="checking",
+                    model=self.model_name,
+                    tokens_in=1,
+                    tokens_out=1,
+                    latency_ms=1,
+                    tool_calls=[{
+                        "id": "call_1",
+                        "name": "lean_verify",
+                        "input": {"code": proof},
+                    }],
+                    stop_reason="tool_use",
+                )
+
+        class LeanVerifyTool(Tool):
+            name = "lean_verify"
+            description = "Verify Lean."
+            input_schema = {"type": "object", "properties": {}}
+
+            async def execute(self, input: dict, ctx: ToolContext) -> ToolResult:
+                return ToolResult.success(json.dumps({
+                    "verified": True,
+                    "sorry_free": True,
+                    "errors": [],
+                    "goals_remaining": [],
+                }))
+
+        registry = ToolRegistry()
+        registry.register(LeanVerifyTool())
+        loop = AgentLoop(
+            llm=OneLeanVerifyLLM(),
+            tools=registry,
+            config=LoopConfig(max_turns=1, stop_on_proof=True),
+        )
+
+        result = await loop.run(system_prompt="", initial_message="prove it")
+
+        assert result.stopped_reason == "proof_found"
+        assert result.proof_code == proof
+        assert result.to_dialog(problem_id="p")["result"]["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_lean_verify_integrity_violation_does_not_stop(self):
+        import json
+        from agent.brain.async_llm_provider import LLMResponse
+        from agent.runtime.agent_loop import AgentLoop, LoopConfig
+        from agent.tools.base import Tool, ToolContext, ToolResult
+        from agent.tools.registry import ToolRegistry
+
+        class OneLeanVerifyLLM:
+            model_name = "tool-call-llm"
+
+            async def chat(self, system="", messages=None, temperature=0.7,
+                           tools=None, max_tokens=4096):
+                return LLMResponse(
+                    content="checking",
+                    model=self.model_name,
+                    tokens_in=1,
+                    tokens_out=1,
+                    latency_ms=1,
+                    tool_calls=[{
+                        "id": "call_1",
+                        "name": "lean_verify",
+                        "input": {"code": "theorem t : True := by native_decide"},
+                    }],
+                    stop_reason="tool_use",
+                )
+
+        class LeanVerifyTool(Tool):
+            name = "lean_verify"
+            description = "Verify Lean."
+            input_schema = {"type": "object", "properties": {}}
+
+            async def execute(self, input: dict, ctx: ToolContext) -> ToolResult:
+                return ToolResult.success(json.dumps({
+                    "verified": True,
+                    "sorry_free": True,
+                    "errors": [],
+                    "integrity_violations": ["[critical] Uses native_decide"],
+                }))
+
+        registry = ToolRegistry()
+        registry.register(LeanVerifyTool())
+        loop = AgentLoop(
+            llm=OneLeanVerifyLLM(),
+            tools=registry,
+            config=LoopConfig(max_turns=1, stop_on_proof=True),
+        )
+
+        result = await loop.run(system_prompt="", initial_message="prove it")
+
+        assert result.stopped_reason == "max_turns"
+        assert result.to_dialog(problem_id="p")["result"]["success"] is False
+
 
 # 1. unified module import + preset shape
 # ══════════════════════════════════════════════════════════════════════
@@ -378,6 +487,23 @@ class TestAutoVerifyProof:
 
         assert verified is True
         assert pool.calls[-1] == ("theorem t : True", "by\n  trivial", "")
+
+
+class TestRunnerAutoVerifyEvidence:
+    @pytest.mark.asyncio
+    async def test_runner_records_auto_verify_evidence(self):
+        from prover.unified import UnifiedProofRunner, get_profile
+
+        pool = CapturingLeanPool()
+        runner = UnifiedProofRunner(llm=FakeMockLLM(), lean_pool=pool)
+        problem = FakeProblem(theorem_statement="theorem t : True")
+
+        ur = await runner.run(problem, profile=get_profile("whole_proof"))
+
+        assert ur.success is True
+        assert ur.loop_result.auto_verify["verified"] is True
+        dialog = ur.loop_result.to_dialog(problem_id="p")
+        assert dialog["result"]["extra"]["auto_verify"]["verified"] is True
 
 
 # ══════════════════════════════════════════════════════════════════════

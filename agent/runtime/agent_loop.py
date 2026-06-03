@@ -42,6 +42,7 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -52,7 +53,6 @@ from agent.brain.async_llm_provider import LLMResponse
 from agent.tools.base import ToolContext
 from agent.tools.registry import ToolRegistry
 from common.response_parser import extract_lean_code
-from prover.verifier.sorry_detector import detect_sorry
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +96,7 @@ class LoopResult:
     total_latency_ms: int = 0
     tools_called: list[str] = field(default_factory=list)
     stopped_reason: str = ""           # "proof_found", "text_only", "max_turns", "timeout", "error"
+    auto_verify: dict = field(default_factory=dict)
 
     @property
     def has_proof(self) -> bool:
@@ -120,18 +121,23 @@ class LoopResult:
             meta_extras["system_prompt"] = system_prompt
         if tools:
             meta_extras["tools"] = tools
+        success = self.has_proof and self.stopped_reason == "proof_found"
+        extra = {
+            "tools_called": self.tools_called,
+            "final_content": self.content,
+        }
+        if self.auto_verify:
+            extra["auto_verify"] = self.auto_verify
+        if self.has_proof and not success:
+            extra["candidate_proof"] = self.proof_code
         result_extras = {
-            "success": self.has_proof
-                       and self.stopped_reason == "proof_found",
+            "success": success,
             "total_attempts": self.turns_used,
             "total_tokens": self.total_tokens,
             "total_duration_ms": self.total_latency_ms,
-            "successful_proof": self.proof_code if self.has_proof else "",
+            "successful_proof": self.proof_code if success else "",
             "termination": self.stopped_reason,
-            "extra": {
-                "tools_called": self.tools_called,
-                "final_content": self.content,
-            },
+            "extra": extra,
         }
         return from_loop_messages(
             self.messages, initial_task=initial_task,
@@ -278,7 +284,7 @@ class AgentLoop:
 
             # Stop if proof found (no sorry)
             if (not tool_calls and config.stop_on_proof and proof
-                    and detect_sorry(proof).is_clean):
+                    and self._is_integrity_clean(proof)):
                 return self._make_result(
                     content, proof, history, turn + 1,
                     total_tokens, start_time, tools_called, "proof_found")
@@ -358,6 +364,13 @@ class AgentLoop:
                     last_content, step_proof, history, turn + 1,
                     total_tokens, start_time, tools_called, "proof_found")
 
+            verified_proof = self._extract_verified_lean_proof(
+                tool_calls, tool_results)
+            if verified_proof:
+                return self._make_result(
+                    last_content, verified_proof, history, turn + 1,
+                    total_tokens, start_time, tools_called, "proof_found")
+
             # 而不是死等 max_turns。
             if self.policy_engine is not None:
                 try:
@@ -378,9 +391,31 @@ class AgentLoop:
             last_content, last_proof, history, config.max_turns,
             total_tokens, start_time, tools_called, "max_turns")
 
+
+    @staticmethod
+    def _is_integrity_clean(code: str) -> bool:
+        if not isinstance(code, str) or not code.strip():
+            return False
+        try:
+            from prover.verifier.integrity_checker import check_integrity
+            return check_integrity(code).passed
+        except Exception:
+            return not any(k in code for k in ("sorry", "admit"))
+
+    @staticmethod
+    def _payload_has_integrity_violations(payload: dict) -> bool:
+        if not isinstance(payload, dict):
+            return True
+        if payload.get("integrity_violations") or payload.get("integrity_errors"):
+            return True
+        feedback = payload.get("agent_feedback")
+        if isinstance(feedback, dict):
+            return bool(feedback.get("integrity_violations")
+                        or feedback.get("integrity_errors"))
+        return False
+
     @staticmethod
     def _extract_step_level_proof(tool_calls, tool_results) -> str:
-        import json
         for tc, tr in zip(tool_calls, tool_results):
             if tc.get("name") != "tactic_apply" or tr.get("is_error", False):
                 continue
@@ -388,8 +423,43 @@ class AgentLoop:
                 payload = json.loads(tr.get("content", "") or "{}")
             except Exception:
                 continue
-            if payload.get("is_proof_complete") and payload.get("proof_code"):
-                return str(payload["proof_code"])
+            proof_code = str(payload.get("proof_code") or "")
+            if (payload.get("is_proof_complete") and proof_code
+                    and AgentLoop._is_integrity_clean(proof_code)):
+                return proof_code
+        return ""
+
+    @staticmethod
+    def _extract_verified_lean_proof(tool_calls, tool_results) -> str:
+        """Return the submitted proof when lean_verify accepted it.
+
+        Whole-proof repair profiles may spend their last allowed turn calling
+        ``lean_verify``. Without this check the loop falls through to
+        ``max_turns`` even though the tool just proved the theorem.
+        """
+        for tc, tr in zip(tool_calls, tool_results):
+            if tc.get("name") != "lean_verify" or tr.get("is_error", False):
+                continue
+            try:
+                payload = json.loads(tr.get("content", "") or "{}")
+            except Exception:
+                continue
+
+            if AgentLoop._payload_has_integrity_violations(payload):
+                continue
+            if not payload.get("verified"):
+                continue
+            if payload.get("proves_target") is False:
+                continue
+            if payload.get("sorry_free") is False:
+                continue
+            if payload.get("errors"):
+                continue
+
+            input_data = tc.get("input", {}) or {}
+            code = input_data.get("code", "")
+            if isinstance(code, str) and code.strip():
+                return code
         return ""
 
     def _evaluate_policy(self, tool_calls, tool_results, turn: int):
