@@ -592,6 +592,84 @@ PRESETS["dsp_v2_heterogeneous"] = Profile(
     ),
 )
 
+# ═══════════════════════════════════════════════════════════════════════
+# Family 10: Ax-Prover  (arXiv:2510.12787, Breen / Del Tredici / McCarran
+# et al., "Ax-Prover: A Deep Reasoning Agentic Framework for Theorem
+# Proving in Mathematics and Quantum Physics")
+# ═══════════════════════════════════════════════════════════════════════
+#
+# 论文的范式: 通用 LLM (Claude Sonnet) + MCP Lean 工具 (lean-lsp-mcp),
+# 三智能体闭环 Orchestrator → Prover → Verifier。在本框架的声明式
+# 词汇表里, 三个 agent 分别落位为:
+#
+#   Prover       ↔ AgentLoop 本体: 多轮 reasoning + tool-call 交替
+#                  (论文 pass@1 = "一次 attempt 内的一串 API call",
+#                   对应这里的 max_turns 预算, 而非多次独立采样)
+#   Verifier     ↔ runner 的 auto_verify (独立编译 + 无 sorry/admit
+#                  判定; 与论文 3.1.3 的判定规则一致: 无 level-1 错误
+#                  且不含 sorry/admit 才算 verified)
+#   Orchestrator ↔ AgentLoop 的反馈路由 + 终止控制: 编译诊断自动注入
+#                  下一轮 (auto_inject_lean_compile), verified 即停
+#                  (on_proof_found), 超过 attempt 阈值即停 (max_turns)
+#
+# 论文工具 (lean-lsp-mcp, Table 1) → 本框架 ToolKit 的映射:
+#   lean_diagnostic_messages / lean_build → LEAN_VERIFY
+#   lean_goal / lean_term_goal            → GOAL_INSPECT
+#   lean_leansearch / lean_loogle /
+#     lean_state_search                   → PREMISE_SEARCH
+#   lean_multi_attempt                    → TACTIC_SUGGEST
+#   lean_hammer_premise                   → LEAN_AUTO
+#   read_file / edit_file (filesystem)    → (本框架的 proof 状态由对话
+#                                            上下文承载, 无需文件工具)
+#
+# Prover 的 sketch → have/sorry 骨架 → 逐步填充的工作流 (论文 Fig. 2)
+# 编码在 framing="ax_prover" 的 system prompt 里。
+#
+# 实验设置对齐 (论文 5.1):
+#   - New Benchmarks 配置: Claude Sonnet 4, ≤200 次 API call,
+#     25 分钟 timeout  → 即下面的默认值
+#   - PutnamBench 配置:   Sonnet 4.5, ≤400 calls, 无 timeout
+#     → 运行时用 --model 覆盖 model 字段, 并在 YAML 副本里把
+#       max_turns=400 / stop.timeout_seconds 调大即可
+PRESETS["ax_prover"] = Profile(
+    name="ax_prover",
+    description=(
+        "Ax-Prover (arXiv:2510.12787) 复现: 通用 LLM + Lean 工具的"
+        "agentic 定理证明. 工作流 = NL proof sketch → have/sorry 骨架 "
+        "→ 逐步填充, 每步用诊断工具验证; Verifier 独立判定 (编译通过"
+        "且无 sorry); Orchestrator 反馈循环直到 verified 或预算耗尽. "
+        "论文配置: Sonnet 4, ≤200 API calls, 25min timeout, pass@1."
+    ),
+    tools=[
+        ToolKit.LEAN_VERIFY,     # lean_diagnostic_messages / lean_build
+        ToolKit.GOAL_INSPECT,    # lean_goal / lean_term_goal
+        ToolKit.PREMISE_SEARCH,  # lean_leansearch / lean_loogle
+        ToolKit.TACTIC_SUGGEST,  # lean_multi_attempt
+        ToolKit.LEAN_AUTO,       # lean_hammer_premise (exact?/aesop)
+    ],
+    max_turns=200,               # 论文: ≤200 API calls per attempt
+    temperature=0.7,
+    model="claude-sonnet-4-20250514",  # 论文 New-Benchmark 配置
+    framing="ax_prover",
+    search=SearchConfig(kind="none"),  # 论文是单 attempt 闭环, 无树搜索
+    observation=ObservationPolicy(
+        # Verifier/Orchestrator 闭环: 每次出现 ```lean 块都自动编译,
+        # 诊断作为 observation 注入下一轮 —— 即论文的 feedback routing.
+        auto_inject_lean_compile=True,
+        auto_inject_goal_state=False,
+        # 论文不做静态注入: 引理检索/示例全部由 Prover 通过工具按需获取
+        include_knowledge_briefing=False,
+        inject_premises_in_prompt=False,
+        inject_few_shot=False,
+    ),
+    stop=StopCondition(
+        on_proof_found=True,         # Verifier certifies → Orchestrator 终止
+        on_text_only=False,          # 不调工具 ≠ 完成; 必须 verified 才停
+        max_total_tokens=1_000_000,  # 200-call 预算下的宽松上限
+        timeout_seconds=1500.0,      # 论文: 25 分钟 timeout
+    ),
+)
+
 # shim were removed. They had been empty / no-op  when MCTS / 
 # best_first / beam graduated into PRESETS. New "experimental" gating
 # can be re-introduced if and when there's an actual preset to gate.

@@ -1,0 +1,31 @@
+# Ax-Prover (arXiv:2510.12787) on PutnamBench — paper §5.1 second setup.
+#
+# Paper config for PutnamBench: Claude Sonnet 4.5, ≤400 API calls,
+# no 25-minute timeout, pass@1 (one attempt of interleaved reasoning
+# and tool calls). The shipped `ax_prover` preset defaults to the
+# New-Benchmark config (Sonnet 4, 200 calls, 25-min timeout); the
+# `model` override below switches to the PutnamBench model. To also
+# lift max_turns to 400 and remove the timeout, copy
+# config/profiles/ax_prover.yaml, set `max_turns: 400` and
+# `stop.timeout_seconds` to a large value, then `register_profile`
+# it (see the YAML header for the snippet).
+name: putnambench_ax_prover
+
+provider: anthropic
+model: "claude-sonnet-4-5"
+
+lean_mode: real
+max_samples: 1          # pass@1, as in the paper
+limit: 0
+resume: true
+no_knowledge: true      # Ax-Prover retrieves on demand via tools only
+
+output_dir: results/profile_matrix/putnambench_ax_prover
+
+benchmarks:
+  - name: putnambench
+    split: test
+    project_dir: data/PutnamBench/lean4
+
+profiles:
+  - ax_prover

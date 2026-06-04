@@ -75,6 +75,12 @@ HEADERS: dict[str, str] = {
     "beam": (
         "# Beam search — keep top-W leaves per depth.\n"
         "# Search tree written to ``meta.search_tree``.\n"),
+    "ax_prover": (
+        "# Ax-Prover (arXiv:2510.12787) — general-purpose LLM + Lean tools,\n"
+        "# Orchestrator/Prover/Verifier closed loop. Sketch → have/sorry\n"
+        "# skeleton → fill steps one at a time, verifying each with\n"
+        "# diagnostics; pass@1 = one attempt of interleaved reasoning and\n"
+        "# tool calls (paper budget: ≤200 calls, 25-min timeout).\n"),
 }
 
 # Universal header reused for every file.
