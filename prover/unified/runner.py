@@ -433,6 +433,7 @@ class UnifiedProofRunner:
         tool_ctx = ToolContext(
             agent_name=f"unified.{profile.name}",
             theorem_statement=problem.theorem_statement,
+            lean_preamble=getattr(problem, "lean_preamble", "") or "",
         )
 
         # ── LooKeng: pre-bootstrap a session so the LLM never has to
@@ -592,6 +593,7 @@ class UnifiedProofRunner:
             tool_ctx = ToolContext(
                 agent_name=f"unified.{profile.name}.node{node_id}",
                 theorem_statement=problem.theorem_statement,
+                lean_preamble=getattr(problem, "lean_preamble", "") or "",
             )
 
             config = LoopConfig(
@@ -1193,11 +1195,14 @@ class UnifiedProofRunner:
                     return False
                 if len(names) == 1:
                     statement, proof = _split_theorem_and_proof(proof_code)
-                    result = verify(statement, proof, "")
+                    result = verify(
+                        statement, proof, getattr(problem, "lean_preamble", "") or "")
                 else:
-                    result = verify(proof_code, "", "")
+                    result = verify(
+                        proof_code, "", getattr(problem, "lean_preamble", "") or "")
             else:
-                result = verify(target_statement, proof_code, "")
+                result = verify(
+                    target_statement, proof_code, getattr(problem, "lean_preamble", "") or "")
             if _inspect.iscoroutine(result):
                 result = await result
             success = bool(getattr(result, "success", False))

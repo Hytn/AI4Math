@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, Optional, Any
 
 from prover.models import BenchmarkProblem
 
@@ -26,16 +26,10 @@ logger = logging.getLogger(__name__)
 # this set, when seen at the start of a line, ends the previous block.
 # Matches the most permissive form across all six original loaders.
 _BOUNDARY_KEYWORDS = (
-    "theorem", "lemma", "end", "noncomputable",
+    "theorem", "lemma", "instance", "end", "noncomputable",
     "open", "section", "namespace",
 )
 _BOUNDARY_PATTERN = "|".join(_BOUNDARY_KEYWORDS) + r"|--|/-"
-
-_THEOREM_RE = re.compile(
-    rf'^(theorem|lemma)\s+(\S+)\s*([\s\S]*?)'
-    rf'(?=\n(?:{_BOUNDARY_PATTERN})\s|\Z)',
-    re.MULTILINE,
-)
 
 def _split_statement(full_text: str) -> str:
     """Strip ``:= by ...`` (or bare ``:= ...``) to keep just the statement."""
@@ -73,7 +67,8 @@ def parse_lean_files(
     source: str,
     difficulty_fn: Optional[Callable[[str], str]] = None,
     skip_sorry_in_statement: bool = False,
-    extra_fields: Optional[Callable[[str, str], dict]] = None,
+    extra_fields: Optional[Callable[..., dict[str, Any]]] = None,
+    declaration_kinds: tuple[str, ...] = ("theorem", "lemma"),
 ) -> list[BenchmarkProblem]:
     """Parse a list of Lean source files into BenchmarkProblems.
 
@@ -85,9 +80,12 @@ def parse_lean_files(
         difficulty_fn: optional ``name -> str`` heuristic; defaults to "medium".
         skip_sorry_in_statement: if True, drop entries whose extracted
             statement still contains ``sorry`` (PutnamBench-style guard).
-        extra_fields: optional callable ``(name, full_text) -> dict`` whose
-            return value is merged into BenchmarkProblem kwargs (e.g. for
-            additional metadata loaders may want to attach).
+        extra_fields: optional callable returning fields merged into the
+            BenchmarkProblem. It may accept (name, full_text) or
+            (name, full_text, lean_file).
+        declaration_kinds: Lean declaration keywords to extract. Most
+            benchmarks use theorem/lemma; ProofNet also includes instance
+            declarations in its official JSONL export.
     """
     problems: list[BenchmarkProblem] = []
     seen_files = 0
@@ -100,7 +98,13 @@ def parse_lean_files(
             logger.debug(f"skipping unreadable {lean_file}: {e}")
             continue
         seen_files += 1
-        for m in _THEOREM_RE.finditer(content):
+        decl_pattern = "|".join(re.escape(k) for k in declaration_kinds)
+        decl_re = re.compile(
+            rf"^({decl_pattern})\s+(\S+)\s*([\s\S]*?)"
+            rf"(?=\n(?:{_BOUNDARY_PATTERN})\s|\Z)",
+            re.MULTILINE,
+        )
+        for m in decl_re.finditer(content):
             name = m.group(2)
             stmt = _split_statement(m.group(0).strip())
             if skip_sorry_in_statement and "sorry" in stmt:
@@ -115,7 +119,11 @@ def parse_lean_files(
             )
             if extra_fields is not None:
                 try:
-                    kwargs.update(extra_fields(name, m.group(0)))
+                    try:
+                        fields = extra_fields(name, m.group(0), lean_file)
+                    except TypeError:
+                        fields = extra_fields(name, m.group(0))
+                    kwargs.update(fields)
                 except Exception as e:
                     logger.debug(f"extra_fields for {name}: {e}")
             problems.append(BenchmarkProblem(**kwargs))

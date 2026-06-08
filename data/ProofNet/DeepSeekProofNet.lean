@@ -1,0 +1,1 @@
+-- Local Lake target for DeepSeek-Prover-V1.5 ProofNet evaluation.

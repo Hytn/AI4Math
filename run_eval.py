@@ -754,11 +754,14 @@ def main():
             # 响应,管线在没装 Lean 也没 LLM 时也能产出 success: true 的
             # dialog.json (用于冒烟评测;真实评测请换 --backend kimina/auto +
             # 真实 LLM provider)。
+            pool_preamble = "import Mathlib"
+            logger.info("  Lean startup preamble: %s", repr(pool_preamble))
             if getattr(args, "backend", None) == "mock":
                 from engine.transport import MockTransport
                 lean_env = SyncLeanPool(
                     pool_size=pool_size,
                     project_dir=project_dir,
+                    preamble=pool_preamble,
                     timeout_seconds=lean_timeout,
                     transport_factory=lambda _sid: MockTransport())
                 logger.info(
@@ -768,6 +771,7 @@ def main():
                 lean_env = SyncLeanPool(
                     pool_size=pool_size,
                     project_dir=project_dir,
+                    preamble=pool_preamble,
                     timeout_seconds=lean_timeout)
                 logger.info(
                     f"  Lean 4 池已启动 (pool_size={pool_size}, "

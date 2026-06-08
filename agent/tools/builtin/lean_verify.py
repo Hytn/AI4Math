@@ -58,15 +58,15 @@ def _split_theorem_and_proof(code: str) -> tuple[str, str]:
     proof = code[m.start():]
     return (statement, proof)
 
-_DECL_RE = re.compile(r"\b(?:theorem|lemma)\s+([A-Za-z0-9_'.]+)|\bexample\b")
+_DECL_RE = re.compile(r"\b(?:theorem|lemma|instance)\s+([A-Za-z0-9_'.]+)|\bexample\b")
 
 def _target_theorem_name(theorem_statement: str) -> str:
     """Extract the expected theorem name from a benchmark statement."""
-    m = re.search(r"\btheorem\s+([A-Za-z0-9_'.]+)", theorem_statement or "")
+    m = re.search(r"\b(?:theorem|lemma|instance)\s+([A-Za-z0-9_'.]+)", theorem_statement or "")
     return m.group(1) if m else ""
 
 def _declaration_names(code: str) -> list[str]:
-    """Return theorem/lemma names, using '<example>' for anonymous examples."""
+    """Return declaration names, using '<example>' for anonymous examples."""
     names: list[str] = []
     try:
         from prover.verifier.integrity_checker import _strip_comments
@@ -152,6 +152,7 @@ class LeanVerifyTool(Tool):
     async def execute(self, input: dict, ctx: ToolContext) -> ToolResult:
         code = input["code"]
         target_statement = getattr(ctx, "theorem_statement", "") or ""
+        lean_preamble = getattr(ctx, "lean_preamble", "") or ""
 
         proves_target = self._proves_target(code, target_statement)
 
@@ -162,7 +163,7 @@ class LeanVerifyTool(Tool):
         statement, proof = self._verification_input(code, target_statement)
 
         try:
-            result = await self._call_verify(statement or code, proof)
+            result = await self._call_verify(statement or code, proof, lean_preamble)
         except AttributeError as e:
             # Pool exists but doesn't expose verify_complete. Surface a
             # structured error rather than a stack trace.
@@ -289,12 +290,12 @@ class LeanVerifyTool(Tool):
         }
         return ToolResult.success(json.dumps(payload, indent=2, ensure_ascii=False))
 
-    async def _call_verify(self, statement: str, proof: str):
+    async def _call_verify(self, statement: str, proof: str, preamble: str = ""):
         """Invoke verify_complete on the pool, await if coroutine."""
         verify = getattr(self._pool, "verify_complete", None)
         if verify is None:
             raise AttributeError("verify_complete")
-        out = verify(statement, proof, "")
+        out = verify(statement, proof, preamble)
         if inspect.iscoroutine(out):
             out = await out
         return out

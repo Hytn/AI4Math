@@ -183,8 +183,14 @@ def assemble_code(theorem: str, proof: str, preamble: str = "") -> str:
             parts.append(prf)
         return "\n".join(parts)
 
-    # 如果 theorem 已经包含 := (含证明体), 不追加 proof
-    if ":=" in thm:
+    if thm.rstrip().endswith(":=") and prf:
+        if prf.startswith(":="):
+            parts.append(f"{thm.rstrip()[:-2].rstrip()} {prf}")
+        elif prf.startswith("by"):
+            parts.append(f"{thm} {prf}")
+        else:
+            parts.append(f"{thm} by\n  {prf}")
+    elif ":=" in thm:
         parts.append(thm)
     elif prf:
         # proof 自带 :=
@@ -193,7 +199,7 @@ def assemble_code(theorem: str, proof: str, preamble: str = "") -> str:
         # proof 以 by 开头 (tactic block)
         elif prf.startswith("by"):
             parts.append(f"{thm} := {prf}")
-        # proof 是裸 tactic 或 term — 假定 tactic mode
+        # proof 是裸 tactic 或 term - 假定 tactic mode
         else:
             parts.append(f"{thm} := by\n  {prf}")
     else:

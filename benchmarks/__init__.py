@@ -4,7 +4,7 @@
     builtin         5 题, 内置冒烟测试
     minif2f         244 题, 竞赛数学
     putnambench     672 题, Putnam 1962-2024
-    proofnet        360 题, 本科数学
+    proofnet        371 题, 本科数学
     fate-m / -h / -x  150 / 100 / 100 题, 抽象代数 (本科 → 研究级)
     formalmath      5560 题, 多领域
 

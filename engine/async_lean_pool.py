@@ -41,6 +41,12 @@ def _declaration_code(theorem: str, proof: str = "") -> str:
     prf = (proof or "").strip()
     if not thm:
         return prf
+    if thm.rstrip().endswith(":=") and prf:
+        if prf.startswith(":="):
+            return f"{thm.rstrip()[:-2].rstrip()} {prf}"
+        if prf.startswith("by"):
+            return f"{thm} {prf}"
+        return f"{thm} by\n  {prf}"
     if ":=" in thm:
         return thm
     if not prf:
@@ -112,7 +118,8 @@ class AsyncLeanSession:
                 f"AsyncSession {self.session_id}: [FALLBACK] No REPL binary")
             return True
 
-        # 预加载 preamble
+        # 预加载 preamble. ProofNet uses per-problem JSONL headers, so its
+        # pool starts with an empty preamble and loads headers lazily.
         if preamble:
             resp = await self._transport.send({"cmd": preamble, "env": 0})
             if resp and "env" in resp:
@@ -124,6 +131,10 @@ class AsyncLeanSession:
                     f"AsyncSession {self.session_id}: started, "
                     f"env_id={self._base_env_id}")
                 return True
+        else:
+            logger.info(
+                f"AsyncSession {self.session_id}: started, env_id=0 "
+                f"(no startup preamble)")
 
         return True
 

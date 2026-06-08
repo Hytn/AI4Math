@@ -373,6 +373,11 @@ class TestCoreUtilities:
         code = assemble_code("theorem t : True := trivial", "")
         assert "theorem t : True := trivial" in code
 
+    def test_assemble_code_statement_ending_with_assign_gets_proof(self):
+        code = assemble_code("theorem t : True :=", "by trivial")
+        assert "theorem t : True := by trivial" in code
+
+
     def test_compile_cache(self):
         cache = CompileCache(maxsize=2)
         r1 = FullVerifyResult(success=True)

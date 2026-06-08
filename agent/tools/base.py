@@ -54,6 +54,7 @@ class ToolContext:
     """
     agent_name: str = ""
     theorem_statement: str = ""
+    lean_preamble: str = ""
     current_goals: list[str] = field(default_factory=list)
     working_dir: str = ""
     budget_remaining_tokens: int = 100_000

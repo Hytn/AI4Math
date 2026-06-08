@@ -1,0 +1,28 @@
+# Ax-Prover on ProofNet with the official DeepSeek V4 Pro API model.
+#
+# Requires:
+#   export DEEPSEEK_API_KEY=...
+#
+# Run:
+#   python3 scripts/eval/run_profile_matrix.py \
+#     --config config/experiments/profile_matrix/proofnet_deepseek_v4_pro_ax_prover.yaml
+name: proofnet_deepseek_v4_pro_ax_prover
+
+provider: deepseek
+model: "deepseek-v4-pro"
+
+lean_mode: real
+max_samples: 1
+limit: 0
+resume: true
+no_knowledge: true
+
+output_dir: results/profile_matrix/proofnet_deepseek_v4
+
+benchmarks:
+  - name: proofnet
+    split: test
+    project_dir: data/ProofNet
+
+profiles:
+  - ax_prover
