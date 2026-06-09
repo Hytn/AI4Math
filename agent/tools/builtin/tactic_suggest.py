@@ -69,9 +69,17 @@ class TacticSuggestTool(Tool):
             suggestions = self._heuristic_suggest(goal)
             return ToolResult.success(json.dumps(suggestions, indent=2))
 
-        # tactic_apply: prefer pool.base_env_id (set by pool.start()),
-        # fall back to 0 if the pool doesn't expose it.
-        env_id = getattr(self._pool, "base_env_id", 0)
+        proof_state_id = ctx.shared_state.get("proof_state_id")
+        if proof_state_id is None:
+            suggestions = self._heuristic_suggest(goal)
+            return ToolResult.success(json.dumps({
+                "mode": "heuristic",
+                "message": (
+                    "No live proof_state_id is available; returning heuristic "
+                    "suggestions without executing tactics."),
+                "suggestions": suggestions,
+            }, indent=2), count=len(suggestions))
+        env_id = int(proof_state_id)
 
         results = []
         for tactic in tactics:

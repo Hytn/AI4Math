@@ -60,6 +60,73 @@ def _split_theorem_and_proof(code: str) -> tuple[str, str]:
 
 _DECL_RE = re.compile(r"\b(?:theorem|lemma|instance)\s+([A-Za-z0-9_'.]+)|\bexample\b")
 
+_DIRECTIVE_RE = re.compile(r"^\s*(?:import\b|open\b|#check\b|#eval\b|#print\b|#reduce\b|#simp\b)", re.MULTILINE)
+_EXPLORATORY_RE = re.compile(r"^\s*(?:example\b|#check\b|#eval\b|#print\b|#reduce\b|#simp\b)", re.MULTILINE)
+
+
+def _strip_import_open_prefix(code: str) -> tuple[str, bool]:
+    """Drop leading import/open lines from LLM-submitted verifier code."""
+    lines = (code or "").splitlines()
+    out: list[str] = []
+    stripped = False
+    skipping_prefix = True
+    for line in lines:
+        s = line.strip()
+        if skipping_prefix and (
+            not s
+            or s.startswith("import ")
+            or s == "open"
+            or s.startswith("open ")
+        ):
+            stripped = stripped or bool(s)
+            continue
+        skipping_prefix = False
+        out.append(line)
+    return "\n".join(out).strip(), stripped
+
+
+def _proof_from_target_declaration(code: str, target_statement: str) -> str:
+    """If code is the target theorem declaration, return only its proof part."""
+    target = _target_theorem_name(target_statement)
+    if not target:
+        return ""
+    m = re.search(rf"\b(?:theorem|lemma|instance)\s+{re.escape(target)}\b", code or "")
+    if not m:
+        return ""
+    tail = code[m.start():]
+    _statement, proof = _split_theorem_and_proof(tail)
+    return proof.strip()
+
+
+def _normalise_target_proof_input(code: str, target_statement: str) -> tuple[str, list[str]]:
+    """Normalize lean_verify input for benchmark-target verification.
+
+    The checker already receives the benchmark header as preamble. Model
+    submissions must therefore not include imports/open commands or exploratory
+    snippets. When the model submits the target theorem declaration, we keep
+    only the proof body so imports are never spliced after an existing env.
+    """
+    notes: list[str] = []
+    cleaned, stripped = _strip_import_open_prefix(code or "")
+    if stripped:
+        notes.append("removed leading import/open lines; benchmark headers are loaded separately")
+    if _EXPLORATORY_RE.search(cleaned):
+        raise ValueError(
+            "lean_verify is only for the target theorem proof. Do not submit "
+            "#check/#eval/#print or example snippets; use premise_search for exploration.")
+    if target_statement:
+        proof = _proof_from_target_declaration(cleaned, target_statement)
+        if proof:
+            notes.append("extracted proof body from submitted target theorem declaration")
+            return proof, notes
+        names = _declaration_names(cleaned)
+        if names:
+            target = _target_theorem_name(target_statement)
+            raise ValueError(
+                f"lean_verify must prove target theorem {target!r}; got declaration(s) {names!r}.")
+    return cleaned.strip(), notes
+
+
 def _target_theorem_name(theorem_statement: str) -> str:
     """Extract the expected theorem name from a benchmark statement."""
     m = re.search(r"\b(?:theorem|lemma|instance)\s+([A-Za-z0-9_'.]+)", theorem_statement or "")
@@ -150,9 +217,15 @@ class LeanVerifyTool(Tool):
         self._integrity_strict = integrity_strict
 
     async def execute(self, input: dict, ctx: ToolContext) -> ToolResult:
-        code = input["code"]
+        original_code = input["code"]
         target_statement = getattr(ctx, "theorem_statement", "") or ""
         lean_preamble = getattr(ctx, "lean_preamble", "") or ""
+
+        try:
+            code, normalisation_notes = _normalise_target_proof_input(
+                original_code, target_statement)
+        except ValueError as e:
+            return self._validation_error(str(e), code=original_code)
 
         proves_target = self._proves_target(code, target_statement)
 
@@ -215,6 +288,8 @@ class LeanVerifyTool(Tool):
             "elapsed_ms": elapsed_ms,
             "proves_target": proves_target,
         }
+        if normalisation_notes:
+            response["normalization"] = normalisation_notes
         if integrity_issues:
             response["integrity_violations"] = integrity_issues
             if not self._integrity_strict:
@@ -261,22 +336,18 @@ class LeanVerifyTool(Tool):
     def _verification_input(self, code: str, target_statement: str) -> tuple[str, str]:
         """Choose whether to verify a full source block or a proof body."""
         if target_statement:
-            names = _declaration_names(code)
-            if names:
-                # A complete declaration block that names the target is verified
-                # as submitted, preserving helper lemmas/imports in the block.
-                return code, ""
             return target_statement, code
         statement, proof = _split_theorem_and_proof(code)
         return statement or code, proof
 
-    def _validation_error(self, message: str) -> ToolResult:
+    def _validation_error(self, message: str, *, code: str = "") -> ToolResult:
         payload = {
             "verified": False,
             "goals_remaining": [],
             "errors": [message],
             "sorry_free": True,
             "elapsed_ms": 0,
+            "proves_target": False,
             "agent_feedback": {
                 "is_proof_complete": False,
                 "remaining_goals": [],

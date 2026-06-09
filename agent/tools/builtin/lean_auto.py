@@ -36,7 +36,16 @@ class LeanAutoTool(Tool):
         if not self._pool:
             return ToolResult.error("Lean REPL not available")
 
-        env_id = getattr(self._pool, "base_env_id", 0)
+        proof_state_id = ctx.shared_state.get("proof_state_id")
+        if proof_state_id is None:
+            return ToolResult.success(json.dumps({
+                "closing_tactics": [],
+                "mode": "unavailable",
+                "message": (
+                    "No live proof_state_id is available; automation tactics "
+                    "were not executed."),
+            }))
+        env_id = int(proof_state_id)
         successes = []
         for tactic in self.TACTICS:
             try:

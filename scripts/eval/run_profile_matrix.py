@@ -54,6 +54,7 @@ _VALUE_FLAGS = {
     "temperature": "--temperature",
     "max_turns": "--max-turns",
     "profile_timeout": "--profile-timeout",
+    "max_total_tokens": "--max-total-tokens",
 }
 
 _BENCHMARK_PROJECT_DIRS = {

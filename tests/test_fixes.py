@@ -530,7 +530,7 @@ class TestStrictProofAcceptance:
         assert trace["correct_count"] == 0
 
     @pytest.mark.asyncio
-    async def test_lean_verify_marks_verified_helper_as_not_target(self):
+    async def test_lean_verify_rejects_exploratory_example_for_target(self):
         import json
         from types import SimpleNamespace
         from agent.tools.base import ToolContext
@@ -554,9 +554,192 @@ class TestStrictProofAcceptance:
         )
         payload = json.loads(result.content)
 
-        assert payload["verified"] is True
+        assert payload["verified"] is False
         assert payload["proves_target"] is False
-        assert pool.calls == 1
+        assert "only for the target theorem" in payload["errors"][0]
+        assert pool.calls == 0
+
+    @pytest.mark.asyncio
+    async def test_lean_verify_strips_imports_and_extracts_target_proof(self):
+        import json
+        from types import SimpleNamespace
+        from agent.tools.base import ToolContext
+        from agent.tools.builtin.lean_verify import LeanVerifyTool
+
+        class Pool:
+            def __init__(self):
+                self.calls = []
+
+            async def verify_complete(self, theorem, proof, preamble=""):
+                self.calls.append((theorem, proof, preamble))
+                return SimpleNamespace(
+                    success=True, has_sorry=False, errors=[],
+                    goals_remaining=[], stderr="", elapsed_ms=1)
+
+        pool = Pool()
+        tool = LeanVerifyTool(lean_pool=pool)
+        code = (
+            "import Mathlib\n"
+            "open Nat\n\n"
+            "theorem target : True := by\n"
+            "  trivial"
+        )
+        result = await tool.execute(
+            {"code": code},
+            ToolContext(
+                theorem_statement="theorem target : True :=",
+                lean_preamble="import Mathlib\nopen Nat",
+            ),
+        )
+        payload = json.loads(result.content)
+
+        assert payload["verified"] is True
+        assert payload["proves_target"] is True
+        theorem, proof, preamble = pool.calls[-1]
+        assert theorem == "theorem target : True :="
+        assert proof.strip() == ":= by\n  trivial"
+        assert preamble == "import Mathlib\nopen Nat"
+        assert "normalization" in payload
+
+    @pytest.mark.asyncio
+    async def test_lean_verify_rejects_check_for_target(self):
+        import json
+        from agent.tools.base import ToolContext
+        from agent.tools.builtin.lean_verify import LeanVerifyTool
+
+        class Pool:
+            async def verify_complete(self, theorem, proof, preamble=""):
+                raise AssertionError("#check should not reach Lean")
+
+        tool = LeanVerifyTool(lean_pool=Pool())
+        result = await tool.execute(
+            {"code": "#check Nat"},
+            ToolContext(theorem_statement="theorem target : True :="),
+        )
+        payload = json.loads(result.content)
+
+        assert payload["verified"] is False
+        assert payload["proves_target"] is False
+        assert "#check" in payload["errors"][0]
+
+    @pytest.mark.asyncio
+    async def test_goal_inspect_passes_problem_preamble(self):
+        import json
+        from types import SimpleNamespace
+        from agent.tools.base import ToolContext
+        from agent.tools.builtin.goal_inspect import GoalInspectTool
+
+        class Pool:
+            def __init__(self):
+                self.calls = []
+
+            async def verify_complete(self, theorem, proof, preamble=""):
+                self.calls.append((theorem, proof, preamble))
+                return SimpleNamespace(
+                    success=False, has_sorry=True, errors=[],
+                    goals_remaining=["⊢ True"])
+
+        pool = Pool()
+        tool = GoalInspectTool(lean_pool=pool)
+        proof = ":= by\n  sorry"
+        preamble = "import Mathlib\nopen scoped BigOperators"
+        result = await tool.execute(
+            {"proof_so_far": proof},
+            ToolContext(
+                theorem_statement="theorem target : True :=",
+                lean_preamble=preamble,
+            ),
+        )
+        payload = json.loads(result.content)
+
+        assert payload["goal_count"] == 1
+        assert pool.calls[-1] == (
+            "theorem target : True :=",
+            proof,
+            preamble,
+        )
+
+    @pytest.mark.asyncio
+    async def test_goal_inspect_strips_imports_and_extracts_target_proof(self):
+        import json
+        from types import SimpleNamespace
+        from agent.tools.base import ToolContext
+        from agent.tools.builtin.goal_inspect import GoalInspectTool
+
+        class Pool:
+            def __init__(self):
+                self.calls = []
+
+            async def verify_complete(self, theorem, proof, preamble=""):
+                self.calls.append((theorem, proof, preamble))
+                return SimpleNamespace(
+                    success=False, has_sorry=True, errors=[],
+                    goals_remaining=["⊢ True"])
+
+        pool = Pool()
+        tool = GoalInspectTool(lean_pool=pool)
+        code = (
+            "import Mathlib\n"
+            "open Nat\n\n"
+            "theorem target : True := by\n"
+            "  sorry"
+        )
+        result = await tool.execute(
+            {"proof_so_far": code},
+            ToolContext(
+                theorem_statement="theorem target : True :=",
+                lean_preamble="import Mathlib\nopen Nat",
+            ),
+        )
+        payload = json.loads(result.content)
+
+        assert payload["goal_count"] == 1
+        assert "normalization" in payload
+        assert pool.calls[-1] == (
+            "theorem target : True :=",
+            ":= by\n  sorry",
+            "import Mathlib\nopen Nat",
+        )
+
+    @pytest.mark.asyncio
+    async def test_tactic_suggest_uses_heuristic_without_proof_state(self):
+        import json
+        from agent.tools.base import ToolContext
+        from agent.tools.builtin.tactic_suggest import TacticSuggestTool
+
+        class Pool:
+            async def try_tactic(self, env_id, tactic):
+                raise AssertionError("should not execute tactics without proof_state_id")
+
+        tool = TacticSuggestTool(lean_pool=Pool())
+        result = await tool.execute(
+            {"goal_state": "⊢ n + 0 = n"},
+            ToolContext(),
+        )
+        payload = json.loads(result.content)
+
+        assert payload["mode"] == "heuristic"
+        assert payload["suggestions"]
+
+    @pytest.mark.asyncio
+    async def test_lean_auto_does_not_use_base_env_without_proof_state(self):
+        import json
+        from agent.tools.base import ToolContext
+        from agent.tools.builtin.lean_auto import LeanAutoTool
+
+        class Pool:
+            async def try_tactic(self, env_id, tactic):
+                raise AssertionError("should not execute tactics without proof_state_id")
+
+        tool = LeanAutoTool(lean_pool=Pool())
+        result = await tool.execute(
+            {"goal_context": "⊢ True"},
+            ToolContext(),
+        )
+        payload = json.loads(result.content)
+
+        assert payload["mode"] == "unavailable"
+        assert payload["closing_tactics"] == []
 
     @pytest.mark.asyncio
     async def test_tactic_apply_rejects_sorry_before_pool_call(self):

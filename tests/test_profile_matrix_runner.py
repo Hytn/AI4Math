@@ -41,6 +41,7 @@ def test_build_runs_expands_cross_product_and_constructs_run_eval_commands(tmp_p
         "lean_mode": "skip",
         "max_samples": 1,
         "limit": 2,
+        "max_total_tokens": 12345,
         "resume": True,
         "no_knowledge": True,
         "benchmarks": [
@@ -63,6 +64,7 @@ def test_build_runs_expands_cross_product_and_constructs_run_eval_commands(tmp_p
     assert "--profile" in first.command
     assert first.command[first.command.index("--profile") + 1] == "whole_proof"
     assert "--resume" in first.command
+    assert first.command[first.command.index("--max-total-tokens") + 1] == "12345"
     assert "--no-knowledge" in first.command
     assert first.command[first.command.index("--project-dir") + 1] == "data/miniF2F"
 

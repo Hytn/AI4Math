@@ -273,12 +273,20 @@ class AsyncLeanSession:
             if getattr(self._transport, "is_single_shot", False):
                 resp = await self._transport.send({"cmd": full_code, "env": 0})
             else:
-                env_id = self.base_env_id
+                ok, env_id, error_message, error_category = (
+                    await self._env_for_preamble(preamble))
+                if not ok:
+                    elapsed = int((time.time() - t0) * 1000)
+                    return FullVerifyResult(
+                        success=False,
+                        errors=[{
+                            "message": error_message,
+                            "category": error_category or "preamble_failed",
+                        }],
+                        stderr=error_message,
+                        elapsed_ms=elapsed,
+                    )
                 code = _declaration_code(theorem, proof)
-                if preamble and preamble.strip():
-                    pre = await self._transport.send({"cmd": preamble})
-                    if pre and "env" in pre:
-                        env_id = pre["env"]
                 resp = await self._transport.send({"cmd": code, "env": env_id})
             elapsed = int((time.time() - t0) * 1000)
             return self._parse_verify_response(resp, elapsed)

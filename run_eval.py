@@ -622,6 +622,10 @@ def main():
         help=("Override profile stop.timeout_seconds for the whole "
               "AgentLoop. Useful when a slow API/model needs enough wall "
               "time to reach repair turns. None = use profile default."))
+    parser.add_argument(
+        "--max-total-tokens", type=int, default=None, metavar="N",
+        help=("Override profile stop.max_total_tokens for one AgentLoop "
+              "attempt. Useful for containing long tool-feedback loops."))
 
     args = parser.parse_args()
 
@@ -635,21 +639,27 @@ def main():
     if getattr(args, "max_turns", None) is not None:
         cli_overrides["max_turns"] = args.max_turns
     profile_timeout = getattr(args, "profile_timeout", None)
-    if cli_overrides or profile_timeout is not None:
+    max_total_tokens = getattr(args, "max_total_tokens", None)
+    if cli_overrides or profile_timeout is not None or max_total_tokens is not None:
         from dataclasses import replace as _dc_replace
         from prover.unified import get_profile, register_profile
         try:
             base = get_profile(args.profile)
+            stop_overrides = {}
             if profile_timeout is not None:
-                cli_overrides["stop"] = _dc_replace(
-                    base.stop, timeout_seconds=profile_timeout)
+                stop_overrides["timeout_seconds"] = profile_timeout
+            if max_total_tokens is not None:
+                stop_overrides["max_total_tokens"] = max_total_tokens
+            if stop_overrides:
+                cli_overrides["stop"] = _dc_replace(base.stop, **stop_overrides)
             register_profile(_dc_replace(base, **cli_overrides))
             logger.info(
                 f"  profile {args.profile!r} overrides applied: "
                 f"{cli_overrides}")
         except ValueError:
             logger.warning(
-                f"  --temperature/--max-turns ignored: profile "
+                f"  --temperature/--max-turns/--profile-timeout/"
+                f"--max-total-tokens ignored: profile "
                 f"{args.profile!r} not registered yet")
 
     # 初始化 LLM (async, 
