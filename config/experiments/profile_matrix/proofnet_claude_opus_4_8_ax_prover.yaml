@@ -1,0 +1,22 @@
+name: proofnet_claude_opus_4_8_ax_prover
+
+provider: openai_compat
+api_base: "https://sjturethinklab.cn/v1"
+omit_temperature: true
+model: "anthropic/claude-opus-4-8"
+
+lean_mode: real
+max_samples: 1
+limit: 0
+resume: true
+no_knowledge: true
+
+output_dir: results/profile_matrix/proofnet_claude_opus_4_8
+
+benchmarks:
+  - name: proofnet
+    split: test
+    project_dir: data/ProofNet
+
+profiles:
+  - ax_prover

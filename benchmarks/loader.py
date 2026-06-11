@@ -4,7 +4,7 @@
   builtin         — 内置冒烟测试 (5 题)
   minif2f         — miniF2F (488 题, yangky11/miniF2F-lean4)
   putnambench     — PutnamBench (672 题, trishullab/PutnamBench)
-  proofnet        — ProofNet (371 题, deepseek-ai/DeepSeek-Prover-V1.5)
+  proofnet        — ProofNetSharp (371 题, PAug/ProofNetSharp)
   fate-m          — FATE-M (150 题, 本科代数, frenzymath/FATE-M)
   fate-h          — FATE-H (100 题, 研究生级代数, frenzymath/FATE-H)
   fate-x          — FATE-X (100 题, 博士级代数, frenzymath/FATE-X)
@@ -69,8 +69,8 @@ def load_benchmark(benchmark: str, split: str = "test",
         problems = load(data_path, split)
         if not problems:
             logger.error(
-                f"ProofNet: 未找到 DeepSeek-Prover-V1.5 proofnet.jsonl。\n"
-                f"请放置 datasets/proofnet.jsonl 到 {data_path}/proofnet.jsonl，"
+                f"ProofNetSharp: 未找到 proofnet.jsonl。\n"
+                f"请放置 PAug/ProofNetSharp 转换后的 proofnet.jsonl 到 {data_path}/proofnet.jsonl，"
                 f"或指定 --path 参数。")
     elif b == "formalmath":
         from benchmarks.datasets.formalmath.loader import load
