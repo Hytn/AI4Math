@@ -1,15 +1,15 @@
 import Lake
 open Lake DSL
 
-package «deepseek-proofnet» {
-  -- Lean environment for DeepSeek-Prover-V1.5 ProofNet JSONL evaluation.
+package «proofnetsharp» {
+  -- Lean environment for PAug/ProofNetSharp JSONL evaluation.
 }
 
 require mathlib from git
-  "https://github.com/leanprover-community/mathlib4" @ "v4.20.0"
+  "https://github.com/leanprover-community/mathlib4" @ "v4.16.0-rc2"
 require REPL from git
-  "https://github.com/leanprover-community/repl.git" @ "bump_to_v4.20.0"
+  "https://github.com/leanprover-community/repl.git" @ "bump_to_v4.16.0-rc2"
 
 @[default_target]
-lean_lib «DeepSeekProofNet» where
-  roots := #[`DeepSeekProofNet]
+lean_lib «ProofNetSharp» where
+  roots := #[`ProofNetSharp]

@@ -1,8 +1,8 @@
-"""benchmarks/datasets/proofnet/loader.py — DeepSeek-Prover-V1.5 ProofNet loader.
+"""benchmarks/datasets/proofnet/loader.py — ProofNetSharp JSONL loader.
 
-This loader intentionally uses only ``proofnet.jsonl`` from
-``deepseek-ai/DeepSeek-Prover-V1.5/datasets/proofnet.jsonl``.
-That benchmark has 371 rows total, split into valid=185 and test=186.
+This loader intentionally uses only ``proofnet.jsonl``. The local file is
+generated from PAug/ProofNetSharp and has 371 rows total, split into
+valid=185 and test=186.
 """
 from __future__ import annotations
 
@@ -95,6 +95,6 @@ def load(repo_path: str, split: str = "test") -> list[BenchmarkProblem]:
     jsonl_file = repo / "proofnet.jsonl"
     if not jsonl_file.is_file():
         logger.warning(
-            f"ProofNet: 未找到 DeepSeek-Prover-V1.5 proofnet.jsonl: {jsonl_file}")
+            f"ProofNetSharp: 未找到 proofnet.jsonl: {jsonl_file}")
         return []
     return _load_jsonl(jsonl_file, split)
