@@ -36,15 +36,35 @@ class PremiseSearchTool(Tool):
                     "analysis, topology, combinatorics"
                 ),
             },
+            "goal_state": {
+                "type": "string",
+                "description": (
+                    "Optional: the current Lean 4 proof state (as printed "
+                    "by the REPL). When provided, state-conditioned "
+                    "retrievers (if configured) use it for higher-precision "
+                    "premise search."
+                ),
+            },
         },
         "required": ["query"],
     }
 
-    def __init__(self, knowledge_store=None, premise_db_path: str = ""):
+    def __init__(self, knowledge_store=None, premise_db_path: str = "",
+                 providers=None):
+        """``providers`` (可选): list[RetrieverProvider] —
+        来自 ``prover.premise.providers.build_providers()``。
+        传入后, 这些 provider 在 knowledge_store 之前优先查询
+        (LeanSearch v2 / Loogle 等在线检索)。
+        **默认 None = 与历史行为完全一致** (knowledge_store →
+        本地 TF-IDF → heuristic 三级降级)。"""
         self._knowledge_store = knowledge_store
         self._premise_db_path = premise_db_path
         self._tfidf = None
         self._tfidf_init_failed = False
+        self._multi_retriever = None
+        if providers:
+            from prover.premise.providers import MultiRetriever
+            self._multi_retriever = MultiRetriever(providers=list(providers))
 
     def _get_tfidf(self):
         """Lazily build a TF-IDF retriever over data/premises/*.jsonl.
@@ -137,6 +157,16 @@ class PremiseSearchTool(Tool):
         domain = input.get("domain_filter", "")
 
         results = []
+        degraded: list[str] = []
+
+        # 0. 显式注入的 retriever providers (LeanSearch v2 / Loogle /
+        #    leanstatesearch / local_tfidf) — 可选, 默认不存在。
+        #    provider 结果带 source 字段, 与历史输出 schema 兼容。
+        if self._multi_retriever is not None:
+            hits, degraded = self._multi_retriever.search(
+                query, top_k=max_results,
+                goal_state=input.get("goal_state", ""))
+            results.extend(h.to_tool_result_entry() for h in hits)
 
         # 1. Search knowledge store if available
         if self._knowledge_store:
@@ -179,13 +209,23 @@ class PremiseSearchTool(Tool):
         # 3. Heuristic fallback if no backends available
         if not results:
             results = self._heuristic_search(query, max_results)
+            if results:
+                degraded = degraded + ["heuristic_fallback"]
 
-        results.sort(key=lambda r: -r.get("relevance", 0))
-        results = results[:max_results]
+        # Provider 结果保持注入顺序在前 (跨 provider 的分数不可比,
+        # 不参与全局排序); 旧链路结果按 relevance 排序 — 无 provider
+        # 时与历史行为逐字节一致。
+        n_prov = sum(1 for r in results
+                     if r.get("source") not in (
+                         "knowledge_store", "tfidf", "heuristic"))
+        head, tail = results[:n_prov], results[n_prov:]
+        tail.sort(key=lambda r: -r.get("relevance", 0))
+        results = (head + tail)[:max_results]
 
         return ToolResult.success(
             json.dumps(results, indent=2),
             count=len(results),
+            degraded_providers=degraded,
         )
 
     def _heuristic_search(self, query: str, max_results: int) -> list[dict]:

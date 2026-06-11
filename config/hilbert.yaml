@@ -1,0 +1,28 @@
+# config/hilbert.yaml — Hilbert 递归分解证明的 per-role 模型配置
+#
+# 核心: reasoner 与 prover 是两个独立模型 (Hilbert 论文消融结论:
+# reasoner 强弱比 prover 更影响成功率, 优先给 reasoner 上强模型)。
+
+reasoner:                       # informal reasoner: 浅解 / 分解 / 组装
+  provider: anthropic           # anthropic / openai / deepseek / vllm / ...
+  model: claude-sonnet-4-20250514
+  temperature: 0.7
+  max_tokens: 16000
+
+prover:                         # 专用整证模型 (DeepSeek-Prover / Goedel 级)
+  provider: vllm                # 本地 vLLM 起的 prover 权重
+  api_base: http://localhost:8000/v1
+  model: deepseek-ai/DeepSeek-Prover-V2-7B
+  temperature: 1.0
+  max_tokens: 8192
+  omit_temperature: false
+
+# 递归调度参数 (默认对齐论文)
+max_depth: 5                    # 论文 D=5
+prover_passes: 4                # 每节点 prover 整证尝试
+shallow_passes: 2               # 每节点 reasoner 短战术尝试
+decompose_attempts: 2           # 分解重试 (带失败反馈)
+max_subgoals: 6
+check_subgoal_statements: true  # 子目标先验证 `:= by sorry` 可编译
+node_budget: 200
+preamble: "import Mathlib\n"

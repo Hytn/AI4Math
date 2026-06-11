@@ -51,7 +51,13 @@ class TestDirectImports:
         """Verify the re-export shim files no longer exist."""
         removed = [
             "agent/brain/roles.py",
-            "agent/brain/response_parser.py",
+            # NOTE: agent/brain/response_parser.py was previously listed
+            # here, but it is NOT a re-export shim — it is a 373-line
+            # extraction module with a live production caller
+            # (run_mcts_eval.py imports extract_lean_from_model_output).
+            # Removing it would break the MCTS eval entry point, so it
+            # stays. The thin `common/response_parser.py` covers the
+            # simple extract_lean_code path used by agent_loop/run_eval.
             "agent/brain/prompt_builder.py",
             "agent/hooks/hook_types.py",
             "agent/memory/working_memory.py",

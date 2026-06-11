@@ -32,7 +32,7 @@ search:
   expansion_max_turns: 1
   parallel_profiles: []
 observation:
-  auto_inject_lean_compile: true
+  auto_inject_lean_compile: false
   auto_inject_goal_state: true
   include_search_state_in_prompt: false
   include_knowledge_briefing: true

@@ -7,7 +7,7 @@
 [![Lean](https://img.shields.io/badge/Lean-4.24.0-blue)]()
 [![Python](https://img.shields.io/badge/Python-3.10+-3776ab)]()
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-853%20passed-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-963%20passed-brightgreen)]()
 
 [简体中文](README.md) · **[English](README_EN.md)**
 
@@ -15,7 +15,7 @@
 
 ---
 
-This project does not try to train a better prover model. Instead it turns "**how to use** a prover model" into a controlled experiment: on the same model weights, methodologies — single-shot whole-proof generation, verify-and-fix loops, cross-problem knowledge accumulation, heterogeneous parallelism — are composed into 19 named profiles. Switch `--profile` to switch the algorithm; `dialog.json` is the unified output format.
+This project does not try to train a better prover model. Instead it turns "**how to use** a prover model" into a controlled experiment: on the same model weights, methodologies — single-shot whole-proof generation, verify-and-fix loops, cross-problem knowledge accumulation, heterogeneous parallelism — are composed into 20 named profiles. Switch `--profile` to switch the algorithm; `dialog.json` is the unified output format.
 
 Concretely, for the DeepSeek-Prover-V2-7B line (arXiv:2504.21801): the paper reports 7B reaching pass@8192 = 82.0% on miniF2F-test using a single profile and i.i.d. sampling, with no information flow between samples. This framework provides 5 stackable profiles on the same 7B weights, asking the same question:
 
@@ -179,7 +179,7 @@ Real vLLM throughput is 3-5× higher because of KV cache reuse and batched pipel
 
 ---
 
-## The 19 profiles
+## The 20 profiles
 
 `--profile NAME` is the only knob for switching algorithms. Source of truth: `prover/unified/profiles.py::PRESETS`. The dumped readable view: `config/profiles/<name>.yaml`.
 
@@ -404,7 +404,7 @@ config/            default.yaml + 19 profile YAML templates
 data/              Benchmark problems (1626 built-in + FormalMATH optional)
 plugins/           YAML-driven domain plugins
 docs/              ARCHITECTURE.md + dialog.json schema
-tests/             853 unit / integration tests
+tests/             963 unit / integration tests
 
 reproduce_minif2f.sh                miniF2F-test reproduction (single profile)
 reproduce_minif2f_7b_ablation.sh    5-profile sweep
@@ -479,14 +479,197 @@ bash reproduce_minif2f_7b_ablation.sh \
 
 ---
 
-## Results
-We test all methods on **DeepSeek-Prover-V2-7B** across **minif2f**:
-| method | pass@32 |
-|---|---|
-| repair | 97.13% |
-| mcts |  |
-|  |  |
+## Retrieval providers (LeanSearch v2 / Loogle / LeanStateSearch)
 
+`prover/premise/providers/` is a pluggable retrieval layer in front of
+`premise_search`. **Off by default — zero behavior change unless enabled**:
+
+```bash
+# Online semantic + pattern retrieval, local TF-IDF as fallback
+export AI4MATH_PREMISE_PROVIDERS="leansearch_v2,loogle,local_tfidf"
+
+# Reproducible eval: all online lookups go through a snapshot cache
+export AI4MATH_RETRIEVAL_CACHE=results/run1/retrieval.jsonl
+export AI4MATH_RETRIEVAL_CACHE_MODE=rw     # rw / ro (frozen replay) / off
+```
+
+Providers: `leansearch_v2` (leansearch.net, Mathlib semantic SOTA),
+`loogle` (type-pattern search, complementary), `leanstatesearch`
+(proof-state-conditioned, experimental; pass `goal_state` in the tool
+call), `local_tfidf` (existing TF-IDF over `data/premises/*.jsonl`).
+Failed/unreachable providers degrade gracefully and are reported in the
+tool result's `degraded_providers` metadata.
+
+**Full Mathlib corpus** (~10^5 theorems, replaces the 404-entry seed):
+
+```bash
+python scripts/export_mathlib_premises_full.py --lake-project data/miniF2F
+```
+
+Measure the retrieval layer itself (Recall@K / nDCG@K / MRR — don't
+attribute retriever changes from end-to-end pass@k noise):
+
+```bash
+python scripts/eval/eval_retrieval.py --qrels my_qrels.jsonl \
+    --providers leansearch_v2,local_tfidf --k 1 5 10
+```
+
+## New benchmarks: lean-eval & MathArena
+
+**lean-eval** (comparator paradigm — *not* compile-and-no-sorry):
+
+```bash
+git clone https://github.com/leanprover/lean-eval data/LeanEval
+python run_eval.py --benchmark leaneval --lean-mode skip ...   # generate
+python scripts/eval/run_leaneval.py --from-traces results/<run>/traces/leaneval/
+```
+
+A problem counts as solved **iff the comparator accepts the
+submission** written into `generated/<id>/Submission.lean`. Plain
+`lean_verify` results on this benchmark are pre-filtering only.
+
+**MathArena** (uncontaminated live competitions; data is CC BY-NC-SA
+4.0, fetched at runtime, never vendored):
+
+```bash
+python scripts/eval/fetch_matharena.py --comp aime_2026
+# Line 1 — informal reasoner benchmarking (official avg@4):
+python scripts/eval/matharena_informal.py --comp aime_2026 --provider anthropic --model ...
+# Line 2 — formal: answer-aware autoformalization, then the normal eval loop:
+python scripts/eval/matharena_autoformalize.py --comp aime_2026 --provider anthropic --model ...
+python run_eval.py --benchmark matharena --split aime_2026 ...
+```
+
+Autoformalized statements carry `autoformalized_unverified` +
+`formalizer:<model>` tags; report these alongside any numbers.
+
+## Hilbert-style recursive decomposition (`run_hilbert.py`)
+
+Standalone reproduction of Hilbert (arXiv:2509.22819; reference
+open-source implementation: Gödel's Poetry) — a third entry point,
+fully decoupled from the profile system because it needs **per-role
+models** (informal reasoner + dedicated prover):
+
+```bash
+# smoke (no Lean, no API keys)
+python run_hilbert.py --statement "theorem t : 1 + 1 = 2 := by sorry" --backend mock --out /tmp/h
+# real run
+python run_hilbert.py --config config/hilbert.yaml --benchmark minif2f --lean --limit 20
+```
+
+Per node: prover whole-proof passes → reasoner shallow-solve (cheap
+one-tactic closes) → recursive decomposition into self-contained
+lemmas (depth ≤ D=5) → assembly, which must compile as a whole. Traces
+land in `hilbert_trace.json` with per-role token accounting; mock runs
+are marked `is_mock` and must be excluded from any reported numbers.
+
+## End-to-end walkthrough (实测引导)
+
+每条命令都已通过 `scripts/eval/integration_drill.py` 实跑验收 —— 该脚本
+在**无 Lean / 无 API key / 无外网**的最小环境把下面所有模块串通一遍
+(任何一环断裂即非零退出), 拿到仓库后建议先跑它做环境体检:
+
+```bash
+python scripts/eval/integration_drill.py          # ~30s, 全离线
+```
+
+以下为真实环境 (有 Lean 工具链 / API key / 可出网) 的分步引导。
+
+### Walkthrough A — 检索层: 从快照预热到可复现评测
+
+```bash
+# A1. 全量 Mathlib 语料 (一次性, 10-30 min; 之后 local_tfidf 自动加载)
+python scripts/export_mathlib_premises_full.py --lake-project data/miniF2F
+
+# A2. 预热在线检索快照 (rw 模式; 同一查询只打一次 API, 快照与 top_k 解耦)
+export AI4MATH_RETRIEVAL_CACHE=results/run1/retrieval.jsonl
+export AI4MATH_RETRIEVAL_CACHE_MODE=rw
+python scripts/eval/eval_retrieval.py \
+    --qrels data/retrieval_qrels/my_qrels.jsonl \
+    --providers leansearch_v2,loogle,local_tfidf \
+    --k 1 5 10 --out results/run1/retrieval_eval.json
+# qrels 每行: {"query": "...", "relevant": ["Nat.add_comm", ...],
+#              "goal_state": "⊢ ..."}   (goal_state 可选)
+
+# A3. 冻结重放 (发布数字必须用这个口径; degraded_queries 必须为 0)
+AI4MATH_RETRIEVAL_CACHE_MODE=ro python scripts/eval/eval_retrieval.py ...同上
+
+# A4. 接入 agent loop (对既有 profile 零改动, 环境变量 opt-in)
+export AI4MATH_PREMISE_PROVIDERS="leansearch_v2,loogle,local_tfidf"
+python run_unified.py --profile repair --benchmark minif2f --lean ...
+# 工具结果里 provider 命中排在最前 (source 字段标来源);
+# 某 provider 不可用会进 ToolResult.metadata.degraded_providers — 评测
+# 后聚合该字段, 避免"整场评测都在降级跑"而不自知。
+```
+
+### Walkthrough B — lean-eval (comparator 官方口径)
+
+```bash
+git clone https://github.com/leanprover/lean-eval data/LeanEval
+cd data/LeanEval && <按其 README 完成 lake build 与 workspace 生成> && cd -
+
+# B1. 生成证明 (本框架口径只是预筛, --lean-mode skip 纯生成更省)
+python run_eval.py --benchmark leaneval --profile repair --lean-mode skip ...
+
+# B2. comparator 终审 (官方口径; 自动备份/写入/评分/还原 Submission.lean)
+python scripts/eval/run_leaneval.py \
+    --from-traces results/<run>/traces/leaneval/ --out results/leaneval
+# 输出 leaneval_results.json 带 scoring="comparator" 标记;
+# lean-eval 的评分 CLI 若演进, 用 --validate-cmd/--score-cmd 覆盖
+# (drill 即用此机制以桩 comparator 验收全流程)。
+```
+
+### Walkthrough C — MathArena 双线
+
+```bash
+# C1. 运行时拉数据 (CC BY-NC-SA 4.0, 不入库不分发)
+pip install datasets huggingface_hub
+python scripts/eval/fetch_matharena.py --comp aime_2026
+
+# C2-informal. reasoner 选型基准 (官方 avg@4 口径 + token 成本对账)
+python scripts/eval/matharena_informal.py --comp aime_2026 \
+    --provider anthropic --model claude-opus-4-5 --n-runs 4 \
+    --out results/matharena/aime_2026_informal.json
+
+# C2-formal. answer-aware 自动形式化 → 红线静态检查 → 人工修订
+python scripts/eval/matharena_autoformalize.py --comp aime_2026 \
+    --provider anthropic --model claude-opus-4-5
+# flagged=true 的条目 loader 拒载; 人工修订 statement 后置 flagged=false。
+# 报告里必须带 formalizer 模型与 flagged 比例 (tags 已自动携带)。
+
+# C3. 形式化线进正常评测循环
+python run_eval.py --benchmark matharena --split aime_2026 --lean ...
+```
+
+### Walkthrough D — Hilbert 递归分解
+
+```bash
+# D1. 冒烟 (无 Lean / 无 key; trace 标 is_mock, 不可计入真实数字)
+python run_hilbert.py --statement "theorem t : 1 + 1 = 2 := by sorry" \
+    --backend mock --out /tmp/h
+
+# D2. 配 per-role 模型 (reasoner 优先上强模型 — 论文消融结论)
+$EDITOR config/hilbert.yaml
+
+# D3. 真实运行 (可与 C 衔接: --benchmark matharena --split aime_2026)
+python run_hilbert.py --config config/hilbert.yaml \
+    --benchmark minif2f --split test --limit 20 --lean \
+    --out results/hilbert_minif2f
+# 产物: <out>/<id>/hilbert_trace.json (递归树 + per-role token 对账)
+#       <out>/summary.json (solved/total + 每题 method 归因)
+```
+
+## Results
+
+Results table pending. Numbers will only be published here together with
+the exact reproduction command, the profile YAML, and the corresponding
+`dialog.json` traces (per the honest-disclosure policy above). Until then,
+run `reproduce_minif2f_7b_ablation.sh` to produce your own comparison table.
+
+<!-- A previous draft listed `repair pass@32 = 97.13%` with no run
+     configuration or traces attached. That number exceeded the
+     DSP-V2-671B paper baseline and could not be audited, so it was
+     removed rather than risk being quoted as a verified result. -->
 
 ## Citation and License
 

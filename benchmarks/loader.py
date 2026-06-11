@@ -28,6 +28,8 @@ _DEFAULT_PATHS = {
     "fate-x":          "data/FATE-X",
     "formalmath":      "data/FormalMATH",
     "numinamath_lean": "data/NuminaMath-LEAN",
+    "leaneval":        "data/LeanEval",
+    "matharena_formal": "data/MathArena",
 }
 
 def load_benchmark(benchmark: str, split: str = "test",
@@ -103,6 +105,27 @@ def load_benchmark(benchmark: str, split: str = "test",
                 f"NuminaMath-LEAN: 未找到数据。请先下载:\n"
                 f"  {hf_download_hint()}\n"
                 f"或指定 --path 参数。")
+    elif b == "leaneval":
+        from benchmarks.datasets.leaneval.loader import load
+        data_path = path or _DEFAULT_PATHS["leaneval"]
+        problems = load(data_path, split, limit=limit)
+        if not problems:
+            logger.error(
+                f"lean-eval: 未找到数据。请先下载:\n"
+                f"  git clone https://github.com/leanprover/lean-eval {data_path}\n"
+                f"⚠ comparator 范式: 官方判分必须走 "
+                f"scripts/eval/run_leaneval.py (见 loader docstring)。")
+    elif b in ("mathaerenaformal", "matharenaformal", "matharena"):
+        from benchmarks.datasets.matharena.loader import load
+        data_path = path or _DEFAULT_PATHS["matharena_formal"]
+        problems = load(data_path, split)
+        if not problems:
+            logger.error(
+                f"MathArena (formalized): 未找到数据。流程:\n"
+                f"  1. python scripts/eval/fetch_matharena.py --comp aime_2026\n"
+                f"  2. python scripts/eval/matharena_autoformalize.py "
+                f"--comp aime_2026 ...\n"
+                f"生成 {data_path}/<comp>/formalized.jsonl 后即可加载。")
     else:
         available = list(_DEFAULT_PATHS.keys())
         raise ValueError(f"未知数据集: {benchmark}。可用: {available}")

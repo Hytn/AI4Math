@@ -131,7 +131,23 @@ def _build_tool(kit: ToolKit, *, lean_pool, knowledge_store,
         ks = knowledge_store
         if ks is None and retriever is not None:
             ks = getattr(retriever, "store", None) or getattr(retriever, "knowledge_store", None)
-        return PremiseSearchTool(knowledge_store=ks)
+
+        # 可选: 经 AI4MATH_PREMISE_PROVIDERS 环境变量启用在线检索
+        # provider (leansearch_v2 / loogle / leanstatesearch /
+        # local_tfidf)。未设置环境变量 → providers=[] → 工具行为
+        # 与历史版本完全一致。构造失败绝不阻断工具注册。
+        provs = None
+        try:
+            from prover.premise.providers import build_providers
+            built = build_providers()  # 读 env, 未配置时返回 []
+            provs = built or None
+            if provs:
+                logger.info(
+                    "premise_search: %d retriever provider(s) enabled: %s",
+                    len(provs), [p.name for p in provs])
+        except Exception as _e:  # noqa: BLE001
+            logger.warning("retriever providers unavailable: %s", _e)
+        return PremiseSearchTool(knowledge_store=ks, providers=provs)
 
     if kit == ToolKit.CAS:
         return CASTool()

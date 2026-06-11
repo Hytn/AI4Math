@@ -4,6 +4,10 @@ pyyaml>=6.0              # configuration loading
 
 # ── LLM provider (at least one required for real proving) ──
 anthropic>=0.40.0        # Claude API client (sync + async)
+# openai>=1.30           # REQUIRED if using provider=openai/deepseek/vllm/
+#                        # sglang/ollama/openai_compat (AsyncOpenAIProvider)
+# aiohttp>=3.9           # REQUIRED if using the Kimina HTTP backend
+#                        # (--backend kimina)
 
 # ── Development & testing ──
 pytest>=8.0
@@ -16,3 +20,12 @@ tqdm>=4.60
 # ── Optional: better premise retrieval ──
 # sentence-transformers>=2.0   # dense embeddings (replaces n-gram fallback)
 # torch>=2.0                   # required by sentence-transformers
+# (在线检索 provider — leansearch_v2 / loogle / leanstatesearch —
+#  仅用 stdlib urllib, 无额外依赖; 见 prover/premise/providers/)
+
+# ── Optional: MathArena (运行时拉取, CC BY-NC-SA 4.0 不入库) ──
+# datasets>=2.18           # scripts/eval/fetch_matharena.py
+# huggingface_hub>=0.23
+
+# ── Optional: lean-eval manifest 解析 (Python 3.10 only) ──
+# toml>=0.10               # py3.11+ 自带 tomllib, 无需安装
