@@ -527,12 +527,27 @@ class AsyncLeanPool:
 
         logger.info(f"AsyncLeanPool: starting {self.pool_size} sessions...")
 
-        # 并行启动所有会话 (通过 _make_session 集中处理 transport_factory)
         sessions = [self._make_session(i) for i in range(self.pool_size)]
 
-        results = await asyncio.gather(
-            *(s.start(self.preamble) for s in sessions),
-            return_exceptions=True)
+        # Startup strategy (集中处理 transport_factory via _make_session):
+        # A non-empty preamble triggers a heavy ``import Mathlib`` compile in
+        # each session. Launching all sessions concurrently makes them all
+        # cold-load Mathlib's .oleans at once, which can wedge on slow storage.
+        # So when there is a preamble, start the first session alone and await
+        # its compile (warming the OS page cache), then start the rest
+        # concurrently — they read warm oleans and finish fast. With no preamble
+        # there is no heavy compile, so start everything concurrently as before.
+        if self.preamble and self.pool_size > 1:
+            first = await asyncio.gather(
+                sessions[0].start(self.preamble), return_exceptions=True)
+            rest = await asyncio.gather(
+                *(s.start(self.preamble) for s in sessions[1:]),
+                return_exceptions=True)
+            results = [first[0], *rest]
+        else:
+            results = await asyncio.gather(
+                *(s.start(self.preamble) for s in sessions),
+                return_exceptions=True)
 
         for s, ok in zip(sessions, results):
             if ok is True:

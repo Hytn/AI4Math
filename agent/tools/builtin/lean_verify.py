@@ -85,17 +85,57 @@ def _strip_import_open_prefix(code: str) -> tuple[str, bool]:
     return "\n".join(out).strip(), stripped
 
 
-def _proof_from_target_declaration(code: str, target_statement: str) -> str:
-    """If code is the target theorem declaration, return only its proof part."""
+def _normalise_statement_header(statement: str) -> str:
+    """Normalize a theorem header for exact target matching."""
+    header = re.sub(r"\s+", " ", (statement or "").strip())
+    return re.sub(r"\s*:=\s*$", "", header).strip()
+
+
+def _target_statement_header(theorem_statement: str) -> str:
+    target = _target_theorem_name(theorem_statement)
+    if target:
+        m = re.search(
+            rf"\b(?:theorem|lemma|instance)\s+{re.escape(target)}\b",
+            theorem_statement or "",
+        )
+        if m:
+            theorem_statement = theorem_statement[m.start():]
+    statement, _proof = _split_theorem_and_proof(theorem_statement or "")
+    return _normalise_statement_header(statement)
+
+
+def _submitted_declaration_parts(code: str, target_statement: str) -> tuple[str, str]:
+    """Return (statement, proof) for the submitted target declaration."""
     target = _target_theorem_name(target_statement)
     if not target:
-        return ""
+        return "", ""
     m = re.search(rf"\b(?:theorem|lemma|instance)\s+{re.escape(target)}\b", code or "")
     if not m:
-        return ""
+        return "", ""
     tail = code[m.start():]
-    _statement, proof = _split_theorem_and_proof(tail)
-    return proof.strip()
+    statement, proof = _split_theorem_and_proof(tail)
+    return statement.strip(), proof.strip()
+
+
+def _declaration_matches_target(code: str, target_statement: str) -> bool:
+    """Whether a complete target declaration keeps the original theorem header."""
+    if not target_statement:
+        return True
+    statement, proof = _submitted_declaration_parts(code, target_statement)
+    if not statement or not proof:
+        return False
+    return (
+        _normalise_statement_header(statement)
+        == _target_statement_header(target_statement)
+    )
+
+
+def _proof_from_target_declaration(code: str, target_statement: str) -> str:
+    """If code is the exact target theorem declaration, return its proof part."""
+    if not _declaration_matches_target(code, target_statement):
+        return ""
+    _statement, proof = _submitted_declaration_parts(code, target_statement)
+    return proof
 
 
 def _normalise_target_proof_input(code: str, target_statement: str) -> tuple[str, list[str]]:
@@ -145,12 +185,14 @@ def _declaration_names(code: str) -> list[str]:
     return names
 
 def _code_targets_theorem(code: str, theorem_statement: str) -> bool:
-    """Whether a complete declaration block contains the requested theorem."""
+    """Whether a complete declaration block proves exactly the target theorem."""
     target = _target_theorem_name(theorem_statement)
     if not target:
         return True
     names = _declaration_names(code)
-    return bool(names and target in names)
+    if not names or target not in names:
+        return False
+    return _declaration_matches_target(code, theorem_statement)
 
 def _critical_integrity_issues(code: str) -> list[str]:
     try:

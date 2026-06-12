@@ -32,7 +32,7 @@ from agent.runtime.agent_loop import AgentLoop, LoopConfig, LoopResult
 from agent.tools.base import ToolContext
 from agent.tools.builtin.lean_verify import (
     _split_theorem_and_proof, _declaration_names, _code_targets_theorem,
-    _critical_integrity_issues,
+    _critical_integrity_issues, _declaration_matches_target,
 )
 from agent.tools.registry import ToolRegistry
 
@@ -1195,8 +1195,11 @@ class UnifiedProofRunner:
                     return False
                 if len(names) == 1:
                     statement, proof = _split_theorem_and_proof(proof_code)
+                    if not _declaration_matches_target(proof_code, target_statement):
+                        return False
                     result = verify(
-                        statement, proof, getattr(problem, "lean_preamble", "") or "")
+                        target_statement or statement, proof,
+                        getattr(problem, "lean_preamble", "") or "")
                 else:
                     result = verify(
                         proof_code, "", getattr(problem, "lean_preamble", "") or "")

@@ -71,9 +71,9 @@ def load_benchmark(benchmark: str, split: str = "test",
         problems = load(data_path, split)
         if not problems:
             logger.error(
-                f"ProofNetSharp: 未找到 proofnet.jsonl。\n"
-                f"请放置 PAug/ProofNetSharp 转换后的 proofnet.jsonl 到 {data_path}/proofnet.jsonl，"
-                f"或指定 --path 参数。")
+                f"ProofNetSharp: 未找到 Hugging Face parquet 文件。\n"
+                f"请放置 PAug/ProofNetSharp 原始文件到 {data_path}/data/valid-00000-of-00001.parquet "
+                f"和 {data_path}/data/test-00000-of-00001.parquet，或指定 --path 参数。")
     elif b == "formalmath":
         from benchmarks.datasets.formalmath.loader import load
         data_path = path or _DEFAULT_PATHS["formalmath"]

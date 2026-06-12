@@ -142,6 +142,7 @@ def _is_valid_lean_verify_payload(payload: dict) -> bool:
         return False
     return bool(
         payload.get("verified") is True
+        and payload.get("proves_target") is not False
         and payload.get("sorry_free") is not False
         and not payload.get("errors")
     )
@@ -150,7 +151,8 @@ def _is_valid_lean_verify_payload(payload: dict) -> bool:
 def _saved_proof_is_acceptable(proof: str, theorem_statement: str) -> bool:
     if not isinstance(proof, str) or not proof.strip():
         return False
-    if not looks_like_lean_code(proof):
+    stripped = proof.strip()
+    if not (looks_like_lean_code(proof) or stripped.startswith(":=")):
         return False
     if _critical_integrity_issues(proof):
         return False
@@ -764,6 +766,16 @@ def main():
             # 响应,管线在没装 Lean 也没 LLM 时也能产出 success: true 的
             # dialog.json (用于冒烟评测;真实评测请换 --backend kimina/auto +
             # 真实 LLM provider)。
+            # ProofNetSharp stores a per-problem Lean header, but every header
+            # starts with ``import Mathlib`` and differs only in trailing
+            # ``open ...`` lines. Preload ``import Mathlib`` so the heavy Mathlib
+            # compile happens once at startup; each problem's header then reuses
+            # that base env (``_env_for_preamble`` startswith branch) and only
+            # compiles the cheap ``open ...`` suffix. With an empty base preamble
+            # every distinct header instead cold-recompiles Mathlib from env 0
+            # mid-run (per session), causing periodic multi-minute stalls.
+            # The cold-load-at-startup wedge this used to avoid is handled by the
+            # staggered session startup in AsyncLeanPool.start().
             pool_preamble = "import Mathlib"
             logger.info("  Lean startup preamble: %s", repr(pool_preamble))
             if getattr(args, "backend", None) == "mock":

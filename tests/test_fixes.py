@@ -162,6 +162,47 @@ class TestAutoVerifyResumeEvidence:
         assert trace["solved"] is False
         assert trace["successful_proof"] == ""
 
+    def test_dialog_to_trace_rejects_auto_verify_changed_target_header(self):
+        from run_eval import _dialog_to_trace_dict
+
+        dialog = {
+            "meta": {
+                "problem_id": "p1",
+                "problem_name": "target",
+                "theorem_statement": "theorem target (P : Prop) : P",
+            },
+            "messages": [],
+            "result": {
+                "success": True,
+                "termination": "proof_found",
+                "successful_proof": (
+                    "theorem target (P : Prop) (h : P) : P := by exact h"
+                ),
+                "extra": {
+                    "auto_verify": {
+                        "verified": True,
+                        "proves_target": True,
+                        "sorry_free": True,
+                    },
+                },
+            },
+        }
+
+        trace = _dialog_to_trace_dict(dialog, fallback_problem_id="fallback")
+
+        assert trace["solved"] is False
+        assert trace["successful_proof"] == ""
+
+    def test_strict_target_match_accepts_exact_header_only(self):
+        from agent.tools.builtin.lean_verify import _code_targets_theorem
+
+        target = "theorem target (P : Prop) : P :="
+        exact = "theorem target (P : Prop) : P := by assumption"
+        changed = "theorem target (P : Prop) (h : P) : P := by exact h"
+
+        assert _code_targets_theorem(exact, target) is True
+        assert _code_targets_theorem(changed, target) is False
+
 
 class TestNestedCommentStrip:
     """Fix #6: _strip_comments must handle nested /- -/ correctly."""
