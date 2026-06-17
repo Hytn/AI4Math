@@ -1,18 +1,21 @@
 # ── Core dependencies (always required) ──
 pyrsistent>=0.20.0       # immutable data structures for proof state
-pyyaml>=6.0              # configuration loading
+pyyaml>=6.0.3            # configuration/profile/plugin YAML loading
+tqdm>=4.67.3             # progress bars for eval/data scripts
 
 # ── LLM provider (at least one required for real proving) ──
-anthropic>=0.40.0        # Claude API client (sync + async)
-# openai>=1.30           # REQUIRED if using provider=openai/deepseek/vllm/
-#                        # sglang/ollama/openai_compat (AsyncOpenAIProvider)
+anthropic>=0.104.1       # Claude API client (async)
+openai>=2.38.0           # provider=openai/deepseek/vllm/sglang/ollama/openai_compat
 # aiohttp>=3.9           # REQUIRED if using the Kimina HTTP backend
 #                        # (--backend kimina)
 
+# ── Benchmark/data support ──
+pyarrow>=24.0.0          # ProofNetSharp parquet loader + dialog parquet export
+# pandas>=2.0            # REQUIRED for NuminaMath-LEAN parquet; JSONL works without it
+
 # ── Development & testing ──
-pytest>=8.0
-pytest-asyncio>=0.23     # async test support
-tqdm>=4.60
+pytest>=9.0.3
+pytest-asyncio>=1.4.0    # async test support
 
 # ── Optional: CAS integration ──
 # SageMath must be installed separately (https://www.sagemath.org/)
